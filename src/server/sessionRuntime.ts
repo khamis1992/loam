@@ -37,10 +37,29 @@ export const DEFAULT_STEP_LIMIT = 40;
 /** Token ceiling when the config does not override it. */
 export const DEFAULT_TOKEN_LIMIT = 500_000;
 
+/**
+ * Dynamic session budget: the default token ceiling scales with the model
+ * class. Local models run on the user's own machine, so their tokens are free
+ * and the real guards are steps and wall-clock; `:cloud` models are paid and
+ * fast, sized for tasks that outgrow the local floor. The config override and
+ * a manual raise both win over the class default (see applyModelDefaults).
+ */
+export const CLOUD_MODEL_TOKEN_LIMIT = 1_000_000;
+export const LOCAL_MODEL_TOKEN_LIMIT = 2_000_000;
+
+/** Cloud models are the `:cloud` entries (Ollama's cloud catalog and the
+ *  failover providers) — anything else runs locally. */
+export function isCloudModel(model: string | undefined): boolean {
+  return typeof model === "string" && model.trim().endsWith(":cloud");
+}
+
 export interface SessionRuntimeOptions {
   idleMinutes?: number;
   stepLimit?: number;
   tokenLimit?: number;
+  /** True when the config file explicitly set tokenLimit — the model-class
+   *  default then yields to the configured value. */
+  tokenLimitConfigured?: boolean;
   /** Neo N6: default wall-clock ceiling in minutes (0/undefined = no ceiling). */
   wallClockMinutes?: number;
   /** Neo N6: default cost ceiling in USD. */
@@ -67,6 +86,7 @@ export class SessionRuntime {
   private readonly tokenLimit?: number;
   private readonly wallClockLimitMs?: number;
   private readonly costLimitUsd?: number;
+  private readonly tokenLimitConfigured: boolean;
 
   constructor(options: SessionRuntimeOptions = {}) {
     this.stepLimit = options.stepLimit;
@@ -75,6 +95,7 @@ export class SessionRuntime {
       ? Math.floor(options.wallClockMinutes * 60_000)
       : undefined;
     this.costLimitUsd = options.costLimitUsd && options.costLimitUsd > 0 ? options.costLimitUsd : undefined;
+    this.tokenLimitConfigured = options.tokenLimitConfigured === true;
     this.sleep = new SessionSleepManager({
       idleMinutes: options.idleMinutes,
       now: options.now,
@@ -109,6 +130,23 @@ export class SessionRuntime {
 
   getBudget(sessionId: string): ComputeBudget {
     return this.ensure(sessionId).budget;
+  }
+
+  /**
+   * Dynamic budget: scale a session's token ceiling to its model class on run
+   * start — a local model's tokens are free, a `:cloud` model's are paid, so
+   * the class picks the default ceiling. Only ever RAISES the ceiling (never
+   * below what the session already has); an explicit config tokenLimit wins
+   * outright, and once the user raises manually (`raised`), their choice is
+   * final and later runs stop rescaling.
+   */
+  applyModelDefaults(sessionId: string, model: string | undefined): ComputeBudget {
+    const entry = this.ensure(sessionId);
+    if (this.tokenLimitConfigured) return entry.budget;
+    if (entry.budget.raised) return entry.budget;
+    const classLimit = isCloudModel(model) ? CLOUD_MODEL_TOKEN_LIMIT : LOCAL_MODEL_TOKEN_LIMIT;
+    if (classLimit > (entry.budget.tokenLimit ?? DEFAULT_TOKEN_LIMIT)) entry.budget.tokenLimit = classLimit;
+    return entry.budget;
   }
 
   /**
