@@ -234,7 +234,7 @@
     "socket.io": "^4.8.1",
     "tesseract.js": "^7.0.0",
     "three": "^0.186.1",
-    "zod": "^4.6.7"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@anthropic-ai/sandbox-runtime": "0.0.81",
