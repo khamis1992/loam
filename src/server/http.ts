@@ -124,6 +124,7 @@ import { handleDesignStudioRoutes } from "./routes/designStudio.js";
 import { handleSchedulesRoutes } from "./routes/schedules.js";
 import { handleAutomationsRoutes } from "./routes/automations.js";
 import { handleAppBuilderRoutes } from "./routes/appBuilder.js";
+import { handleModelRegistryRoutes } from "./routes/modelRegistry.js";
 import { handleBoardRoutes } from "./routes/board.js";
 import { handleAgentThreadRoutes } from "./routes/agentThreads.js";
 import { handleWorkspaceVideoRoutes } from "./routes/workspaceVideo.js";
@@ -515,6 +516,18 @@ async function applyPendingItem(item: PendingItem, memory?: MemoryStore, cfg?: C
 
 export function startServer(deps: ServerDeps): Promise<http.Server> {
   const { cfg, ollama, runTask } = deps;
+  
+  // Initialize model registry (async, non-blocking)
+  (async () => {
+    try {
+      const { initializeRegistry } = await import("../models/registry/init.js");
+      await initializeRegistry(cfg);
+      log.info("[registry] Model registry initialized");
+    } catch (error) {
+      log.error(`[registry] Failed to initialize: ${error}`);
+    }
+  })();
+  
   const timeline = new TimelineService(cfg.workspace);
   const memory = deps.memory;
   const live = deps.screenLive;
@@ -2175,6 +2188,8 @@ loadAgents();
         if (await handleHibernationRoutes(req, res, p)) return;
         // Durable event log (O8): GET /api/sessions/:id/events and /events/stream.
         if (await handleEventsRoutes(req, res, p)) return;
+        // Model registry (Unified Model Registry): /api/model-registry/*
+        if (handleModelRegistryRoutes(req, res)) return;
         // Design Studio (/api/design/*): brand kits, templates, generate, outputs.
         if (await handleDesignStudioRoutes(req, res, p)) return;
         if (await handleWorkspaceVideoRoutes(req, res, p, { workspace: cfg.workspace })) return;

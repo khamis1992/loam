@@ -14,7 +14,7 @@ import { CancelledError, isCancelledError } from "../server/runControl.js";
  *  var holding the key — never the key itself. */
 export interface FailoverProvider {
   id: string;
-  kind: "ollama" | "openai-compatible";
+  kind: "ollama" | "openai-compatible" | "anthropic" | "google-gemini";
   baseUrl: string;
   model: string;
   apiKeyEnv: string;
@@ -428,6 +428,49 @@ export class FailoverClient extends OllamaClient {
 export function createFailoverClient(cfg: {
   failover?: { providers?: FailoverProvider[] };
 }): FailoverClient | null {
-  if (!cfg.failover?.providers?.length) return null;
-  return new FailoverClient(cfg.failover.providers);
+  // Try legacy config first
+  if (cfg.failover?.providers?.length) {
+    return new FailoverClient(cfg.failover.providers);
+  }
+  
+  // Fallback to registry
+  try {
+    const providers = loadProvidersFromRegistry();
+    if (providers.length > 0) {
+      log.info(`[failover] Loaded ${providers.length} providers from registry`);
+      return new FailoverClient(providers);
+    }
+  } catch (error) {
+    log.warn(`[failover] Failed to load registry providers: ${error}`);
+  }
+  
+  return null;
+}
+
+/**
+ * Load providers from model registry.
+ * Converts registry format to FailoverProvider format.
+ */
+function loadProvidersFromRegistry(): FailoverProvider[] {
+  try {
+    // Dynamic import to avoid circular dependency
+    const initModule = require("../models/registry/init.js") as any;
+    const compileModule = require("../models/registry/compile.js") as any;
+    
+    const registry = initModule.getRegistry();
+    if (!registry) return [];
+    
+    // Get default chain or all enabled models
+    const enabledModels = registry.models.filter((m: any) => m.enabled);
+    const modelIds = enabledModels.map((m: any) => m.id);
+    
+    if (modelIds.length === 0) return [];
+    
+    // Compile to FailoverProvider format
+    const compiled = compileModule.compileChain(registry, modelIds);
+    return compiled;
+  } catch (error) {
+    log.error(`[failover] Registry load failed: ${error}`);
+    return [];
+  }
 }

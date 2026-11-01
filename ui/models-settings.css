@@ -1,0 +1,382 @@
+/**
+ * Styles for Models Settings screen.
+ * 
+ * Design principles:
+ * - Cards never clipped (full padding/margin)
+ * - Cards spaced apart (min 16px gap)
+ * - No sparkle/star icons
+ * - Clean, professional look
+ * - Windows-optimized (clear borders, rounded corners)
+ */
+
+.models-settings {
+  padding: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.models-settings header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 32px;
+}
+
+.models-settings h1 {
+  font-size: 28px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.models-settings h2 {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
+.models-settings section {
+  margin-bottom: 40px;
+}
+
+/* Provider cards */
+.provider-card {
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+  transition: box-shadow 0.2s;
+}
+
+.provider-card:hover {
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.12);
+}
+
+.provider-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.provider-header h3 {
+  flex: 1;
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.provider-meta {
+  display: flex;
+  gap: 16px;
+  font-size: 14px;
+  color: #666;
+}
+
+.provider-kind {
+  font-family: monospace;
+  background: #f5f5f5;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.provider-url {
+  color: #0066cc;
+}
+
+/* Model cards */
+.model-card {
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.model-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.model-header h4 {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 500;
+  margin: 0;
+}
+
+.model-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 13px;
+  color: #666;
+}
+
+/* Badges */
+.badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.badge-local {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+
+.badge-cloud {
+  background: #f3e5f5;
+  color: #6a1b9a;
+}
+
+.badge-enabled {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.badge-disabled {
+  background: #fafafa;
+  color: #9e9e9e;
+}
+
+/* Buttons */
+.btn {
+  padding: 8px 16px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  background: white;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.btn:hover {
+  background: #f5f5f5;
+  border-color: #d0d0d0;
+}
+
+.btn-primary {
+  background: #0066cc;
+  color: white;
+  border-color: #0066cc;
+}
+
+.btn-primary:hover {
+  background: #0052a3;
+  border-color: #0052a3;
+}
+
+/* Empty/Loading/Error states */
+.empty-state,
+.loading,
+.error {
+  padding: 48px;
+  text-align: center;
+  color: #666;
+  background: #fafafa;
+  border-radius: 8px;
+  border: 1px dashed #e0e0e0;
+}
+
+.error {
+  background: #fff3e0;
+  color: #e65100;
+  border-color: #ffb74d;
+}
+
+/* Lists */
+#providers-list,
+#models-list,
+#chains-list {
+  margin-bottom: 16px;
+}
+
+/* Modal dialogs */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-dialog {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  max-width: 600px;
+  width: 90%;
+  max-height: 90vh;
+  overflow: auto;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.modal-header h2 {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.btn-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: #666;
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 16px;
+  transition: background 0.2s;
+}
+
+.btn-close:hover {
+  background: #f5f5f5;
+}
+
+.modal-body {
+  padding: 24px;
+}
+
+/* Form styles */
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  font-weight: 500;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.form-group input[type="text"],
+.form-group input[type="url"],
+.form-group input[type="password"],
+.form-group select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  font-size: 14px;
+  transition: border-color 0.2s;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: #0066cc;
+}
+
+.form-group .optional {
+  color: #999;
+  font-weight: normal;
+  font-size: 13px;
+}
+
+.form-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid #e0e0e0;
+}
+
+/* Loading spinner */
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #f0f0f0;
+  border-top-color: #0066cc;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 20px auto;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Discovered models list */
+.discovered-models {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 12px;
+  margin: 16px 0;
+}
+
+.model-item {
+  padding: 8px;
+  border-bottom: 1px solid #f5f5f5;
+}
+
+.model-item:last-child {
+  border-bottom: none;
+}
+
+.model-item label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: normal;
+}
+
+.model-item input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+/* Provider actions */
+.provider-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+.btn-danger {
+  background: #dc3545;
+  color: white;
+  border-color: #dc3545;
+}
+
+.btn-danger:hover {
+  background: #c82333;
+  border-color: #bd2130;
+}
+
+/* Model context info */
+.model-context {
+  font-size: 12px;
+  color: #999;
+  margin-left: 8px;
+}
