@@ -155,6 +155,10 @@ async function main(): Promise<void> {
     idleMinutes: cfg.session?.idleMinutes || DEFAULT_IDLE_MINUTES,
     stepLimit: cfg.session?.stepLimit || DEFAULT_STEP_LIMIT,
     tokenLimit: cfg.session?.tokenLimit || DEFAULT_TOKEN_LIMIT,
+    // Dynamic budget: a tokenLimit that differs from the shipped default was
+    // set deliberately in the config file, so it outranks the model-class
+    // default (an identical value is indistinguishable from "not set").
+    tokenLimitConfigured: typeof cfg.session?.tokenLimit === "number" && cfg.session.tokenLimit !== DEFAULT_TOKEN_LIMIT,
   });
   sessionRuntime.start();
 
@@ -664,7 +668,9 @@ async function main(): Promise<void> {
           : {}),
         // D19 compute budget: shared with the UI badge so the counters and the
         // badge always agree, and the run stops when the ceiling is hit.
-        budget: sessionRuntime.getBudget(task),
+        // Dynamic sizing first: scale the token ceiling to this run's model
+        // class (local = free tokens, `:cloud` = paid) before the run reads it.
+        budget: sessionRuntime.applyModelDefaults(task, quickEditRoute.model ?? effectiveCfg.model),
         // O5: the durable event log is keyed by the task id (the protocol store
         // binds a session to its task, and `session_events` outlives the JSON
         // session cache). Setting this makes every tool call in this run append a
