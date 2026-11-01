@@ -32,3 +32,11 @@ All timestamps Asia/Riyadh (UTC+3). Window titles never appear in this file.
 - Tests 34/34: envelope per code, retry=safe⇒not_delivered, exit-2 envelope, garbage→null, timeout/abort kill child only, nasty argv (quotes/&/|/%PATH%/newline/Arabic) one element each, buildAdArgv order, --force throws, backend mapping incl. delivered_unverified default + no-spawn on invalid refs, renderer exact shapes, delta unchanged/small/overflow.
 - Deviation note: spawn seam is an injectable param (plan allowed exactly this instead of a .cmd shim). typecheck 0; test:desktop 34/34; verify EXIT 0. No change to computerUse.ts yet.
 - Next: P4 backend swap + guard + facade.
+
+## 2026-11-01 P4 — Backend swap, guarded fallback (code complete; live smoke deferred)
+
+- legacyBackend.ts (runPs + nut-js + parseJson/targetArgs/requireEnabled moved verbatim, injectable LegacyDeps), guard.ts (ForegroundGuard + guarded() + fg-probe long-lived sampler + deniedKey denylist), metrics.ts (no-title events), backend.pickBackend, facade computerUse.ts rewritten: all 10 legacy names kept + NEW computer_snapshot/computer_find/computer_act/computer_batch; §2.5 fallback table; every result untrusted:true.
+- Integrations: UNTRUSTED_TOOL_NAMES + SENSITIVE_HOST_INPUT (index.ts) + side-chat deny-list + companionGateway tool list + appBridgeTools UI_HINT prefer snapshot/find/act + prompts/loam-master.md §6.6 (two rows: new primary loop + legacy names) regenerated into masterPromptText.ts.
+- Tests: guard.test.ts (check/guarded/denylist) + facade.test.ts (selector rows, guarded refusals on BOTH backends with zero spawns, delivered_*→no second call, ELEMENT_NOT_FOUND→re-snapshot never legacy, untrusted marking, title never in list output, schema snapshot incl. new tools, descriptions ≤300) — test:desktop 61/61; verify EXIT 0; bridges test 5/5.
+- **Live smoke DEFERRED**: §0.6 preconditions failed — Loam running (12 procs) + 35 cua_node/codex-runtimes procs at check time. Rule: pause, never close them. Smoke plan (own Notepad/Calculator only, sentinel for the refusal case) runs as soon as the desktop is free.
+- Next: P5 (snapshotStore + pruning hook + desktop-a11y skill), then live smoke before P6.

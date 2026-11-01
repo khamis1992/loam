@@ -55,3 +55,33 @@ export const notDelivered = (backend: BackendId, code: string, message: string):
   code,
   message,
 });
+
+/** §3.4 selector: agent-desktop when the verified binary exists on win32 and
+ *  the config did not pin legacy; otherwise legacy. The choice (and its
+ *  reason) is logged once per process — no window titles in the log. */
+let loggedUnavailable = false;
+
+export function pickBackend(
+  ctx: import("../registry.js").ToolContext,
+  deps: {
+    verify: (exe: string) => { ok: boolean; reason?: string };
+    exePath: () => string;
+    stateRoot: string;
+    make: (exe: string, stateRoot: string, session: string, signal?: AbortSignal) => DesktopBackend;
+  },
+): DesktopBackend | { legacy: true; reason: string } {
+  const c = ctx.cfg.computerUse;
+  if (c.backend !== "legacy" && process.platform === "win32") {
+    const exe = deps.exePath();
+    const v = deps.verify(exe);
+    if (v.ok) return deps.make(exe, deps.stateRoot, `loam-${ctx.taskId ?? "adhoc"}`, ctx.signal);
+    if (!loggedUnavailable) {
+      console.warn(`[agent-desktop] unavailable (${v.reason}); using legacy backend`);
+      loggedUnavailable = true;
+    }
+    if (c.backend === "agent-desktop") {
+      return { legacy: true, reason: `agent-desktop backend requested but unavailable: ${v.reason ?? "unknown"}` };
+    }
+  }
+  return { legacy: true, reason: c.backend === "legacy" ? "config backend=legacy" : process.platform === "win32" ? "" : "non-win32 platform" };
+}

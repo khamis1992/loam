@@ -324,6 +324,12 @@ function isDestructiveShell(command: string, workspaceRoot?: string): boolean {
 const UNTRUSTED_TOOL_NAMES = new Set<string>([
   // Code-map results quote repository text (labels, comments, docstrings): data, not instructions.
   "codegraph_status", "codegraph_index", "codegraph_query", "codegraph_node", "codegraph_neighbors", "codegraph_path", "codegraph_affected", "codegraph_hubs", "codegraph_community",
+  // Desktop tool results (agent-desktop P4 §3.9) quote third-party window
+  // titles/element text/values — the same prompt-injection surface the Cua
+  // driver had. All computer_* outputs are untrusted data.
+  "computer_screenshot", "computer_list_windows", "computer_focus_window", "computer_snapshot",
+  "computer_find", "computer_act", "computer_batch", "computer_ui_tree", "computer_ui_list",
+  "computer_ui_click", "computer_ui_set_text", "computer_click", "computer_type", "computer_key",
   // Real-swarm board results quote peer-worker notes and repository content the
   // peers pasted (FACT/OBSERVED/FAIL): another model's text, never instructions.
   "board_write", "board_read", "board_grep", "board_unfold", "swarm_message", "swarm_inbox", "merge_request",

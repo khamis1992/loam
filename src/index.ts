@@ -514,7 +514,7 @@ async function main(): Promise<void> {
       // decided key returns the same decision, saved approval rules (agent-specific
       // first, then global) and the per-task "Approve for me" mode are checked
       // BEFORE prompting, and no card is shown twice.
-      const SENSITIVE_HOST_INPUT = new Set(["computer_click", "computer_type", "computer_key", "computer_ui_click", "computer_ui_set_text"]);
+      const SENSITIVE_HOST_INPUT = new Set(["computer_click", "computer_type", "computer_key", "computer_ui_click", "computer_ui_set_text", "computer_act", "computer_batch"]);
       for (const name of agentTools.names()) {
         if (!SENSITIVE_HOST_INPUT.has(name)) continue;
         const original = agentTools.get(name)!;
