@@ -22,3 +22,13 @@ All timestamps Asia/Riyadh (UTC+3). Window titles never appear in this file.
 - Tests: `adBinary.test.ts` (missing/mismatch/override/memoise/adExePath/state-root) + `adConfig.test.ts` (defaults pin, explicit merge, invalid→defaults, numeric clamps) — 12/12.
 - Gates: `npm run typecheck` green; `npm run test:desktop` 12/12; `npm run verify` EXIT 0. Packaged-path unit assert via adExePath(resourcesDir) test (full installer build deferred — known-slow on this machine, recorded here per plan).
 - Next: P3 process client (adClient/backend/render + fake exe + unit tests).
+
+## 2026-11-01 P3 — Process client ✅
+
+- `adClient.ts`: runAd (argv-only spawn, envelope parse, 4MB stdout cap, timeout+abort that kill only our child, --force forbidden) + pure `buildAdArgv` (flag order) + exported SpawnFn seam for tests.
+- `backend.ts`: DesktopBackend interface + notDelivered. `agentDesktopBackend.ts`: full implementation with ref validation before any spawn (STALE_REF recovery surfaced as needsFreshSnapshot).
+- `render.ts`: B2 renderTree/renderSnapshot (maxLines cut + drill hint), renderError with the retry rule, renderDelta with ref-stripping (new refs kept on + lines).
+- Fixture `fake-agent-desktop.mjs` (node child via process.execPath — no .cmd, no shell): ok/partial/no-disposition snapshots, all 16 error codes with correct dispositions, garbage, exit-2, 30s sleep, echo.
+- Tests 34/34: envelope per code, retry=safe⇒not_delivered, exit-2 envelope, garbage→null, timeout/abort kill child only, nasty argv (quotes/&/|/%PATH%/newline/Arabic) one element each, buildAdArgv order, --force throws, backend mapping incl. delivered_unverified default + no-spawn on invalid refs, renderer exact shapes, delta unchanged/small/overflow.
+- Deviation note: spawn seam is an injectable param (plan allowed exactly this instead of a .cmd shim). typecheck 0; test:desktop 34/34; verify EXIT 0. No change to computerUse.ts yet.
+- Next: P4 backend swap + guard + facade.
