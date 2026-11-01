@@ -6,6 +6,13 @@ import type { EffortLevel } from "./llm/router.js";
 import { ORCHESTRATION_DEFAULTS, clampOrchestration, type OrchestrationConfig } from "./orchestration/config.js";
 import { resolvePruneConfig } from "./agent/prune/config.js";
 
+/** Integer within [min, max] or the fallback when absent/invalid. */
+function clampInt(value: unknown, min: number, max: number, fallback: number): number {
+  const n = typeof value === "number" && Number.isFinite(value) ? Math.round(value) : NaN;
+  if (Number.isNaN(n)) return fallback;
+  return Math.min(Math.max(n, min), max);
+}
+
 function resolveRoot(): string {
   const candidates: string[] = [];
   if (process.env.LOAM_ROOT || process.env.MANUS_LOCAL_ROOT) candidates.push(path.resolve(process.env.LOAM_ROOT || process.env.MANUS_LOCAL_ROOT!));
@@ -161,7 +168,26 @@ export interface Config {
   workspace: string;
   policy: PolicyConfig;
   browser: { channel: string; headless: boolean; viewport: { width: number; height: number } };
-  computerUse: { enabled: boolean; screenshotDir: string };
+  computerUse: {
+    enabled: boolean;
+    screenshotDir: string;
+    /** "auto" = agent-desktop when the verified binary exists on win32, else legacy.
+     *  Optional in the type: loadConfig's normalisation always fills it, and
+     *  readers apply the same defaults with `??` so partial test configs stay valid. */
+    backend?: "auto" | "agent-desktop" | "legacy";
+    /** Headed agent-desktop actions are allowed (D3) — but only through the foreground guard. */
+    allowHeaded?: boolean;
+    agentDesktop?: {
+      /** "" → %APPDATA%\Loam\agent-desktop */
+      stateRoot: string;
+      snapshotTimeoutMs: number;
+      maxRenderedLines: number;
+      trace: boolean;
+      pruneOldSnapshots: boolean;
+      postActionDelta: boolean;
+      maxDeltaLines: number;
+    };
+  };
   memory: {
     enabled: boolean;
     model: string;
@@ -412,7 +438,21 @@ export const DEFAULTS: Config = {
     sandboxMode: "workspace-write",
   },
   browser: { channel: "msedge", headless: false, viewport: { width: 1280, height: 800 } },
-  computerUse: { enabled: true, screenshotDir: path.join(ROOT, "workspace", ".screenshots") },
+  computerUse: {
+    enabled: true,
+    screenshotDir: path.join(ROOT, "workspace", ".screenshots"),
+    backend: "auto",
+    allowHeaded: true,
+    agentDesktop: {
+      stateRoot: "",
+      snapshotTimeoutMs: 3000,
+      maxRenderedLines: 400,
+      trace: false,
+      pruneOldSnapshots: true,
+      postActionDelta: true,
+      maxDeltaLines: 40,
+    },
+  },
   memory: {
     enabled: true,
     model: "nomic-embed-text:latest",
@@ -731,6 +771,24 @@ export function loadConfig(): Config {
   }
   cfg.workspace = path.resolve(cfg.workspace);
   cfg.computerUse.screenshotDir = path.resolve(cfg.computerUse.screenshotDir);
+  // agent-desktop (D13): unknown or invalid values fall back to the defaults —
+  // a broken config key must never take the desktop backend down with it.
+  if (cfg.computerUse.backend !== "agent-desktop" && cfg.computerUse.backend !== "legacy") {
+    cfg.computerUse.backend = "auto";
+  }
+  cfg.computerUse.allowHeaded = cfg.computerUse.allowHeaded !== false;
+  {
+    const ad = cfg.computerUse.agentDesktop ?? ({ stateRoot: "", snapshotTimeoutMs: 3000, maxRenderedLines: 400, trace: false, pruneOldSnapshots: true, postActionDelta: true, maxDeltaLines: 40 } as NonNullable<typeof cfg.computerUse.agentDesktop>);
+    cfg.computerUse.agentDesktop = {
+      stateRoot: typeof ad.stateRoot === "string" ? ad.stateRoot : "",
+      snapshotTimeoutMs: clampInt(ad.snapshotTimeoutMs, 500, 60_000, 3000),
+      maxRenderedLines: clampInt(ad.maxRenderedLines, 40, 4000, 400),
+      trace: ad.trace === true,
+      pruneOldSnapshots: ad.pruneOldSnapshots !== false,
+      postActionDelta: ad.postActionDelta !== false,
+      maxDeltaLines: clampInt(ad.maxDeltaLines, 5, 400, 40),
+    };
+  }
   cfg.memory.file = path.resolve(cfg.memory.file);
   fs.mkdirSync(cfg.workspace, { recursive: true });
   fs.mkdirSync(cfg.computerUse.screenshotDir, { recursive: true });

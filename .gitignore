@@ -94,3 +94,6 @@ output/
 
 # Mimosa scanner working data (local only)
 .mimosa/
+
+# agent-desktop: pinned binary is vendored, never committed (LICENSE/VERSION are)
+resources/agent-desktop/agent-desktop.exe
