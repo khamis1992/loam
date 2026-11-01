@@ -286,16 +286,39 @@ function showAddProviderDialog() {
     const key = dialog.querySelector('#provider-key').value;
     const enabled = dialog.querySelector('#provider-enabled').checked;
     
-    // TODO: Send to /api/model-registry/providers (POST)
-    // For now, just show success
-    alert(`Provider added: ${label}\n(API integration pending)`);
-    dialog.remove();
-    
-    // Refresh the list
-    const registry = await loadRegistry();
-    if (registry) {
-      renderProviders(registry.providers);
-      renderModels(registry.models);
+    try {
+      // Send to API
+      const res = await fetch('/api/model-registry/providers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          kind: type,
+          label,
+          baseUrl: url,
+          apiKey: key || undefined,
+          enabled,
+        }),
+      });
+      
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      
+      const created = await res.json();
+      console.log('[models-settings] Provider created:', created);
+      
+      dialog.remove();
+      
+      // Refresh the list
+      const registry = await loadRegistry();
+      if (registry) {
+        renderProviders(registry.providers);
+        renderModels(registry.models);
+      }
+    } catch (error) {
+      console.error('[models-settings] Failed to add provider:', error);
+      alert(`Failed to add provider: ${error.message}`);
     }
   });
 }
