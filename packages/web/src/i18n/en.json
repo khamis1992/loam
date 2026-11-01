@@ -1435,5 +1435,6 @@
   "Search models (Ollama / cloud / freellmapi)…": "Search models (Ollama / cloud / freellmapi)…",
   "unreachable": "unreachable",
   "No models found. Start Ollama or configure a provider.": "No models found. Start Ollama or configure a provider.",
-  "Model selected, but it needs an API key — add it under Flex below.": "Model selected, but it needs an API key — add it under Flex below."
+  "Model selected, but it needs an API key — add it under Flex below.": "Model selected, but it needs an API key — add it under Flex below.",
+  "Custom provider (Flex)": "Custom provider (Flex)"
 }

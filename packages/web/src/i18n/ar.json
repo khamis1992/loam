@@ -1435,5 +1435,6 @@
   "Search models (Ollama / cloud / freellmapi)…": "ابحث في النماذج (Ollama / سحابي / freellmapi)…",
   "unreachable": "غير متاح",
   "No models found. Start Ollama or configure a provider.": "لا نماذج. شغّل Ollama أو اضبط مزوّدًا.",
-  "Model selected, but it needs an API key — add it under Flex below.": "اختير النموذج لكنه يحتاج مفتاح API — أضفه تحت Flex أدناه."
+  "Model selected, but it needs an API key — add it under Flex below.": "اختير النموذج لكنه يحتاج مفتاح API — أضفه تحت Flex أدناه.",
+  "Custom provider (Flex)": "مزوّد مخصص (Flex)"
 }
