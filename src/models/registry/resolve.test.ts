@@ -148,7 +148,7 @@ describe("resolveModelRef", () => {
       models: [
         ...testRegistry.models,
         {
-          ...testRegistry.models[0],
+          ...testRegistry.models[0]!,
           id: "ollama/disabled",
           remoteId: "disabled",
           enabled: false,

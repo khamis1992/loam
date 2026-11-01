@@ -285,9 +285,12 @@ export interface Config {
    * the loader always fills it (deep-merged over ORCHESTRATION_DEFAULTS, then clamped). */
   orchestration?: OrchestrationConfig;
   failover?: {
+    /** Mirrors FailoverProvider (src/llm/failover.ts) without the import:
+     * anthropic/google-gemini arrive through the model registry's compiled
+     * chain (PR #4). Keep both unions in sync. */
     providers: Array<{
       id: string;
-      kind: "ollama" | "openai-compatible";
+      kind: "ollama" | "openai-compatible" | "anthropic" | "google-gemini";
       baseUrl: string;
       model: string;
       apiKeyEnv: string;

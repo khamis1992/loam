@@ -60,7 +60,7 @@ describe("migration", () => {
           "ornith": 8192,
         },
       },
-    } as Config;
+    } as unknown as Config;
 
     const vault = new FakeVault();
     const registry = await migrateFromConfig({
@@ -123,7 +123,7 @@ describe("migration", () => {
       model: "glm-5.3:cloud",
       fallbackModel: "qwen2.5:14b",
       ollamaUrl: "http://127.0.0.1:11434",
-    } as Config;
+    } as unknown as Config;
 
     const fakeTagsWithGlm: OllamaTagsFetcher = async () => ["glm-5.3:cloud", "qwen2.5:14b"];
 
@@ -144,7 +144,7 @@ describe("migration", () => {
       model: "qwen2.5:14b",
       fallbackModel: "llama3:8b",
       ollamaUrl: "http://127.0.0.1:11434",
-    } as Config;
+    } as unknown as Config;
 
     const vault1 = new FakeVault();
     const vault2 = new FakeVault();
@@ -186,7 +186,7 @@ describe("migration", () => {
         baseUrl: "https://example.com/v1",
         apiKey: "secret-key-do-not-leak",
       },
-    } as Config;
+    } as unknown as Config;
 
     const vault = new FakeVault();
     const registry = await migrateFromConfig({
@@ -220,7 +220,7 @@ describe("migration", () => {
         baseUrl: "https://example.com/v1",
         apiKey: "secret-key",
       },
-    } as Config;
+    } as unknown as Config;
 
     const registry = await migrateFromConfig({
       config: config as Config,
@@ -242,7 +242,7 @@ describe("migration", () => {
       model: "new-model",
       fallbackModel: "qwen2.5:14b",
       ollamaUrl: "http://127.0.0.1:11434",
-    } as Config;
+    } as unknown as Config;
 
     const existingRegistry = {
       version: 1 as const,

@@ -146,7 +146,7 @@ export async function migrateFromConfig(options: MigrateOptions): Promise<ModelR
   async function getOrCreateProvider(
     id: string,
     label: string,
-    kind: "ollama" | "openai-compatible",
+    kind: "ollama" | "openai-compatible" | "anthropic" | "google-gemini",
     baseUrl: string,
     apiKey: string | undefined,
     apiKeyEnv: string,

@@ -381,7 +381,7 @@ export function handleModelRegistryRoutes(req: http.IncomingMessage, res: http.S
       // Save registry
       saveRegistry(registry);
 
-      log.info(`[registry] Deleted provider ${provider.label} and ${removedModels.length} associated models`);
+      log.info(`[registry] Deleted provider ${provider?.label ?? providerId} and ${removedModels.length} associated models`);
 
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, removedModels: removedModels.length }));
