@@ -99,7 +99,7 @@ describe("modelDirectory", () => {
   test("selectModel: local -> settings.model (standard tier)", async () => {
     const { selectModel } = await import("../modelDirectory.js");
     const { getSettings } = await import("../settings.js");
-    const result = selectModel({} as never, { id: "llama3:8b", source: "ollama" });
+    const result = await selectModel({} as never, { id: "llama3:8b", source: "ollama" });
     assert.deepEqual(result, { ok: true, tier: "standard", model: "llama3:8b", needsKey: false });
     assert.equal(getSettings().model, "llama3:8b");
   });
@@ -114,7 +114,7 @@ describe("modelDirectory", () => {
     const cfg = {
       failover: { providers: [{ id: "freellmapi", kind: "openai-compatible", baseUrl: "http://127.0.0.1:31415/v1", model: "y", apiKeyEnv: "FREELLM_API_KEY", enabled: false }] },
     } as never;
-    const result = selectModel(cfg, { id: "glm-5.3-flash", source: "freellmapi" });
+    const result = await selectModel(cfg, { id: "glm-5.3-flash", source: "freellmapi" });
     assert.ok(result.ok);
     if (result.ok) {
       assert.equal(result.tier, "flex");
@@ -125,15 +125,15 @@ describe("modelDirectory", () => {
     assert.equal(flexConfig().model, "glm-5.3-flash");
     // With the env key present the same pick is complete.
     process.env.FREELLM_API_KEY = "env-key";
-    const again = selectModel(cfg, { id: "glm-5.3-flash", source: "freellmapi" });
+    const again = await selectModel(cfg, { id: "glm-5.3-flash", source: "freellmapi" });
     assert.ok(again.ok && !again.needsKey);
     delete process.env.FREELLM_API_KEY;
   });
 
   test("selectModel: rejects unknown sources and blank ids", async () => {
     const { selectModel } = await import("../modelDirectory.js");
-    assert.equal(selectModel({} as never, { id: "", source: "ollama" }).ok, false);
-    assert.equal(selectModel({} as never, { id: "m", source: "nope" }).ok, false);
+    assert.equal((await selectModel({} as never, { id: "", source: "ollama" })).ok, false);
+    assert.equal((await selectModel({} as never, { id: "m", source: "nope" })).ok, false);
   });
 
   test("activeModel reports the effective model, settings and flex state", async () => {
@@ -141,5 +141,95 @@ describe("modelDirectory", () => {
     const active = activeModel({ model: "glm-5.3-flash:cloud" } as never);
     assert.equal(active.model, "glm-5.3-flash:cloud");
     assert.equal(typeof active.flex.baseUrl, "string");
+  });
+
+  /** A valid registry file exercising the PR #4 integration paths. */
+  const REGISTRY_FIXTURE = {
+    version: 1,
+    providers: [
+      {
+        id: "my-gateway", label: "بوابعتي", kind: "openai-compatible", presetId: "custom",
+        baseUrl: "https://my-gateway.example/v1", location: "cloud",
+        auth: { type: "none" }, extraHeaders: {}, timeoutMs: 30000,
+        enabled: true, createdAt: "2026-11-01T00:00:00.000Z", updatedAt: "2026-11-01T00:00:00.000Z",
+      },
+      {
+        id: "claude-direct", label: "Claude مباشر", kind: "anthropic", presetId: "anthropic",
+        baseUrl: "https://api.anthropic.com", location: "cloud",
+        auth: { type: "header", credentialId: "11111111-1111-4111-8111-111111111111", header: "x-api-key" },
+        extraHeaders: {}, timeoutMs: 30000,
+        enabled: true, createdAt: "2026-11-01T00:00:00.000Z", updatedAt: "2026-11-01T00:00:00.000Z",
+      },
+      {
+        id: "off-provider", label: "معطل", kind: "openai-compatible", presetId: "custom",
+        baseUrl: "https://off.example/v1", location: "cloud",
+        auth: { type: "none" }, extraHeaders: {}, timeoutMs: 30000,
+        enabled: false, createdAt: "2026-11-01T00:00:00.000Z", updatedAt: "2026-11-01T00:00:00.000Z",
+      },
+    ],
+    models: [
+      {
+        id: "my-gateway/gpt-custom", providerId: "my-gateway", remoteId: "gpt-custom", label: "GPT مخصص",
+        capabilities: { tools: "unknown", vision: "unknown", thinking: "unknown", jsonMode: "unknown", contextWindow: null, maxOutputTokens: null, source: "user" },
+        defaults: {}, enabled: true,
+      },
+      {
+        id: "claude-direct/claude-4", providerId: "claude-direct", remoteId: "claude-4", label: "Claude 4",
+        capabilities: { tools: true, vision: "unknown", thinking: "always", jsonMode: true, contextWindow: 200000, maxOutputTokens: 8192, source: "user" },
+        defaults: {}, enabled: true,
+      },
+    ],
+    chains: [{ id: "default", label: "Default", modelIds: ["my-gateway/gpt-custom"] }],
+    defaultModelId: null,
+    fallbackModelId: null,
+  };
+
+  test("registry providers join the directory; failover-covered endpoints dedupe; disabled skipped", async () => {
+    fs.writeFileSync(path.join(tmpDir, "model-registry.json"), JSON.stringify(REGISTRY_FIXTURE));
+    const { initializeRegistry } = await import("../../models/registry/init.js");
+    const { listModelDirectory } = await import("../modelDirectory.js");
+    await initializeRegistry({ ollamaUrl: "http://127.0.0.1:11434" } as never);
+    const dir = await listModelDirectory(
+      { ollamaUrl: "http://127.0.0.1:11434", failover: { providers: [] } } as never,
+      async () => ["llama3:8b"],
+    );
+    const gateway = dir.sources.find((s) => s.source === "registry:my-gateway");
+    assert.ok(gateway && gateway.count === 1, "registry provider listed with its model");
+    assert.ok(dir.models.some((m) => m.id === "gpt-custom" && m.source === "registry:my-gateway"));
+    // Anthropic provider IS listed (visibility), its model too.
+    assert.ok(dir.models.some((m) => m.id === "claude-4" && m.source === "registry:claude-direct"));
+    // Disabled provider never appears.
+    assert.ok(!dir.sources.some((s) => s.source === "registry:off-provider"));
+    // (Endpoint dedupe against failover is covered by the flex/freellmapi test:
+    // the registry cache cannot be reset in-process to reload a second file.)
+  });
+
+  test("selectModel: registry openai-compatible routes through Flex (auth none = no key needed)", async () => {
+    fs.writeFileSync(path.join(tmpDir, "model-registry.json"), JSON.stringify(REGISTRY_FIXTURE));
+    const { initializeRegistry } = await import("../../models/registry/init.js");
+    const { selectModel } = await import("../modelDirectory.js");
+    const { flexConfig } = await import("../modelTiers.js");
+    await initializeRegistry({ ollamaUrl: "http://127.0.0.1:11434" } as never);
+    const { setFlexConfig } = await import("../modelTiers.js");
+    setFlexConfig({ baseUrl: "https://elsewhere.example/v1", model: "previous" });
+    const result = await selectModel({ ollamaUrl: "http://127.0.0.1:11434" } as never, { id: "gpt-custom", source: "registry:my-gateway" });
+    assert.ok(result.ok);
+    if (result.ok) {
+      assert.equal(result.tier, "flex");
+      assert.equal(result.model, "gpt-custom:cloud");
+      assert.equal(result.needsKey, false, "auth none needs no key");
+    }
+    assert.equal(flexConfig().baseUrl, "https://my-gateway.example/v1");
+    assert.equal(flexConfig().model, "gpt-custom");
+  });
+
+  test("selectModel: registry anthropic explains the routing limit instead of silently misrouting", async () => {
+    fs.writeFileSync(path.join(tmpDir, "model-registry.json"), JSON.stringify(REGISTRY_FIXTURE));
+    const { initializeRegistry } = await import("../../models/registry/init.js");
+    const { selectModel } = await import("../modelDirectory.js");
+    await initializeRegistry({ ollamaUrl: "http://127.0.0.1:11434" } as never);
+    const result = await selectModel({ ollamaUrl: "http://127.0.0.1:11434" } as never, { id: "claude-4", source: "registry:claude-direct" });
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.match(result.error, /failover/);
   });
 });

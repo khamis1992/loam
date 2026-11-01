@@ -77,7 +77,7 @@ export async function handleProjectContextRoutes(
   if (p === "/api/model" && req.method === "PUT") {
     let body: Record<string, unknown>;
     try { body = await readJson(req); } catch (err) { return sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) }), true; }
-    const result = selectModel(loadConfig(), { id: body.id, source: body.source });
+    const result = await selectModel(loadConfig(), { id: body.id, source: body.source });
     if (!result.ok) sendJson(res, 400, result);
     else sendJson(res, 200, { ...result, active: activeModel(loadConfig()) });
     return true;

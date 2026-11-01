@@ -27,6 +27,9 @@
 import type { Config } from "../config.js";
 import { clearFlexKey, flexConfig, flexCredentials, setFlexConfig } from "./modelTiers.js";
 import { getSettings, updateSettings, type Settings } from "./settings.js";
+import { getRegistry } from "../models/registry/init.js";
+import type { ProviderRecord } from "../models/registry/types.js";
+import { getVault } from "../models/secrets/vault.js";
 import { log } from "../log.js";
 
 /** Public provider presets the Flex form offers as one-tap fills. */
@@ -195,6 +198,28 @@ export async function listModelDirectory(
     for (const id of probed.ids) models.push({ id, name: id, source: provider.id, kind: "openai-compatible" });
   }));
 
+  // 5) Model registry (PR #4): providers the user added from Settings, with
+  //    their stored models — no probing needed, the registry already knows
+  //    them (its own Discover filled the list). Endpoints already surfaced
+  //    above through failover are skipped: same base URL is the same choice.
+  const registry = getRegistry();
+  const coveredEndpoints = new Set(sources.map((s) => (s.baseUrl ?? "").replace(/\/+$/, "")));
+  for (const provider of registry?.providers ?? []) {
+    if (!provider.enabled) continue;
+    const endpoint = provider.baseUrl.replace(/\/+$/, "");
+    if (coveredEndpoints.has(endpoint)) continue;
+    coveredEndpoints.add(endpoint);
+    const listed = (registry?.models ?? []).filter((m) => m.providerId === provider.id && m.enabled);
+    const source = `registry:${provider.id}`;
+    sources.push({
+      source, label: `سجل: ${provider.label}`, kind: provider.kind === "ollama" ? "ollama" : "openai-compatible",
+      baseUrl: provider.baseUrl, count: listed.length,
+    });
+    for (const m of listed) {
+      models.push({ id: m.remoteId, name: m.remoteId, source, kind: provider.kind === "ollama" ? "ollama" : "openai-compatible" });
+    }
+  }
+
   // De-duplicate: same model id behind the same endpoint twice (the Flex slot
   // pointing at the freellmapi router AND the freellmapi provider entry) is one
   // choice, not two rows. Distinct endpoints keep their own rows — the source
@@ -237,8 +262,9 @@ export interface SelectResult {
 
 /** Apply a real-model pick: local models go to settings.model; cloud/provider
  *  models are routed through the Flex slot (its key stays whatever the vault
- *  or the provider's env var provides). */
-export function selectModel(cfg: Config, input: { id: unknown; source: unknown }): SelectResult | { ok: false; error: string } {
+ *  or the provider's env var provides). Registry providers (PR #4) resolve
+ *  their credential through the registry vault, so the key check is async. */
+export async function selectModel(cfg: Config, input: { id: unknown; source: unknown }): Promise<SelectResult | { ok: false; error: string }> {
   const id = typeof input.id === "string" ? input.id.trim() : "";
   const source = typeof input.source === "string" ? input.source.trim() : "";
   if (!id) return { ok: false, error: "id is required" };
@@ -250,10 +276,28 @@ export function selectModel(cfg: Config, input: { id: unknown; source: unknown }
     return { ok: true, tier: "standard", model: id, needsKey: false };
   }
 
-  // Cloud-side pick: resolve the provider baseUrl for this source.
+  // Cloud-side pick: resolve the provider baseUrl (+ key presence) per source.
   let baseUrl = "";
   let keyEnv = "";
-  if (source === "flex" || source === "cloud") {
+  let registryHasKey = false;
+  if (source.startsWith("registry:")) {
+    const provider = getRegistry()?.providers.find((p) => `registry:${p.id}` === source);
+    if (!provider) return { ok: false, error: `unknown registry provider: ${source}` };
+    if (provider.kind === "anthropic" || provider.kind === "google-gemini") {
+      // PR #4 routes these protocols through the failover chain only; the
+      // picker's direct routing speaks OpenAI-compatible and Ollama today.
+      return { ok: false, error: "نماذج Anthropic/Gemini من السجل تعمل عبر سلسلة failover — الاختيار المباشر من المنتقي يدعم OpenAI-compatible وOllama" };
+    }
+    if (provider.kind === "ollama") {
+      const same = provider.baseUrl.replace(/\/+$/, "") === cfg.ollamaUrl.replace(/\/+$/, "");
+      if (!same) return { ok: false, error: "مزوّد Ollama بعيد: وجّه ollamaUrl إليه في config.json ثم اختر نموذجه" };
+      const patch: Settings = { theme: getSettings().theme, model: id };
+      updateSettings(patch);
+      return { ok: true, tier: "standard", model: id, needsKey: false };
+    }
+    baseUrl = provider.baseUrl;
+    registryHasKey = await registryProviderHasKey(provider);
+  } else if (source === "flex" || source === "cloud") {
     baseUrl = source === "flex" ? (flexConfig().baseUrl || "") : (cfg.cloudModel?.baseUrl ?? "");
   } else {
     const provider = (cfg.failover?.providers ?? []).find((p) => p.id === source);
@@ -266,7 +310,7 @@ export function selectModel(cfg: Config, input: { id: unknown; source: unknown }
   // Switching providers must never forward the previous provider's sealed key
   // to the new one: clear it unless the new provider has its own env key.
   const flexNow = flexConfig();
-  const providerHasKey = Boolean(envKey(keyEnv));
+  const providerHasKey = registryHasKey || Boolean(envKey(keyEnv));
   const switchingProvider = flexNow.baseUrl !== baseUrl;
   if (switchingProvider && flexNow.hasKey && !providerHasKey) clearFlexKey();
 
@@ -274,4 +318,18 @@ export function selectModel(cfg: Config, input: { id: unknown; source: unknown }
   if (!("ok" in stored) || !stored.ok) return { ok: false, error: "error" in stored ? stored.error : "flex save failed" };
   const hasKey = providerHasKey || (!switchingProvider && flexNow.hasKey);
   return { ok: true, tier: "flex", model: `${id}:cloud`, needsKey: !hasKey };
+}
+
+/** Resolve a registry provider's key for the needsKey check only — the actual
+ *  call-time credential stays in the registry vault; nothing is copied. */
+async function registryProviderHasKey(provider: ProviderRecord): Promise<boolean> {
+  const auth = provider.auth;
+  if (auth.type === "none") return true;
+  if (auth.type === "env") return Boolean(envKey(auth.envVar));
+  try {
+    const vault = getVault();
+    return (await vault.get(auth.credentialId)) !== undefined;
+  } catch {
+    return false;
+  }
 }
