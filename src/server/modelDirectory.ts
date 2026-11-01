@@ -28,6 +28,8 @@ import type { Config } from "../config.js";
 import { clearFlexKey, flexConfig, flexCredentials, setFlexConfig } from "./modelTiers.js";
 import { getSettings, updateSettings, type Settings } from "./settings.js";
 import { getRegistry } from "../models/registry/init.js";
+import { saveRegistry } from "../models/registry/store.js";
+import { registryModelRef } from "../models/registry/registryClient.js";
 import type { ProviderRecord } from "../models/registry/types.js";
 import { getVault } from "../models/secrets/vault.js";
 import { log } from "../log.js";
@@ -273,6 +275,7 @@ export async function selectModel(cfg: Config, input: { id: unknown; source: unk
   if (source === "ollama" || source === "") {
     const patch: Settings = { theme: getSettings().theme, model: id };
     updateSettings(patch);
+    clearRegistryDefault();
     return { ok: true, tier: "standard", model: id, needsKey: false };
   }
 
@@ -281,18 +284,29 @@ export async function selectModel(cfg: Config, input: { id: unknown; source: unk
   let keyEnv = "";
   let registryHasKey = false;
   if (source.startsWith("registry:")) {
-    const provider = getRegistry()?.providers.find((p) => `registry:${p.id}` === source);
+    const registry = getRegistry();
+    const provider = registry?.providers.find((p) => `registry:${p.id}` === source);
     if (!provider) return { ok: false, error: `unknown registry provider: ${source}` };
     if (provider.kind === "anthropic" || provider.kind === "google-gemini") {
-      // PR #4 routes these protocols through the failover chain only; the
-      // picker's direct routing speaks OpenAI-compatible and Ollama today.
-      return { ok: false, error: "نماذج Anthropic/Gemini من السجل تعمل عبر سلسلة failover — الاختيار المباشر من المنتقي يدعم OpenAI-compatible وOllama" };
+      // Native protocols: route through the provider's own adapter. The pick
+      // writes a `registry:<provider>/<model>` ref into settings.model (the
+      // standard tier reads it) plus the registry defaultModelId — the run
+      // client (registryClient.ts) turns the ref into an adapter-backed
+      // client at start. This is the routing leg PR #4 left open.
+      const record = registry?.models.find((m) => m.providerId === provider.id && m.remoteId === id && m.enabled);
+      if (!record) return { ok: false, error: `نموذج غير معروف أو معطّل لهذا المزوّد: ${id}` };
+      const patch: Settings = { theme: getSettings().theme, model: registryModelRef(record.id) };
+      updateSettings(patch);
+      setRegistryDefault(registry!, record.id);
+      const needsKey = provider.auth.type !== "none" && !(await registryProviderHasKey(provider));
+      return { ok: true, tier: "standard", model: registryModelRef(record.id), needsKey };
     }
     if (provider.kind === "ollama") {
       const same = provider.baseUrl.replace(/\/+$/, "") === cfg.ollamaUrl.replace(/\/+$/, "");
       if (!same) return { ok: false, error: "مزوّد Ollama بعيد: وجّه ollamaUrl إليه في config.json ثم اختر نموذجه" };
       const patch: Settings = { theme: getSettings().theme, model: id };
       updateSettings(patch);
+      clearRegistryDefault();
       return { ok: true, tier: "standard", model: id, needsKey: false };
     }
     baseUrl = provider.baseUrl;
@@ -316,8 +330,40 @@ export async function selectModel(cfg: Config, input: { id: unknown; source: unk
 
   const stored = setFlexConfig({ baseUrl, model: id });
   if (!("ok" in stored) || !stored.ok) return { ok: false, error: "error" in stored ? stored.error : "flex save failed" };
+  clearRegistryDefault();
   const hasKey = providerHasKey || (!switchingProvider && flexNow.hasKey);
   return { ok: true, tier: "flex", model: `${id}:cloud`, needsKey: !hasKey };
+}
+
+/** Make a registry model the default: defaultModelId + head of the default
+ *  chain (the registry is the single source of truth for native-protocol
+ *  routing; the settings.model ref is what the run pipeline reads). */
+function setRegistryDefault(registry: NonNullable<ReturnType<typeof getRegistry>>, modelId: string): void {
+  try {
+    registry.defaultModelId = modelId;
+    const chain = registry.chains.find((c) => c.id === "default");
+    if (chain) {
+      chain.modelIds = [modelId, ...chain.modelIds.filter((m) => m !== modelId)];
+    } else {
+      registry.chains.push({ id: "default", label: "Default", modelIds: [modelId] });
+    }
+    saveRegistry(registry);
+  } catch (err) {
+    log.warn(`registry default not saved: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/** Any non-registry pick clears the registry default — one active primary. */
+function clearRegistryDefault(): void {
+  try {
+    const registry = getRegistry();
+    if (registry?.defaultModelId) {
+      registry.defaultModelId = null;
+      saveRegistry(registry);
+    }
+  } catch {
+    /* registry absent — nothing to clear */
+  }
 }
 
 /** Resolve a registry provider's key for the needsKey check only — the actual

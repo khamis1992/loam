@@ -223,13 +223,20 @@ describe("modelDirectory", () => {
     assert.equal(flexConfig().model, "gpt-custom");
   });
 
-  test("selectModel: registry anthropic explains the routing limit instead of silently misrouting", async () => {
+  test("selectModel: registry anthropic routes via the native-adapter ref (registryClient leg)", async () => {
     fs.writeFileSync(path.join(tmpDir, "model-registry.json"), JSON.stringify(REGISTRY_FIXTURE));
     const { initializeRegistry } = await import("../../models/registry/init.js");
     const { selectModel } = await import("../modelDirectory.js");
+    const { getSettings } = await import("../settings.js");
     await initializeRegistry({ ollamaUrl: "http://127.0.0.1:11434" } as never);
     const result = await selectModel({ ollamaUrl: "http://127.0.0.1:11434" } as never, { id: "claude-4", source: "registry:claude-direct" });
-    assert.equal(result.ok, false);
-    if (!result.ok) assert.match(result.error, /failover/);
+    assert.ok(result.ok, JSON.stringify(result));
+    if (result.ok) {
+      assert.equal(result.tier, "standard");
+      assert.equal(result.model, "registry:claude-direct/claude-4");
+      // The fixture's credential lives in the (unavailable) vault -> needsKey.
+      assert.equal(result.needsKey, true);
+    }
+    assert.equal(getSettings().model, "registry:claude-direct/claude-4");
   });
 });

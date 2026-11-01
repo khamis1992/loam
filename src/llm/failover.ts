@@ -7,6 +7,7 @@ import {
   type ChatOptions,
   type ChatResult,
 } from "../ollama.js";
+import { createAdapter } from "../models/adapters/index.js";
 import { log } from "../log.js";
 import { CancelledError, isCancelledError } from "../server/runControl.js";
 
@@ -231,12 +232,27 @@ export class JsonCooldownStore implements CooldownStore {
   }
 }
 
-/** Build the client used to talk to one provider. */
+/** Build the client used to talk to one provider. Native protocols
+ *  (anthropic/google-gemini, compiled from the model registry) get their own
+ *  adapters — routing them through the OpenAI-compatible client would send
+ *  the wrong wire format. Vault-credentialed registry providers resolve their
+ *  key through the async run path (registryClient) — here the env var is the
+ *  synchronous source, matching the rest of the chain. */
 export function createProviderClient(
   p: FailoverProvider,
   env: Record<string, string | undefined> = process.env,
 ): ProviderClient {
   if (p.kind === "ollama") return new OllamaClient(p.baseUrl);
+  if (p.kind === "anthropic" || p.kind === "google-gemini") {
+    const apiKey = p.apiKeyEnv ? (env[p.apiKeyEnv] ?? "").trim() : "";
+    const adapter = createAdapter(p.kind, {
+      baseUrl: p.baseUrl,
+      ...(apiKey ? { apiKey } : {}),
+      timeoutMs: 180_000,
+    });
+    const remoteId = p.model;
+    return { chat: (options: ChatOptions) => adapter.chat({ ...options, model: remoteId }) };
+  }
   const apiKey = p.apiKeyEnv ? (env[p.apiKeyEnv] ?? "").trim() : "";
   return new OllamaClient(p.baseUrl, { baseUrl: p.baseUrl, apiKey: apiKey || undefined });
 }

@@ -23,6 +23,7 @@ import { managedSessions } from "./server/managedSessions.js";
 import { createApproval, waitForDecision } from "./server/approvals.js";
 import { approvalStableKey, getReplayDecision, matchApprovalRule, saveApprovalDecision, taskApprovalAuto, taskSandboxMode, taskPermissionMode } from "./server/approvalRules.js";
 import { resolveSandboxPolicy } from "./policy/riskTier.js";
+import { createRegistryRunClient } from "./models/registry/registryClient.js";
 import { containerModeEnabled, removeContainer } from "./sandbox/container.js";
 import { DEFAULT_PERMISSION_MODE, isPlanMode } from "./policy/permissionModes.js";
 import type { Tool } from "./tools/registry.js";
@@ -293,10 +294,18 @@ async function main(): Promise<void> {
     // user's own base URL/key with a run-scoped client. The key never leaves this boundary.
     const flexCreds = opts.model && opts.model.trim().length > 0 ? flexCredentials() : null;
     const flexModelId = flexCreds ? (flexCreds.model.endsWith(":cloud") ? flexCreds.model : `${flexCreds.model}:cloud`) : "";
+    // Registry native-protocol pick (Anthropic/Gemini via the model picker):
+    // the `registry:<provider>/<model>` ref resolves to the provider's own
+    // adapter with its vault/env credential — the run pipeline speaks the
+    // internal ChatOptions/ChatResult either way. Precedence: explicit pick
+    // over Flex over the default client.
+    const registryRun = legalPlan ? null : await createRegistryRunClient(effectiveCfg.model);
     // A legal run never uses the runtime FailoverClient: a plain loopback client with no cloud config.
     const runOllama = legalPlan
       ? new OllamaClient(cfg.ollamaUrl)
+      : registryRun ? registryRun.client
       : flexCreds && effectiveCfg.model === flexModelId ? new OllamaClient(cfg.ollamaUrl, { baseUrl: flexCreds.baseUrl, apiKey: flexCreds.apiKey }) : ollama;
+    if (registryRun) log.info(`run ${task}: registry primary ${registryRun.label} (${registryRun.ref})`);
 
     // Loam task controls: explicit mode and execution effort.
     const effortBudgets: Record<string, number> = { max: 80, high: 64, medium: 40, low: 16 };
