@@ -339,6 +339,61 @@ export function handleModelRegistryRoutes(req: http.IncomingMessage, res: http.S
     return true;
   }
 
+  // DELETE /api/model-registry/providers/:id - Delete provider
+  if (url.startsWith("/api/model-registry/providers/") && req.method === "DELETE" && !url.includes("/discover")) {
+    const registry = getRegistry();
+    if (!registry) {
+      res.writeHead(503, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Registry not initialized" }));
+      return true;
+    }
+
+    try {
+      // Extract provider ID
+      const match = url.match(/\/api\/model-registry\/providers\/([^/]+)$/);
+      if (!match) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Invalid URL format" }));
+        return true;
+      }
+
+      const providerId = match[1];
+      const providerIndex = registry.providers.findIndex((p) => p.id === providerId);
+      
+      if (providerIndex === -1) {
+        res.writeHead(404, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Provider not found" }));
+        return true;
+      }
+
+      const provider = registry.providers[providerIndex];
+
+      // TODO: Delete vault key if auth.type === "header" && credentialId exists
+      // For now, just remove from registry
+
+      // Remove provider
+      registry.providers.splice(providerIndex, 1);
+
+      // Remove associated models
+      const removedModels = registry.models.filter((m) => m.providerId === providerId);
+      registry.models = registry.models.filter((m) => m.providerId !== providerId);
+
+      // Save registry
+      saveRegistry(registry);
+
+      log.info(`[registry] Deleted provider ${provider.label} and ${removedModels.length} associated models`);
+
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, removedModels: removedModels.length }));
+      return true;
+    } catch (error) {
+      log.error(`[registry] Failed to delete provider: ${error}`);
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
+      return true;
+    }
+  }
+
   // POST /api/model-registry/models - Add models (batch)
   if (url === "/api/model-registry/models" && req.method === "POST") {
     const registry = getRegistry();

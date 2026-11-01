@@ -367,7 +367,7 @@ async function testProviderConnection() {
 /**
  * Show Discover Models dialog.
  */
-function showDiscoverDialog(providerId) {
+async function showDiscoverDialog(providerId) {
   const dialog = document.createElement('div');
   dialog.className = 'modal-overlay';
   dialog.innerHTML = `
@@ -385,29 +385,139 @@ function showDiscoverDialog(providerId) {
   
   document.body.appendChild(dialog);
   
-  // TODO: Call GET /api/model-registry/providers/:id/discover
-  setTimeout(() => {
+  try {
+    // Call discover API
+    const res = await fetch(`/api/model-registry/providers/${providerId}/discover`);
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || `HTTP ${res.status}`);
+    }
+    
+    const data = await res.json();
+    const models = data.models || [];
+    
     const body = dialog.querySelector('.modal-body');
     body.innerHTML = `
-      <p>تم العثور على 5 نماذج / Found 5 models</p>
-      <div class="discovered-models">
-        <div class="model-item">
-          <label>
-            <input type="checkbox" checked>
-            gpt-4-turbo
-          </label>
-        </div>
-        <div class="model-item">
-          <label>
-            <input type="checkbox" checked>
-            gpt-3.5-turbo
-          </label>
-        </div>
+      <p>تم العثور على ${models.length} نماذج / Found ${models.length} models</p>
+      <div class="discovered-models" id="discovered-models-list">
+        ${models.map((m, i) => `
+          <div class="model-item">
+            <label>
+              <input type="checkbox" checked data-index="${i}">
+              ${m.remoteId || m.id || 'Unknown'}
+              ${m.contextWindow ? `<span class="model-context">(${m.contextWindow.toLocaleString()} tokens)</span>` : ''}
+            </label>
+          </div>
+        `).join('')}
       </div>
       <div class="form-actions">
         <button class="btn" onclick="this.closest('.modal-overlay').remove()">إلغاء / Cancel</button>
-        <button class="btn btn-primary" onclick="alert('Models added'); this.closest('.modal-overlay').remove()">إضافة / Add Selected</button>
+        <button class="btn btn-primary" onclick="addDiscoveredModels('${providerId}', ${JSON.stringify(models).replace(/"/g, '&quot;')})">إضافة / Add Selected</button>
       </div>
     `;
-  }, 1500);
+  } catch (error) {
+    console.error('[models-settings] Discovery failed:', error);
+    const body = dialog.querySelector('.modal-body');
+    body.innerHTML = `
+      <p class="error">فشل الاكتشاف / Discovery failed</p>
+      <p>${error.message}</p>
+      <div class="form-actions">
+        <button class="btn" onclick="this.closest('.modal-overlay').remove()">إغلاق / Close</button>
+      </div>
+    `;
+  }
+}
+
+/**
+ * Add discovered models to registry.
+ */
+async function addDiscoveredModels(providerId, allModels) {
+  try {
+    // Get selected models
+    const checkboxes = document.querySelectorAll('#discovered-models-list input[type="checkbox"]:checked');
+    const selected = Array.from(checkboxes).map(cb => {
+      const idx = parseInt(cb.dataset.index);
+      return allModels[idx];
+    });
+    
+    if (selected.length === 0) {
+      alert('الرجاء اختيار نموذج واحد على الأقل / Please select at least one model');
+      return;
+    }
+    
+    // Send to API
+    const res = await fetch('/api/model-registry/models', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        providerId,
+        models: selected,
+      }),
+    });
+    
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || `HTTP ${res.status}`);
+    }
+    
+    const result = await res.json();
+    console.log('[models-settings] Added models:', result);
+    
+    // Close dialog
+    document.querySelector('.modal-overlay').remove();
+    
+    // Refresh list
+    const registry = await loadRegistry();
+    if (registry) {
+      renderProviders(registry.providers);
+      renderModels(registry.models);
+    }
+  } catch (error) {
+    console.error('[models-settings] Failed to add models:', error);
+    alert(`فشلت إضافة النماذج / Failed to add models: ${error.message}`);
+  }
+}
+
+/**
+ * Show Edit Provider dialog.
+ */
+function showEditProviderDialog(providerId) {
+  alert(`Edit provider ${providerId} - TODO`);
+}
+
+/**
+ * Confirm delete provider.
+ */
+function confirmDeleteProvider(providerId) {
+  if (confirm('هل أنت متأكد من حذف هذا المزود؟ / Are you sure you want to delete this provider?')) {
+    deleteProvider(providerId);
+  }
+}
+
+/**
+ * Delete provider.
+ */
+async function deleteProvider(providerId) {
+  try {
+    const res = await fetch(`/api/model-registry/providers/${providerId}`, {
+      method: 'DELETE',
+    });
+    
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || `HTTP ${res.status}`);
+    }
+    
+    console.log('[models-settings] Deleted provider:', providerId);
+    
+    // Refresh list
+    const registry = await loadRegistry();
+    if (registry) {
+      renderProviders(registry.providers);
+      renderModels(registry.models);
+    }
+  } catch (error) {
+    console.error('[models-settings] Failed to delete provider:', error);
+    alert(`فشل الحذف / Delete failed: ${error.message}`);
+  }
 }
