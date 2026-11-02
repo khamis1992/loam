@@ -89,7 +89,7 @@
 
 - Commits on `fix/loam-service-routes`: `642f8b9` P1, `7df6f74` P2, `6684cfb` P3, `c396214` P4, `0bb45ef` P5, `e36de67` P6, `386b8c4` P7, `0083357` P8, `759c917` P9, `c7a1937` P10.
 - Left uncommitted on purpose: release builds, probe scripts, screenshots, the recorder package, and the earlier updater and shell edits. Those files are still in the working tree.
-- The draft pull request is not merged. R17 stays FAIL.
+- Draft pull request: https://github.com/khamis1992/loam/pull/6 — open, not merged. R17 stays FAIL.
 
 ## 2026-11-02 00:09 +03 — isolated desktop launch
 
