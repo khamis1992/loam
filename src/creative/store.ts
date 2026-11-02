@@ -95,6 +95,21 @@ export function validateScene(input: unknown, workspace?: string): Omit<Scene, "
   });
   return { version: 1, title: text(v.title, 300), nodes, environment: { background: color(environment.background), lightIntensity: number(environment.lightIntensity, 0, 10), exposure: number(environment.exposure, .1, 5), grid: bool(environment.grid) }, camera: { position: vector(camera.position), target: vector(camera.target), fov: number(camera.fov, 20, 100) }, duration: number(v.duration, 1, 60) };
 }
+/** A product on a metal cylinder. Used when the request names that scene and no scene object was supplied. */
+export function metalBaseProductScene(): Omit<Scene, "revision"> {
+  return {
+    version: 1,
+    title: "Product",
+    nodes: [
+      { id: "base", name: "Metal base", type: "cylinder", position: [0, 0.15, 0], rotation: [0, 0, 0], scale: [1.2, 0.15, 1.2], material: { color: "#8d959e", metalness: 1, roughness: 0.28 }, visible: true, spin: 0 },
+      { id: "product", name: "Product", type: "box", position: [0, 1.1, 0], rotation: [0, 0.4, 0], scale: [0.55, 0.7, 0.55], material: { color: "#d8c3a5", metalness: 0.15, roughness: 0.5 }, visible: true, spin: 0 },
+    ],
+    environment: { background: "#1b232a", lightIntensity: 2.2, exposure: 1.1, grid: true },
+    camera: { position: [3.2, 2.1, 4], target: [0, 0.7, 0], fov: 38 },
+    duration: 4,
+  };
+}
+
 export function readScene(workspace: string): Scene | null {
   const file = taskPath(workspace, ".loam/creative.json");
   if (!fs.existsSync(file)) return null;
