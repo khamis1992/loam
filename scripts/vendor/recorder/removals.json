@@ -1,0 +1,33 @@
+{
+  "_doc": "Loam Recorder R0 removals (EMBED_PLAN section 6). Applied to the pinned upstream checkout before any install. Paths are relative to the upstream root.",
+  "deletePaths": [
+    "electron/usage-ping.ts", "electron/usage-ping.test.ts",
+    "electron/auto-updater.ts", "electron/auto-updater.test.ts",
+    "electron/background-update.ts", "electron/background-update.test.ts",
+    "electron/update-checker.ts", "electron/update-checker.test.ts",
+    "electron/install-channel.ts", "electron/install-channel.test.ts",
+    "electron/star-prompt.ts", "electron/star-prompt.test.ts",
+    "electron/ai-edition",
+    "electron/mcp",
+    "electron/cli",
+    "electron/native-bridge/services/aiEditionService.ts",
+    "electron/native-bridge/services/aiEditionService.lazyLlmConfig.test.ts",
+    "electron/stt/modelManager.ts", "electron/stt/modelManager.test.ts",
+    "scripts/convert-wav2vec2-gguf.mjs",
+    "website", "workbench", "plugin", "tools", "docs", "technical-documentation",
+    "vite.v4preview.config.ts", "vitest.workbench.config.ts", "tsconfig.workbench.json"
+  ],
+  "dropDependencies": [
+    "@langchain/anthropic", "@langchain/core", "@langchain/mistralai", "@langchain/openai",
+    "langchain", "@modelcontextprotocol/sdk", "electron-updater", "husky"
+  ],
+  "dropScripts": ["prepare", "postinstall", "preinstall", "install"],
+  "setDependencies": {
+    "zod": "^4.6.7"
+  },
+  "overrides": {
+    "@tiptap/core": "^3.32.2",
+    "prosemirror-view": "^1.42.9",
+    "zod": "^4.6.7"
+  }
+}
