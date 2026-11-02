@@ -158,7 +158,13 @@ interface OpenAIUsage {
 interface OpenAIStreamChunk {
   model?: string;
   choices?: Array<{
-    delta?: { content?: string | null; tool_calls?: Array<{ index?: number; id?: string; function?: { name?: string; arguments?: string } }> };
+    delta?: {
+      content?: string | null;
+      reasoning_content?: string | null;
+      reasoning?: string | null;
+      thinking?: string | null;
+      tool_calls?: Array<{ index?: number; id?: string; function?: { name?: string; arguments?: string } }>;
+    };
     finish_reason?: string | null;
   }>;
   usage?: OpenAIUsage;
@@ -296,6 +302,7 @@ export class OllamaClient {
     const decoder = new TextDecoder();
     let buffer = "";
     let content = "";
+    let thinking = "";
     const toolAcc = new Map<number, { id: string; name: string; args: string }>();
     let model = opts.model;
     let doneReason: string | undefined;
@@ -319,6 +326,11 @@ export class OllamaClient {
       if (choice?.delta?.content) {
         content += choice.delta.content;
         opts.onToken?.(choice.delta.content);
+      }
+      const reasoning = choice?.delta?.reasoning_content || choice?.delta?.reasoning || choice?.delta?.thinking;
+      if (typeof reasoning === "string" && reasoning) {
+        thinking += reasoning;
+        opts.onThinking?.(reasoning);
       }
       for (const call of choice?.delta?.tool_calls ?? []) {
         const index = call.index ?? 0;
@@ -351,9 +363,10 @@ export class OllamaClient {
     if (buffer.trim().startsWith("data:")) consume(buffer.trim().slice(5).trim());
     if (!sawFinish) throw new IncompleteModelStream("cloud");
     const toolCalls = [...toolAcc.entries()].sort((a, b) => a[0] - b[0]).map(([, call]) => ({ function: { name: call.name, arguments: normalizeArgs(call.args) } }));
-    log.debug(`cloud chat model=${model} tools=${toolCalls.length} chars=${content.length}`);
+    log.debug(`cloud chat model=${model} tools=${toolCalls.length} chars=${content.length} thinking=${thinking.length}`);
     return {
       content,
+      ...(thinking ? { thinking } : {}),
       toolCalls,
       model,
       doneReason,

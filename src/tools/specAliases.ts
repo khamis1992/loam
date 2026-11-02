@@ -7,6 +7,11 @@ import { BoundedMap } from "../memory/cache.js";
 import { registerCacheStats } from "../memory/stats.js";
 
 const PLAN_STEP_STATUSES: readonly PlanStepStatus[] = ["pending", "doing", "done", "blocked", "cancelled"];
+const PLAN_STATUS_ALIASES: Record<string, PlanStepStatus> = { in_progress: "doing", completed: "done", todo: "pending" };
+
+function normalizePlanStatus(value: string): string {
+  return PLAN_STATUS_ALIASES[value] ?? value;
+}
 
 interface ResolvedPlanStep {
   id: string;
@@ -17,7 +22,7 @@ interface ResolvedPlanStep {
   note?: string;
 }
 
-function parsePlanSteps(rawSteps: unknown[], currentStep: number): { steps: ResolvedPlanStep[]; error?: string } {
+export function parsePlanSteps(rawSteps: unknown[], currentStep: number): { steps: ResolvedPlanStep[]; error?: string } {
   const steps: ResolvedPlanStep[] = [];
   for (const raw of rawSteps) {
     if (typeof raw !== "object" || raw === null) continue;
@@ -25,7 +30,7 @@ function parsePlanSteps(rawSteps: unknown[], currentStep: number): { steps: Reso
     const title = str(step, "title").trim();
     if (!title) continue;
 
-    const provided = step.status;
+    const provided = typeof step.status === "string" ? normalizePlanStatus(step.status) : step.status;
     if (provided !== undefined && (typeof provided !== "string" || !PLAN_STEP_STATUSES.includes(provided as PlanStepStatus))) {
       return { steps, error: `step "${title}" has invalid status ${JSON.stringify(provided)}; expected one of ${PLAN_STEP_STATUSES.join(", ")}` };
     }
@@ -74,7 +79,7 @@ export function planTool(): Tool {
             properties: {
               title: { type: "string", maxLength: 120 },
               id: { type: "string", maxLength: 80 },
-              status: { enum: [...PLAN_STEP_STATUSES] },
+              status: { enum: [...PLAN_STEP_STATUSES, "in_progress", "completed", "todo"], description: "pending, doing, done, blocked, cancelled. Aliases: todo=pending, in_progress=doing, completed=done." },
               note: { type: "string", maxLength: 400 },
             },
           },

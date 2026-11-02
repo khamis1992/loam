@@ -1,0 +1,136 @@
+diff --git a/src/components/ai-edition/LeftPanel.tsx b/src/components/ai-edition/LeftPanel.tsx
+index af893cb..e3bacc5 100644
+--- a/src/components/ai-edition/LeftPanel.tsx
++++ b/src/components/ai-edition/LeftPanel.tsx
+@@ -23,7 +23,7 @@ import {
+ 	getReasoningEffortOptions,
+ 	PROVIDER_DEFINITIONS,
+ 	type ReasoningEffort,
+-} from "../../../electron/ai-edition/provider-registry";
++} from "@/lib/recorder/provider-registry";
+ import { ChatWelcome } from "./ChatWelcome";
+ import { canSendChat } from "./chatAvailability";
+ import { adoptStoredUserMessage } from "./chatTranscript";
+diff --git a/src/components/ai-edition/ProviderSettings.tsx b/src/components/ai-edition/ProviderSettings.tsx
+index e227ec9..48cb8f9 100644
+--- a/src/components/ai-edition/ProviderSettings.tsx
++++ b/src/components/ai-edition/ProviderSettings.tsx
+@@ -28,7 +28,7 @@ import {
+ 	getReasoningEffortOptions,
+ 	PROVIDER_DEFINITIONS,
+ 	type ProviderDefinition,
+-} from "../../../electron/ai-edition/provider-registry";
++} from "@/lib/recorder/provider-registry";
+ import { McpServerSettings } from "./McpServerSettings";
+ import { ModalShell } from "./Modals";
+ import styles from "./NewEditorShell.module.css";
+diff --git a/src/hooks/useUpdateBadge.ts b/src/hooks/useUpdateBadge.ts
+index 6c44b58..7ddfb9a 100644
+--- a/src/hooks/useUpdateBadge.ts
++++ b/src/hooks/useUpdateBadge.ts
+@@ -1,34 +1,10 @@
+-import { useEffect, useState } from "react";
+-import type { UpdateBadge } from "../../electron/background-update";
++/** Loam Recorder: upstream self-update is removed; Loam's own updater is the only one. */
++export interface UpdateBadge {
++	state: "available" | "ready";
++	version: string;
++}
+ 
+-/**
+- * The update button's state, as the main process's background check found it: null hides the
+- * button. Subscribed before the first read, so a badge pushed while that read is in flight is not
+- * overwritten by the older answer.
+- */
++/** Always null: the update button stays hidden inside Loam. */
+ export function useUpdateBadge(): UpdateBadge | null {
+-	const [badge, setBadge] = useState<UpdateBadge | null>(null);
+-
+-	useEffect(() => {
+-		const api = window.electronAPI;
+-		let pushed = false;
+-		const unsubscribe = api?.onUpdateBadgeChanged?.((next) => {
+-			pushed = true;
+-			setBadge(next);
+-		});
+-		void api
+-			?.getUpdateBadge?.()
+-			.then((current) => {
+-				if (!pushed) setBadge(current);
+-			})
+-			.catch(() => {
+-				// No badge is the safe answer: the button stays hidden.
+-			});
+-		return () => {
+-			pushed = true;
+-			unsubscribe?.();
+-		};
+-	}, []);
+-
+-	return badge;
++	return null;
+ }
+diff --git a/src/lib/recorder/provider-registry.ts b/src/lib/recorder/provider-registry.ts
+new file mode 100644
+index 0000000..7642ffa
+--- /dev/null
++++ b/src/lib/recorder/provider-registry.ts
+@@ -0,0 +1,45 @@
++// Loam Recorder: the upstream LLM provider registry is removed (no in-app LLM
++// calls; the Loam agent drives the Recorder over its bridge). This stub keeps
++// the renderer's imports compiling with an empty provider list.
++export interface ProviderDefinition {
++	id: string;
++	label: string;
++	defaultModel: string;
++	authKind: "api-key";
++	supportsReasoningEffort: boolean;
++	requiresBaseUrl?: boolean;
++	setupHint?: string;
++	envKeys: string[];
++	baseUrl?: string;
++	wireProtocol?: "anthropic" | "openai";
++}
++
++export const PROVIDER_DEFINITIONS: ProviderDefinition[] = [];
++
++export const REASONING_EFFORT_OPTIONS = ["none"] as const;
++export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
++
++export const REASONING_EFFORT_LABELS: Record<ReasoningEffort, string> = {
++	none: "None",
++	minimal: "Minimal",
++	low: "Low",
++	medium: "Medium",
++	high: "High",
++	xhigh: "Extra high",
++};
++
++export function getReasoningEffortOptions(_providerId: string): readonly ReasoningEffort[] {
++	return REASONING_EFFORT_OPTIONS;
++}
++
++export function getReasoningEffortLabel(_providerId: string, effort: ReasoningEffort): string {
++	return REASONING_EFFORT_LABELS[effort];
++}
++
++export function normalizeProviderId(_provider?: string): string | undefined {
++	return undefined;
++}
++
++export function getProviderDefinition(_id: string): ProviderDefinition | undefined {
++	return undefined;
++}
+diff --git a/src/native/browserShim.ts b/src/native/browserShim.ts
+index 3b7b704..04061a9 100644
+--- a/src/native/browserShim.ts
++++ b/src/native/browserShim.ts
+@@ -3,7 +3,7 @@
+ // The dev server at http://localhost:5173 can be opened in Chrome/Firefox for
+ // rapid iteration without the Electron window overhead.
+ 
+-import { PROVIDER_DEFINITIONS } from "../../electron/ai-edition/provider-registry";
++import { PROVIDER_DEFINITIONS } from "@/lib/recorder/provider-registry";
+ import { axcutSchemaVersion, migrateRawDocumentToCurrent } from "../lib/ai-edition/schema";
+ import {
+ 	compareStylePresets,

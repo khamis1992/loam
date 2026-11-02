@@ -92,6 +92,8 @@ export type AgentEvent =
   | { type: "task"; taskId: string }
   | { type: "step"; index: number }
   | { type: "assistant_token"; text: string }
+  /** Model reasoning trace, separate from the reply. The client shows it as a quiet thinking block. */
+  | { type: "thinking"; text: string }
   | { type: "assistant_message"; text: string }
   | { type: "tool_call"; name: string; args: unknown }
   | { type: "tool_result"; name: string; ok: boolean; summary: string; ms?: number; content?: string; kbSeedIds?: string[]; kbSeeds?: Array<{ id: string; title: string; tags: string[]; preview: string }> }

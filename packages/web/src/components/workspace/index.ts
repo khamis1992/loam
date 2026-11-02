@@ -6,6 +6,7 @@
 // import is guarded. Registrations are notified via subscribeWorkspaceEditors.
 void import('./video/register').catch(() => undefined);
 void import('./loamVideo/register').catch(() => undefined);
+void import('./recorder/register').catch(() => undefined);
 void import('./doc/register').catch(() => undefined);
 void import('./sheet/register').catch(() => undefined);
 void import('./slides/register').catch(() => undefined);
@@ -31,10 +32,12 @@ export { EditorFallbackCard, EditorOverrideMenu, editorLabel } from './gateway';
 export type { GatewayFile } from './gateway';
 export {
   decideWorkspaceOpen,
+  mergeWorkspaceTarget,
   decideUserMessageOpen,
   latestWorkspaceDecision,
   isWorkspaceToolName,
   isVideoStudioTool,
+  isRecorderTool,
   isCanvasSignalTool,
   hasVideoEditIntent,
   type WorkspaceOpenTarget,

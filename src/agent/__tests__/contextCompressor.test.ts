@@ -15,6 +15,7 @@ import path from "node:path";
 import { describe, it, mock } from "node:test";
 
 import {
+  archiveTranscript,
   compressContext,
   estimateTokens,
   getContextWindow,
@@ -35,7 +36,7 @@ import {
 } from "../contextCompressor.js";
 import { ReadState } from "../../tools/readState.js";
 import { reminderMessage } from "../reminders.js";
-import type { Config } from "../../config.js";
+import { loadConfig, type Config } from "../../config.js";
 import type { ChatMessage, ChatResult, OllamaClient } from "../../ollama.js";
 import type { AgentEvent, Emit } from "../events.js";
 
@@ -192,6 +193,23 @@ describe("context compressor", () => {
     assert.equal(result.step, 0);
     assert.deepEqual(result.messages, messages);
     assert.equal(events.length, 0);
+  });
+
+  it("uses a 1,000,000 token window for glm-5.3 cloud models", () => {
+    const cfg = loadConfig();
+    assert.equal(getContextWindow(cfg, "glm-5.3-flash:cloud"), 1_000_000);
+    assert.equal(getContextWindow(cfg, "glm-5.3:cloud"), 1_000_000);
+    assert.equal(getContextWindow(cfg, "glm-4:latest"), 32768);
+  });
+
+  it("saves the transcript before compaction and points the reminder at that file", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "loam-transcript-"));
+    const file = archiveTranscript(dir, [
+      { role: "user", content: "keep the Qatar slide id qatar-overview" },
+      { role: "assistant", content: "saved" },
+    ]);
+    assert.ok(file);
+    assert.match(fs.readFileSync(file!, "utf8"), /qatar-overview/);
   });
 
   it("matches the context window by longest prefix", () => {

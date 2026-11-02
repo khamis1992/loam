@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { directReturnText, stripDelegateHeader } from "../handoff/returnDirect.js";
 import { compositeScore, rerank } from "../memory/rank.js";
 import { scoreTrajectory, judgeTrajectory } from "../evals/trajectory.js";
-import { isCloudModel, pickCloudModel, NoCloudModelError } from "../../llm/cloudModel.js";
+import { isCloudModel, isCloudResponse, pickCloudModel, NoCloudModelError } from "../../llm/cloudModel.js";
 import { clampOrchestration, ORCHESTRATION_DEFAULTS } from "../config.js";
 import { scriptedPort, testConfig } from "./helpers.js";
 
@@ -69,6 +69,8 @@ test("cloud-only rule: local and LAN models never qualify", () => {
   assert.equal(isCloudModel(cfg, "unknown"), false);
   assert.equal(pickCloudModel(cfg, "x", ["", "qwen3:8b", "remote-model"]), "remote-model");
   assert.throws(() => pickCloudModel(cfg, "ledger", ["qwen3:8b"]), NoCloudModelError);
+  assert.equal(isCloudResponse(cfg, "glm-5.3-flash:cloud", "glm-5.3"), true);
+  assert.equal(isCloudResponse(cfg, "glm-5.3-flash:cloud", "qwen3:8b"), false);
 });
 
 test("config clamp bounds hand-edited values", () => {

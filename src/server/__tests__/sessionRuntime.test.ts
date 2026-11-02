@@ -76,13 +76,13 @@ describe("session runtime (budget + sleep together)", () => {
     assert.equal(runtime.isStoppedOnBudget("s1"), true);
   });
 
-  it("stops on the token budget as well", () => {
+  it("warns when the token ceiling is reached and keeps the session running", () => {
     runtime.markActive("s1");
     runtime.recordUsage("s1", 800, 0);
     assert.equal(runtime.evaluate("s1").action, "warn");
     runtime.recordUsage("s1", 200, 0);
-    assert.equal(runtime.evaluate("s1").action, "stop");
-    assert.equal(runtime.isStoppedOnBudget("s1"), true);
+    assert.equal(runtime.evaluate("s1").action, "warn");
+    assert.equal(runtime.isStoppedOnBudget("s1"), false);
   });
 
   it("raising the budget clears the stop and resumes the session", () => {

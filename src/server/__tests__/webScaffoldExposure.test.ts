@@ -79,13 +79,14 @@ describe("web_scaffold gateway exposure", () => {
     }
   });
 
-  it("web_scaffold is registered and wired into ALWAYS_ON_TOOLS", () => {
+  it("web_scaffold is registered on the build catalog, not on every run", () => {
     assert.ok(registry.names().includes("web_scaffold"));
-    assert.ok(ALWAYS_ON_TOOLS.includes("web_scaffold"));
+    assert.ok(!ALWAYS_ON_TOOLS.includes("web_scaffold"));
+    assert.ok(capabilitiesAllow.includes("web_scaffold"));
   });
 
-  it("web_scaffold is not a raw gateway tool (it is granted via the always-on merge)", () => {
-    assert.ok(!capabilitiesAllow.includes("web_scaffold"));
+  it("web_scaffold reaches a build run through the mode catalog", () => {
+    assert.ok(capabilitiesAllow.includes("web_scaffold"));
   });
 
   it("a build-mode agent run exposes web_scaffold to the model", () => {

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, Tray, nativeImage, shell, dialog, ipcMain, protocol, utilityProcess, safeStorage } = require("electron");
+const { app, BrowserWindow, Menu, Tray, nativeImage, shell, dialog, ipcMain, protocol, utilityProcess, safeStorage, globalShortcut } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const http = require("node:http");
@@ -7,6 +7,12 @@ const updater = require("./updater.cjs");
 const inAppBrowser = require("./inAppBrowser.cjs");
 const mcpBridge = require("./mcp-bridge.cjs");
 const vendorProtocol = require("./vendorProtocol.cjs");
+const recorderHud = require("./recorder/hud.cjs");
+const recorderFeed = require("./recorder/indicator.cjs").createFeed({
+  showCountdown: (seconds) => recorderHud.showCountdown(seconds),
+  showRecording: () => recorderHud.showRecording(),
+  clear: () => recorderHud.clear(),
+});
 const { isTrustedExternalUrl } = require("./externalUrl.cjs");
 const { IPC_INVOKE, IPC_EVENT_PREFIX, IPC_META, IPC_SYNC, NAMESPACES } = require("./ipc-constants.cjs");
 const { sampleRendererRssMB, selectRendererMetrics } = require("./memorySampler.cjs");
@@ -15,6 +21,11 @@ const acceptanceDebugPort = Number(process.env.LOAM_ACCEPTANCE_DEBUG_PORT);
 if (Number.isInteger(acceptanceDebugPort) && acceptanceDebugPort >= 1024 && acceptanceDebugPort <= 65535) {
   app.commandLine.appendSwitch("remote-debugging-port", String(acceptanceDebugPort));
 }
+// The Craft editor answers the agent through renderer timers. A covered window
+// must not freeze those timers, or a command sits unanswered until the server gives up.
+app.commandLine.appendSwitch("disable-renderer-backgrounding");
+app.commandLine.appendSwitch("disable-background-timer-throttling");
+app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
 
 // ---------------------------------------------------------------------------
 // Local-only memory sampling (J6). The desktop main process is the only place
@@ -96,6 +107,7 @@ if (process.env.LOAM_USER_DATA_DIR) {
 
 const PORT = Number(process.env.LOAM_PORT || process.env.MANUS_LOCAL_PORT || 3939);
 const BASE = "http://127.0.0.1:" + PORT;
+const PROTOCOL_PORT = Number(process.env.AS_PROTOCOL_PORT || 8787);
 const BRIDGE_PORT = Number(process.env.LOAM_MCP_BRIDGE_PORT || 3002);
 
 process.env.MANUS_LOCAL_ROOT = ROOT;
@@ -107,7 +119,7 @@ const EXPECTED_VERSION = require(path.join(ROOT, "package.json")).version;
 
 const WEB_OUT = path.join(ROOT, "packages", "web", "out");
 const APP_ORIGIN = "app://agent";
-const AGENT_STUDIO_BACKEND = "http://127.0.0.1:8787";
+const AGENT_STUDIO_BACKEND = "http://127.0.0.1:" + PROTOCOL_PORT;
 const MIME_TYPES = {
   ".html": "text/html", ".txt": "text/plain", ".css": "text/css", ".js": "application/javascript",
   ".mjs": "application/javascript", ".json": "application/json", ".png": "image/png",
@@ -269,7 +281,10 @@ async function ensureServer() {
     // Legal mode: answer the server's key request with the DPAPI-unwrapped matters key.
     require("./legal-key.cjs").attachLegalKey(serverChild, app, safeStorage);
     serverChild.on("error", error => { exited = true; console.error("[electron] server: " + error.message); });
-    serverChild.stdout?.on("data", (d) => process.stdout.write("[server] " + d));
+    serverChild.stdout?.on("data", (d) => {
+      process.stdout.write("[server] " + d);
+      recorderFeed.push(d);
+    });
     serverChild.stderr?.on("data", (d) => process.stderr.write("[server] " + d));
     const startupDeadline = Date.now() + 120_000;
     while (Date.now() < startupDeadline) {
@@ -311,8 +326,11 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: true,
       preload: path.join(__dirname, "preload.cjs"),
+      // A covered window must still run the editor bridge timers, or a command waits until the server gives up.
+      backgroundThrottling: false,
     },
   });
+  win.webContents.setBackgroundThrottling(false);
   const url = startUrl();
   let reloadAttempts = 0;
   win.webContents.on("did-fail-load", () => {
@@ -388,7 +406,7 @@ function createTray() {
     { type: "separator" },
     { type: "separator" },
     { label: "التحقق من التحديثات…", click: () => { void updater.checkInteractive(); } },
-    { label: "تثبيت التحديث وإعادة التشغيل", click: () => { void updater.installNow().then(ok => { if (!ok) return updater.checkInteractive(); }).catch(error => dialog.showErrorBox("التحديث", error.message)); } },
+    { label: "تثبيت التحديث وإعادة التشغيل", click: () => { void updater.installNow().then(async (ok) => { if (!ok) await updater.applyLocalUpdate(); }).catch(error => dialog.showErrorBox("التحديث", error.message)); } },
     { type: "separator" },
     { label: "خروج", click: () => app.quit() },
   ]);
@@ -555,7 +573,7 @@ const ipcHandlers = {
   },
   updater: {
     getStatus: () => updater.getStatus(),
-    checkForUpdates: () => { void updater.check(); return updater.getStatus(); },
+    checkForUpdates: () => updater.check(),
     restartNow: () => updater.installNow(),
     getPolicyContext: () => ({ storeManaged: false, platform: process.platform, channel: updater.feedUrl() }),
   },
@@ -689,6 +707,8 @@ protocol.registerSchemesAsPrivileged([
   { scheme: "loamfilm", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
   { scheme: "loamcraft", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
   { scheme: "loameffect", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+  // loamrecorder serves only the vendored recorder dist. corsEnabled stays off.
+  { scheme: "loamrecorder", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
 ]);
 
 // Native folder picker for choosing the working repo/folder.
@@ -833,8 +853,9 @@ const ownsInstance = app.requestSingleInstanceLock();
 ipcMain.handle('loam-updates', async (event, action) => {
   if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame || new URL(event.senderFrame.url).origin !== BASE) throw new Error('غير مسموح.');
   if (action === 'status') return updater.getStatus();
-  if (action === 'check') { void updater.check();return updater.getStatus(); }
-  if (action === 'install') { if (!await updater.installNow()) throw new Error('لم يكتمل تنزيل التحديث بعد.');return { state: 'installing' }; }
+  if (action === 'check') return updater.check();
+  if (action === 'apply') return updater.applyLocalUpdate();
+  if (action === 'install') { if (!await updater.installNow()) await updater.applyLocalUpdate(); return updater.getStatus(); }
   throw new Error('إجراء غير صالح.');
 });
 if (!ownsInstance) app.quit();
@@ -879,6 +900,15 @@ app.whenReady().then(async () => {
   localAuthUserData = localAuth.userData;
   process.env.LOAM_LOCAL_TOKEN = localAuthToken;
   process.env.LOAM_LOCAL_TOKEN_DIR = localAuthUserData;
+  globalShortcut.register("Ctrl+Shift+Alt+S", () => {
+    const sessionId = recorderFeed.sessionId();
+    if (!sessionId) return;
+    void fetch(`${BASE}/api/recorder/call`, {
+      method: "POST",
+      headers: { ...authHeader(localAuthToken), "content-type": "application/json" },
+      body: JSON.stringify({ method: "record.stop", params: { sessionId } }),
+    }).catch(() => {});
+  });
   sessionToken = readLocalStorage()["session_token"] || "";
 
   registerAgentStudioProtocol();
@@ -943,6 +973,12 @@ app.whenReady().then(async () => {
     }
     const ext = path.extname(filePath).toLowerCase();
     const mime = MIME_TYPES[ext] || "application/octet-stream";
+    if (ext === ".html") {
+      const boot = `<script>window.__AGENT_STUDIO_ENV__=Object.assign({},window.__AGENT_STUDIO_ENV__,{apiBase:${JSON.stringify(AGENT_STUDIO_BACKEND)},socketBase:${JSON.stringify(AGENT_STUDIO_BACKEND)},loamBase:${JSON.stringify(BASE)}});</script>`;
+      let html = fs.readFileSync(filePath, "utf8");
+      html = /<\/head>/i.test(html) ? html.replace(/<\/head>/i, boot + "</head>") : boot + html;
+      return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    }
     return new Response(fs.readFileSync(filePath), { headers: { "Content-Type": mime } });
   });
 
@@ -987,6 +1023,28 @@ app.whenReady().then(async () => {
   // electron/craft/<app>/dist and traversal is rejected by the shared helper.
   // The apps expose their own postMessage bridge (loam_bridge.rs) built into
   // the wasm, so no overlay/relay file is needed here.
+  const RECORDER_DIST = path.join(ROOT, "electron", "recorder", "dist");
+  const RECORDER_OVERLAY = path.join(ROOT, "electron", "recorder");
+  warnIfVendorDistMissing("Loam Recorder", RECORDER_DIST, "vendor:recorder");
+  protocol.handle("loamrecorder", async (request) => {
+    const url = new URL(request.url);
+    let pathname = decodeURIComponent(url.pathname);
+    if (pathname === "/" || pathname.endsWith("/")) pathname += "index.html";
+    const filePath = vendorProtocol.resolveVendorFile(pathname, [RECORDER_DIST, RECORDER_OVERLAY]);
+    if (!filePath) return vendorProtocol.vendorNotFound();
+    const ext = path.extname(filePath).toLowerCase();
+    if (ext === ".html") {
+      let html = fs.readFileSync(filePath).toString("utf8");
+      if (!html.includes("bridge-relay.js")) {
+        html = /<\/head>/i.test(html)
+          ? html.replace(/<\/head>/i, '<script src="bridge-relay.js"></script></head>')
+          : html + '<script src="bridge-relay.js"></script>';
+      }
+      return new Response(html, { headers: { "Content-Type": vendorProtocol.vendorMime(filePath), "Cache-Control": "no-store" } });
+    }
+    return vendorProtocol.vendorResponse(filePath);
+  });
+
   protocol.handle("loamcraft", async (request) => {
     const filePath = vendorProtocol.resolveCraftFile(ROOT, request);
     if (!filePath) return vendorProtocol.vendorNotFound();
@@ -1157,6 +1215,8 @@ app.on("before-quit", (event) => {
     event.preventDefault(); quitting = true;
     void mcpBridge.stop().finally(() => app.quit());
   }
+  try { globalShortcut.unregister("Ctrl+Shift+Alt+S"); } catch {}
+  recorderHud.clear();
   if (tray) { tray.destroy(); tray = null; }
   if (serverChild) { try { serverChild.kill(); } catch (e) {} }
 });

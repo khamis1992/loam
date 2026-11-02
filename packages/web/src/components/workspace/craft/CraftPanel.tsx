@@ -5,6 +5,7 @@ import { AlertCircle, CheckCircle, Loader2, Save, X } from 'lucide-react';
 import { t } from '@/i18n/t';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
 import { CRAFT_APPS, CraftBridge, type CraftApp, type CraftReady, type CraftSave } from '@/lib/craftBridge';
+import { CraftRelayClient } from '@/lib/craftRelayClient';
 import type { WorkspaceEditorProps, WorkspaceFile, WorkspaceKind } from '../types';
 import { isPreviewOnlyExt, unsupportedNoticeFor } from '../craft';
 
@@ -90,6 +91,31 @@ export function subscribeCraftBridges(listener: () => void): () => void {
  * Register (or clear) the bridge for one task + app. Called by the CraftPanel on
  * mount and unmount; safe to call repeatedly.
  */
+const craftRelays = new Map<string, { client: CraftRelayClient; refs: number }>();
+
+function releaseCraftRelay(key: string): void {
+  const entry = craftRelays.get(key);
+  if (!entry) return;
+  entry.refs -= 1;
+  if (entry.refs > 0) return;
+  entry.client.stop();
+  craftRelays.delete(key);
+}
+
+/** One executing relay client per open Craft app. A second mount of the same app shares it. */
+export function retainCraftRelay(taskId: string, app: CraftApp): () => void {
+  const key = `${taskId}\0${app}`;
+  const existing = craftRelays.get(key);
+  if (existing) {
+    existing.refs += 1;
+    return () => releaseCraftRelay(key);
+  }
+  const client = new CraftRelayClient({ taskId, relayTargets: [app], autoReconnect: true });
+  void client.start();
+  craftRelays.set(key, { client, refs: 1 });
+  return () => releaseCraftRelay(key);
+}
+
 export function registerCraftBridge(
   taskId: string,
   app: CraftApp,
@@ -227,6 +253,8 @@ export function CraftPanel({
     },
     [onSave, taskId, uploadBytes],
   );
+  const storeSaveRef = useRef(storeSave);
+  storeSaveRef.current = storeSave;
 
   // Save from a built-in fallback editor through its per-kind file endpoint.
   const storeFallbackSave = useCallback(
@@ -273,7 +301,10 @@ export function CraftPanel({
       if (cancelled) return;
       const missing = status.missing ?? [];
       const appMissing = status.apps?.[app]?.present === false || missing.includes(app);
-      if (!status.ok || appMissing) setStatus((prev) => (prev === 'ready' ? prev : 'fallback'));
+      // A failed status request is not proof the dist is missing. The iframe
+      // loads over loamcraft://, so only a positive "not installed" answer
+      // replaces it. Otherwise the ready timeout is what falls back.
+      if (status.ok && appMissing) setStatus((prev) => (prev === 'ready' ? prev : 'fallback'));
     })();
     return () => {
       cancelled = true;
@@ -288,6 +319,7 @@ export function CraftPanel({
     const bridge = new CraftBridge(iframe);
     bridgeRef.current = bridge;
     registerCraftBridge(taskId, app, { bridge, ready: null });
+    const releaseRelay = retainCraftRelay(taskId, app);
     let disposed = false;
 
     bridge
@@ -304,7 +336,7 @@ export function CraftPanel({
       });
 
     const unsubscribeSave = bridge.onSave((save) => {
-      void storeSave(save);
+      void storeSaveRef.current(save);
     });
 
     return () => {
@@ -312,9 +344,11 @@ export function CraftPanel({
       unsubscribeSave();
       bridgeRef.current = null;
       registerCraftBridge(taskId, app, null);
+      releaseRelay();
       bridge.dispose();
     };
-  }, [app, forceFallback, storeSave, taskId]);
+    // Callbacks are read through a ref. A new upload function must not tear down the live editor.
+  }, [app, forceFallback, taskId]);
 
   // Open the task file once the app is ready.
   useEffect(() => {

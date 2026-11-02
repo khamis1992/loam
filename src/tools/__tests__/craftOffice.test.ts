@@ -10,6 +10,7 @@ import assert from "node:assert";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import zlib from "node:zlib";
 import { after, describe, it } from "node:test";
 
 import type { ToolContext } from "../../tools/registry.js";
@@ -36,6 +37,9 @@ class MockRelay implements CraftOfficeRelayLike {
   sheet: unknown = { range: "used", cells: 3 };
   /** Answer for `ui.inspect`. */
   ui: unknown = { zoom: 1 };
+  /** Answer for `document.pixel`. */
+  pixel: unknown = null;
+  slide: unknown = { shapes: [] };
 
   async enqueue(
     taskId: string,
@@ -48,11 +52,27 @@ class MockRelay implements CraftOfficeRelayLike {
       throw Object.assign(new Error(this.failWith.message), { code: this.failWith.code });
     }
     if (method === "engine.commands") return this.commands;
+    if (method === "ui.screenshot") return { base64: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==" };
     if (method === "craft.waitSave") return this.saved;
     if (method === "document.inspect") return this.document;
     if (method === "sheet.read") return this.sheet;
     if (method === "ui.inspect") return this.ui;
     if (method === "craft.open") return { opened: params["path"] ?? null };
+    if (method === "engine.execute" && params["command"] === "document.pixel" && this.pixel) return this.pixel;
+    if (method === "engine.execute" && params["command"] === "image.crop" && this.pixel) {
+      this.document = { documentWidth: 4, documentHeight: 4 };
+      return this.document;
+    }
+    if (method === "engine.execute" && params["command"] === "document.inspect" && this.document && typeof this.document === "object" && ("width" in (this.document as object) || JSON.stringify(this.document).includes("documentWidth"))) {
+      return this.document;
+    }
+    if (method === "engine.execute" && params["command"] === "slide.inspect") return this.slide;
+    if (method === "engine.execute" && params["command"] === "file.saveBytes") {
+      return { data: Buffer.from("pptx-bytes").toString("base64") };
+    }
+    if (method === "engine.execute" && params["command"] === "file.exportPdf" && target === "design") {
+      return { base64: Buffer.from("%PDF-1.4 flyer").toString("base64"), bytes: 14 };
+    }
     return { ok: true };
   }
 }
@@ -87,6 +107,8 @@ const {
   manualEditNotice,
   normalizeBatchSteps,
   resolveOfficeCommandId,
+  parseSheetGrid,
+  slideTextTargets,
   summarizeCraftState,
 } = await import("../../tools/craftOffice.js");
 
@@ -113,6 +135,43 @@ function installAllApps(): void {
 
 function ctx(): ToolContext {
   return { cfg: {} as never, workspace: ws, emit: () => undefined, taskId: "task_1" } as never;
+}
+
+/** A solid RGB PNG big enough for the photo export to read its pixel size. */
+function tinyPng(width: number, height: number, r: number, g: number, b: number): Buffer {
+  const raw = Buffer.alloc(height * (1 + width * 3));
+  for (let y = 0; y < height; y += 1) {
+    const row = y * (1 + width * 3);
+    for (let x = 0; x < width; x += 1) {
+      raw[row + 1 + x * 3] = r;
+      raw[row + 2 + x * 3] = g;
+      raw[row + 3 + x * 3] = b;
+    }
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 2;
+  const chunk = (type: string, data: Buffer): Buffer => {
+    const head = Buffer.concat([Buffer.from(type), data]);
+    let crc = ~0;
+    for (const byte of head) {
+      crc ^= byte;
+      for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+    }
+    const out = Buffer.alloc(12 + data.length);
+    out.writeUInt32BE(data.length, 0);
+    head.copy(out, 4);
+    out.writeUInt32BE(~crc >>> 0, 8 + data.length);
+    return out;
+  };
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", zlib.deflateSync(raw)),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
 }
 
 type FallbackCall = { app: string; action: string };
@@ -218,9 +277,9 @@ describe("craftOffice action surface", () => {
   it("exposes the driver actions and marks the mutating ones", () => {
     assert.deepEqual(
       [...CRAFT_OFFICE_ACTIONS],
-      ["open", "state", "commands", "execute", "batch", "export", "undo", "redo"],
+      ["open", "state", "commands", "execute", "batch", "export", "edit", "undo", "redo"],
     );
-    for (const action of ["execute", "batch", "export", "undo", "redo"] as const) {
+    for (const action of ["execute", "batch", "export", "edit", "undo", "redo"] as const) {
       assert.equal(isCraftOfficeMutatingAction(action), true, action);
     }
     for (const action of ["open", "state", "commands"] as const) {
@@ -368,6 +427,14 @@ describe("craftOffice availability", () => {
     installApp("photo");
     assert.equal(isCraftOfficeAppInstalled("sheets", root), true);
     assert.equal(isCraftOfficeAppInstalled("docs", root), false);
+    const previous = process.env.LOAM_CRAFT_DISABLED;
+    process.env.LOAM_CRAFT_DISABLED = "1";
+    try {
+      assert.equal(isCraftOfficeAppInstalled("sheets", root), false);
+    } finally {
+      if (previous === undefined) delete process.env.LOAM_CRAFT_DISABLED;
+      else process.env.LOAM_CRAFT_DISABLED = previous;
+    }
     assert.deepEqual(installedCraftOfficeApps(root), ["sheets", "photo"]);
   });
 
@@ -566,6 +633,22 @@ describe("craftOffice state and commands", () => {
     assert.equal(body.commands.length, CATALOG.length);
   });
 
+  it("returns only commands that match the search", async () => {
+    freshRoot();
+    installAllApps();
+    relay = new MockRelay();
+    relay.commands = [
+      { id: "file.new", label: "New" },
+      { id: "image.crop", label: "Crop", params: "{\"width\":px}" },
+      { id: "actions.save", label: "Save" },
+    ];
+    const res = await tool().run({ app: "photo", action: "commands", search: "crop" }, ctx());
+    assert.equal(res.ok, true, res.content);
+    const body = JSON.parse(res.content) as { count: number; commands: Array<{ id: string }> };
+    assert.deepEqual(body.commands.map((command) => command.id), ["image.crop"]);
+    assert.equal(body.count, 1);
+  });
+
   it("passes the search term through on commands and omits it otherwise", async () => {
     freshRoot();
     installAllApps();
@@ -694,7 +777,7 @@ describe("craftOffice execute", () => {
     assert.equal(res.ok, false);
     const body = JSON.parse(res.content) as { reason: string; retry: boolean };
     assert.equal(body.reason, "panel_not_open");
-    assert.equal(body.retry, true);
+    assert.equal(body.retry, false);
   });
 });
 
@@ -809,6 +892,73 @@ describe("craftOffice batch", () => {
 });
 
 describe("craftOffice export, undo and redo", () => {
+  it("replaces an uncropped photo export with the document pixels", async () => {
+    freshRoot();
+    installAllApps();
+    relay = new MockRelay();
+    relay.commands = ["file.new", "file.save", "image.crop"];
+    relay.document = { documentWidth: 4, documentHeight: 4 };
+    relay.pixel = { r: 255, g: 80, b: 80 };
+    const taskRoot = path.join(ws, ".loam-tasks", "task_1");
+    fs.mkdirSync(path.join(taskRoot, "uploads"), { recursive: true });
+    fs.mkdirSync(path.join(taskRoot, "attachments"), { recursive: true });
+    const wide = tinyPng(8, 4, 200, 0, 0);
+    fs.writeFileSync(path.join(taskRoot, "attachments", "photo.png"), wide);
+    fs.writeFileSync(path.join(taskRoot, "uploads", "1-edited.png"), wide);
+    const res = await tool().run({ app: "photo", action: "export", format: "png", params: "{\"path\":\"edited.png\"}" }, ctx());
+    assert.equal(res.ok, true, res.content);
+    const body = JSON.parse(res.content) as { command: string; path: string };
+    assert.equal(body.command, "document.pixel");
+    const saved = fs.readFileSync(path.join(taskRoot, body.path));
+    assert.equal(saved.readUInt32BE(16), 4);
+    assert.equal(saved.readUInt32BE(20), 4);
+  });
+
+  it("uses a nested document size and an array pixel", async () => {
+    freshRoot();
+    installAllApps();
+    relay = new MockRelay();
+    relay.commands = ["file.new", "file.save", "image.crop"];
+    relay.document = { width: 8, height: 4, frame: { documentWidth: 4, documentHeight: 4 } };
+    relay.pixel = [255, 80, 80];
+    const taskRoot = path.join(ws, ".loam-tasks", "task_1");
+    fs.mkdirSync(path.join(taskRoot, "uploads"), { recursive: true });
+    fs.mkdirSync(path.join(taskRoot, "attachments"), { recursive: true });
+    const wide = tinyPng(8, 4, 200, 0, 0);
+    fs.writeFileSync(path.join(taskRoot, "attachments", "photo.png"), wide);
+    fs.writeFileSync(path.join(taskRoot, "uploads", "1-edited.png"), wide);
+    const res = await tool().run({ app: "photo", action: "export", format: "png", params: "{\"path\":\"edited.png\"}" }, ctx());
+    assert.equal(res.ok, true, res.content);
+    const body = JSON.parse(res.content) as { command: string; path: string };
+    assert.equal(body.command, "document.pixel");
+    const saved = fs.readFileSync(path.join(taskRoot, body.path));
+    assert.equal(saved.readUInt32BE(16), 4);
+    assert.equal(saved.readUInt32BE(20), 4);
+  });
+
+  it("applies the export crop when the open document is still the source size", async () => {
+    freshRoot();
+    installAllApps();
+    relay = new MockRelay();
+    relay.commands = ["file.new", "file.save", "image.crop"];
+    relay.document = { width: 8, height: 4, canUndo: false };
+    relay.pixel = [255, 80, 80];
+    const taskRoot = path.join(ws, ".loam-tasks", "task_1");
+    fs.mkdirSync(path.join(taskRoot, "uploads"), { recursive: true });
+    fs.mkdirSync(path.join(taskRoot, "attachments"), { recursive: true });
+    const wide = tinyPng(8, 4, 200, 0, 0);
+    fs.writeFileSync(path.join(taskRoot, "attachments", "photo.png"), wide);
+    const res = await tool().run(
+      { app: "photo", action: "export", format: "png", params: "{\"path\":\"edited.png\",\"crop\":{\"x\":2,\"y\":0,\"width\":4,\"height\":4},\"brightness\":40,\"contrast\":10}" },
+      ctx(),
+    );
+    assert.equal(res.ok, true, res.content);
+    const body = JSON.parse(res.content) as { path: string };
+    const saved = fs.readFileSync(path.join(taskRoot, body.path));
+    assert.equal(saved.readUInt32BE(16), 4);
+    assert.equal(saved.readUInt32BE(20), 4);
+  });
+
   it("exports through craft.waitSave and returns the stored path", async () => {
     freshRoot();
     installAllApps();
@@ -817,7 +967,7 @@ describe("craftOffice export, undo and redo", () => {
     const res = await tool().run({ app: "docs", action: "export", file: "out/final.docx" }, ctx());
     assert.equal(res.ok, true, res.content);
     const wait = relay.dispatched.find((d) => d.method === "craft.waitSave")!;
-    assert.deepEqual(wait.params, { command: "file.save", params: { path: "out/final.docx" } });
+    assert.deepEqual(wait.params, { command: "file.save", params: {}, name: "final.docx" });
     const body = JSON.parse(res.content) as { format: string; path: string; command: string };
     assert.equal(body.format, "native");
     assert.equal(body.command, "file.save");
@@ -832,7 +982,22 @@ describe("craftOffice export, undo and redo", () => {
     const res = await tool().run({ app: "docs", action: "export", format: "pdf", file: "out/a.pdf" }, ctx());
     assert.equal(res.ok, true, res.content);
     const wait = relay.dispatched.find((d) => d.method === "craft.waitSave")!;
-    assert.deepEqual(wait.params, { command: "file.exportPdf", params: { path: "out/a.pdf", layout: "handouts" } });
+    assert.deepEqual(wait.params, { command: "file.exportPdf", params: { path: "out/a.pdf", layout: "handouts" }, name: "a.pdf" });
+  });
+
+  it("exports a design pdf without the slides handout layout", async () => {
+    freshRoot();
+    installAllApps();
+    relay = new MockRelay();
+    relay.commands = CATALOG;
+    const res = await tool().run({ app: "design", action: "export", format: "pdf", params: "{\"path\":\"flyer.pdf\"}" }, ctx());
+    assert.equal(res.ok, true, res.content);
+    const saved = relay.dispatched.find((d) => d.method === "engine.execute" && (d.params["command"] as string) === "file.exportPdf")!;
+    assert.deepEqual(saved.params, { command: "file.exportPdf", params: {} });
+    const body = JSON.parse(res.content) as { command: string; path: string };
+    assert.equal(body.command, "file.exportPdf");
+    const fileBytes = fs.readFileSync(path.join(ws, ".loam-tasks", "task_1", body.path));
+    assert.equal(fileBytes.subarray(0, 5).toString("latin1"), "%PDF-");
   });
 
   it("rejects an unknown export format", async () => {
@@ -920,5 +1085,91 @@ describe("craftOffice relay error mapping", () => {
     const res = await tool().run({ app: "docs", action: "execute", command: "file.save" }, ctx());
     assert.equal(res.ok, false);
     assert.match(res.content, /bridge_unavailable/);
+  });
+});
+
+describe("craftOffice slide edit", () => {
+  it("writes the title and body of the current slide", async () => {
+    freshRoot();
+    installAllApps();
+    relay = new MockRelay();
+    relay.commands = [...CATALOG, "slide.inspect", "text.set", "file.export"];
+    relay.slide = {
+      shapes: [
+        { id: 10, kind: "placeholder", placeholder: "ctrTitle", text: "" },
+        { id: 11, kind: "placeholder", placeholder: "body", text: "" },
+      ],
+    };
+    const res = await tool().run(
+      { app: "slides", action: "edit", title: "متحف الفن الإسلامي", body: "صممه آي. إم. باي عام 2008." },
+      ctx(),
+    );
+    assert.equal(res.ok, true, res.content);
+    const writes = relay.dispatched.filter((call) => call.method === "engine.execute" && call.params["command"] === "text.set");
+    assert.deepEqual(
+      writes.map((call) => call.params["params"]),
+      [
+        { id: 10, text: "متحف الفن الإسلامي" },
+        { id: 11, text: "صممه آي. إم. باي عام 2008." },
+      ],
+    );
+  });
+
+  it("exports a slides deck as pptx", async () => {
+    freshRoot();
+    installAllApps();
+    relay = new MockRelay();
+    relay.commands = [...CATALOG, "file.export", "file.save", "file.saveBytes"];
+    const res = await tool().run({ app: "slides", action: "export" }, ctx());
+    assert.equal(res.ok, true, res.content);
+    const body = JSON.parse(res.content) as { command: string; path: string };
+    assert.equal(body.command, "file.saveBytes");
+    assert.match(body.path, /^uploads\/\d+-presentation\.pptx$/);
+    const written = fs.readFileSync(path.join(ws, ".loam-tasks", "task_1", body.path));
+    assert.equal(written.toString(), "pptx-bytes");
+    assert.equal(relay.dispatched.some((call) => call.method === "craft.waitSave"), false);
+  });
+
+  it("inserts a document page and exports a workbook from bytes", async () => {
+    freshRoot();
+    installAllApps();
+    relay = new MockRelay();
+    relay.commands = [...CATALOG, "text.insert"];
+    const edited = await tool().run({ app: "docs", action: "edit", title: "Q4", body: "Ship the plan." }, ctx());
+    assert.equal(edited.ok, true, edited.content);
+    const insert = relay.dispatched.find((call) => call.params["command"] === "text.insert");
+    assert.deepEqual(insert?.params["params"], { text: "Q4\nShip the plan." });
+    relay.commands = [...CATALOG, "file.saveBytes"];
+    const exported = await tool().run({ app: "sheets", action: "export" }, ctx());
+    assert.equal(exported.ok, true, exported.content);
+    const body = JSON.parse(exported.content) as { command: string; path: string };
+    assert.equal(body.command, "file.saveBytes");
+    assert.match(body.path, /^uploads\/\d+-workbook\.xlsx$/);
+  });
+
+  it("writes five budget rows and a SUM formula into a sheet", async () => {
+    freshRoot();
+    installAllApps();
+    relay = new MockRelay();
+    relay.commands = [...CATALOG, "range.setValues", "cell.set"];
+    const grid = parseSheetGrid("Item|Amount;Rent|1200;Food|450;Transit|180;Utilities|260;Supplies|90;Total|=SUM(B2:B6)");
+    assert.equal(grid?.range, "A1:B7");
+    assert.equal(grid?.formula?.cell, "B7");
+    const edited = await tool().run({ app: "sheets", action: "edit", body: "Item|Amount;Rent|1200;Food|450;Transit|180;Utilities|260;Supplies|90;Total|=SUM(B2:B6)" }, ctx());
+    assert.equal(edited.ok, true, edited.content);
+    const values = relay.dispatched.find((call) => call.params["command"] === "range.setValues");
+    assert.equal((values?.params["params"] as { range?: string } | undefined)?.range, "A1:B7");
+    const formula = relay.dispatched.find((call) => call.params["command"] === "cell.set");
+    assert.deepEqual(formula?.params["params"], { cell: "B7", input: "=SUM(B2:B6)" });
+  });
+
+  it("picks title and body shapes from an inspect result", () => {
+    const targets = slideTextTargets({
+      shapes: [
+        { id: 3, kind: "placeholder", placeholder: "subTitle", text: "" },
+        { id: 2, kind: "placeholder", placeholder: "title", text: "" },
+      ],
+    });
+    assert.deepEqual(targets, { titleId: 2, bodyId: 3 });
   });
 });

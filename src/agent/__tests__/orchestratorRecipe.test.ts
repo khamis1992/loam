@@ -20,7 +20,7 @@ import { loadConfig } from "../../config.js";
 import { ToolRegistry, type ToolContext, type ToolResult } from "../../tools/registry.js";
 import { runOrchestratedAgent } from "../orchestrator.js";
 import { finishStep, initRecipe, type RecipeState } from "../recipe.js";
-import { consumeTokens, createComputeBudget, type ComputeBudget } from "../computeBudget.js";
+import { consumeSteps, createComputeBudget, type ComputeBudget } from "../computeBudget.js";
 import type { AgentEvent, RecipeChange } from "../events.js";
 import type { ChatMessage, ChatOptions, ChatResult, OllamaClient, OllamaToolCall } from "../../ollama.js";
 
@@ -515,10 +515,10 @@ describe("orchestrator recipe mode", () => {
       { rounds: [recipeJson([], {}, [], 0, true)] },
     );
 
-    // Burn the ceiling before the run starts, so every orchestration call is
-    // refused and the restart cannot regenerate anything.
-    const budget = createComputeBudget({ tokenLimit: 1_000_000 });
-    consumeTokens(budget, 2_000_000, 0);
+    // Burn the step ceiling before the run starts, so every orchestration call is
+    // refused and the restart cannot regenerate anything. The token tally only warns.
+    const budget = createComputeBudget({ stepLimit: 1 });
+    consumeSteps(budget, 1);
 
     const { events, error } = await h.run({
       recipeMode: true,

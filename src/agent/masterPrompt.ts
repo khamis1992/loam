@@ -12,6 +12,7 @@ import { execFileSync } from "node:child_process";
 import { MASTER_PROMPT_SECTIONS, type MasterPromptSection } from "./masterPromptText.js";
 import type { Config } from "../config.js";
 import { DEFAULT_TIMEZONE } from "../server/scheduleTime.js";
+import { SPILL_CHARS } from "./spill.js";
 import { CONNECTORS, CONNECTOR_TOOLS, connectedConnectorToolNames } from "../server/connectors/index.js";
 
 export const MASTER_SLOT_NAMES = [
@@ -96,7 +97,7 @@ export function missionSection(): string {
 }
 
 const DEFAULT_MAX_PARALLEL_AGENTS = 4;
-const DEFAULT_SPILL_THRESHOLD = 80_000;
+const DEFAULT_SPILL_THRESHOLD = SPILL_CHARS;
 const DEFAULT_LOCAL_TIMEOUT_S = 600;
 
 /** Classify a model id into the Appendix A families. Unknown = undefined. */

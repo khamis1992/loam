@@ -114,8 +114,8 @@ describe("mission budget construction", () => {
   it("keeps every dimension as an independent ceiling", () => {
     const budget = createMissionBudget({ steps: 100, tokens: 1000, minutes: 60, costUsd: 1 });
     consumeTokens(budget, 1000, 0);
-    // Only the token dimension crossed, but the mission stops.
-    assert.equal(checkBudget(budget).action, "stop");
+    // The token ceiling summarizes and continues. Steps, clock and cost still stop.
+    assert.equal(checkBudget(budget).action, "warn");
   });
 
   it("stops on the wall-clock and cost ceilings too", () => {

@@ -99,13 +99,22 @@ describe("compute budget verdicts", () => {
     assert.match((decision as { reason: string }).reason, /4\/4 steps/);
   });
 
-  it("stops on the token ceiling too, and the stop wins over a warning", () => {
+  it("warns on the token ceiling and keeps the conversation going", () => {
     const budget = createComputeBudget({ stepLimit: 100, tokenLimit: 50 });
-    consumeSteps(budget, 5); // 5% of steps — well under the warning
-    consumeTokens(budget, 50, 0); // 100% of tokens
+    consumeSteps(budget, 5);
+    consumeTokens(budget, 50, 0);
+    const decision = checkBudget(budget);
+    assert.equal(decision.action, "warn");
+    assert.match((decision as { reason: string }).reason, /conversation continues/);
+  });
+
+  it("a step stop still wins when the token ceiling is also crossed", () => {
+    const budget = createComputeBudget({ stepLimit: 4, tokenLimit: 50 });
+    consumeSteps(budget, 4);
+    consumeTokens(budget, 50, 0);
     const decision = checkBudget(budget);
     assert.equal(decision.action, "stop");
-    assert.match((decision as { reason: string }).reason, /50\/50 tokens/);
+    assert.match((decision as { reason: string }).reason, /4\/4 steps/);
   });
 
   it("falls back to the caller-supplied limits when the budget carries none", () => {
@@ -150,9 +159,11 @@ describe("compute budget raise", () => {
     consumeSteps(budget, 4);
     assert.equal(checkBudget(budget).action, "stop");
 
+    budget.ceilingWarned = true;
     assert.equal(raiseBudget(budget, { steps: 4 }).ok, true);
     assert.equal(budget.stepLimit, 8);
     assert.equal(budget.raised, true);
+    assert.equal(budget.ceilingWarned, false);
     // Counters are not reset: 4 steps already spent.
     assert.equal(budget.steps, 4);
     assert.equal(checkBudget(budget).action, "allow");
@@ -164,7 +175,7 @@ describe("compute budget raise", () => {
   it("raises the token ceiling relative to usage", () => {
     const budget = createComputeBudget({ tokenLimit: 100 });
     consumeTokens(budget, 100, 0);
-    assert.equal(checkBudget(budget).action, "stop");
+    assert.equal(checkBudget(budget).action, "warn");
     assert.equal(raiseBudget(budget, { tokens: 200 }).ok, true);
     assert.equal(budget.tokenLimit, 300);
     // Usage is kept: 100/300 = 33%, which is still below the 80% warning.
@@ -175,7 +186,9 @@ describe("compute budget raise", () => {
     const budget = createComputeBudget({ stepLimit: 10, tokenLimit: 1000 });
     consumeSteps(budget, 9);
     consumeTokens(budget, 900, 0);
+    budget.ceilingWarned = true;
     resetBudgetUsage(budget);
+    assert.equal(budget.ceilingWarned, false);
     assert.equal(budget.steps, 0);
     assert.equal(totalTokens(budget), 0);
     assert.equal(budget.stepLimit, 10);

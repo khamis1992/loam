@@ -222,14 +222,17 @@ describe("orchestrator compute budget", () => {
     assert.ok(script.stepRequests.length <= 4, `expected <= 4 steps, got ${script.stepRequests.length}`);
   });
 
-  it("stops before spending the whole token ceiling", async () => {
-    const { script, error } = await run({
+  it("continues the plan after the token ceiling", async () => {
+    const { script, error, events } = await run({
       budget: { stepLimit: 100, tokenLimit: 250 },
-      steps: manySteps(10),
+      steps: manySteps(3),
     });
-    assert.match(error ?? "", /Compute budget exhausted.*tokens/, "the token ceiling is reported");
-    // The run stops near the ceiling; it never burns the whole scripted plan.
-    assert.ok(script.stepRequests.length < 10, `unexpectedly consumed the whole plan: ${script.stepRequests.length}`);
+    assert.equal(error, undefined, "the token ceiling does not end the run");
+    assert.equal(script.stepRequests.length, 3, "every scripted step still runs");
+    assert.ok(
+      events.some((e) => e.type === "error" && /conversation continues/.test((e as { message?: string }).message ?? "")),
+      "the continuation notice is surfaced",
+    );
   });
 
   it("does not replan after the budget is exhausted", async () => {
@@ -256,7 +259,7 @@ describe("orchestrator compute budget", () => {
   it("keeps a tiny budget from completing the task", async () => {
     const { events, error } = await run({
       budget: { stepLimit: 1, tokenLimit: 1 },
-      steps: manySteps(1),
+      steps: manySteps(3),
     });
     assert.match(error ?? "", /Compute budget exhausted/);
     assert.equal(events.filter((e) => e.type === "done").length, 0, "the task is not completed");

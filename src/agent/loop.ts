@@ -1,5 +1,6 @@
 import type { Config } from "../config.js";
 import type { ChatResult, OllamaClient, ChatMessage } from "../ollama.js";
+import { instructedToolCall, toolCallFromProse } from "./toolCallFromProse.js";
 import type { Emit, Usage, ToolTraceItem, TodoItem, TodoStatus } from "./events.js";
 import { verifyFinal } from "./verifier.js";
 import { AcceptanceGuard } from "./acceptanceGuard.js";
@@ -10,7 +11,6 @@ import { loadProjectSkills } from "../tools/skills.js";
 import type { WorkerCheckpoint } from "./checkpoint.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import { chatWithFallback } from "./model.js";
-import { chatWithCodingRouter, isCodingTurn } from "../llm/codingRouter.js";
 import { chatWithRouting } from "../tools/routingModel.js";
 import {
   effortStepBudget,
@@ -24,8 +24,10 @@ import {
 import { isEditTool, recordEditModel } from "../llm/modelAudit.js";
 import type { CooldownStore, FailoverProvider, ProviderClient } from "../llm/failover.js";
 import { createStallGuard } from "./stallGuard.js";
+import { clearRepeatBlocks, noteToolOutcome, repeatBlockReason } from "./repeatGuard.js";
 import { ciWatchEscalationNotice } from "./ciWatchLoop.js";
 import { compressContext, getContextWindow } from "./contextCompressor.js";
+import { spillToolOutput } from "./spill.js";
 import { PrunedStore } from "./prune/prunedStore.js";
 import type { ToolMeta } from "./prune/types.js";
 import { ContextSelector } from "./contextSelector.js";
@@ -45,6 +47,7 @@ import {
   consumeTokens,
   consumeWallClock,
   createUnlimitedBudget,
+  totalTokens,
   type ComputeBudget,
 } from "./computeBudget.js";
 import { budgetPauseReason, clearBudgetPause, isBudgetPaused, waitForBudgetResume } from "./budgetPause.js";
@@ -276,6 +279,17 @@ export function isMissionBudgetError(err: unknown): err is MissionBudgetError {
   return err instanceof MissionBudgetError;
 }
 
+/** The loop already emitted this stop. Callers must not emit it a second time. */
+export function markBudgetStop(error: Error): Error {
+  (error as Error & { budgetStop?: boolean }).budgetStop = true;
+  return error;
+}
+
+/** True when `markBudgetStop` flagged an error the loop already reported. */
+export function isBudgetStopError(err: unknown): boolean {
+  return err instanceof Error && (err as { budgetStop?: boolean }).budgetStop === true;
+}
+
 /** Deterministic 32-bit FNV-1a hash; stable across processes for the same input. */
 function hashText(text: string): number {
   let hash = 2_166_136_261;
@@ -373,15 +387,16 @@ function summarize(text: string, lines = 10): string {
 
 /** Web/email/browser output is external data; wrap it so the model never follows it as instructions. */
 function toolMessageContent(name: string, content: string, opts?: RunOptions): string {
+  const body = opts?.cfg.workspace ? spillToolOutput(opts.cfg.workspace, name, content, opts.taskId) : content;
   // Every guarded-MCP result is target-originated untrusted data: REA tool text
   // (REA_INTO_LOAM §8) and Cua Driver GUI text/screenshots (CUA_INTO_LOAM §6.2 —
   // UI labels are a prompt-injection surface).
-  if (name.startsWith("mcp__rea__") || name.startsWith("mcp__cua-driver__")) return markUntrusted(content, name.startsWith("mcp__rea__") ? "rea" : "cua-driver");
-  if (!isUntrustedTool(name)) return content;
+  if (name.startsWith("mcp__rea__") || name.startsWith("mcp__cua-driver__")) return markUntrusted(body, name.startsWith("mcp__rea__") ? "rea" : "cua-driver");
+  if (!isUntrustedTool(name)) return body;
   // Orchestration Core §4.6.2: score and neutralize before the wrap (forged
   // closing markers never survive any strategy; guard "off" only skips scoring).
   const g = opts?.cfg.orchestration?.contracts;
-  const v = guardUntrusted(content, g?.injectionGuard ?? "warn", g?.injectionThreshold ?? 0.6);
+  const v = guardUntrusted(body, g?.injectionGuard ?? "warn", g?.injectionThreshold ?? 0.6);
   if (v.action !== "pass") opts?.emit?.({ type: "guard_flagged", tool: name, score: v.score, signals: v.signals, action: v.action });
   return markUntrusted(v.content, name);
 }
@@ -417,6 +432,7 @@ async function mapWithConcurrency<T, R>(
 }
 
 export async function runAgent(opts: RunOptions): Promise<RunResult> {
+  clearRepeatBlocks(opts.taskId);
   // A session's file-touch reader marks are worthless once it is gone; forget
   // them on every exit path so finished sessions are never notified.
   const sessionId = opts.sessionId ?? opts.taskId ?? `session-${process.pid}-${Date.now()}`;
@@ -567,8 +583,8 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
   // The tool names this run may use. Tools that fan out to child agents read
   // it from the tool context so a child never exceeds the parent's reach.
   const runAllowedTools = opts.tools.names();
-  // Coding turns route through the strongest coder in the configured chain.
-  const routeCoding = opts.cfg.coding?.enabled !== false && isCodingTurn(opts.prompt, opts.history);
+  // The composer selection is the model for every step, including a turn the
+  // coding heuristic would otherwise hand to a different provider.
   // Edit attribution is on by default and can be disabled per config.
   const auditEdits = opts.cfg.coding?.logEdits !== false;
   // Harness reminders (stale todo list, external file change, plan mode, memory
@@ -627,6 +643,7 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
   // args, plus the run's store holding the bodies of removed results.
   const toolMessageMeta = new Map<ChatMessage, ToolMeta>();
   const prunedStore = new PrunedStore();
+  let notedTokenCeiling = false;
 
   try {
     // SessionStart and UserPromptSubmit fire once per run, before any model call.
@@ -654,11 +671,13 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
       if (mission) {
         const summary = budgetStoppedCheckpoint({ taskId: opts.taskId, prompt: opts.prompt, lastStep: step - 1, budget: opts.budget ?? createUnlimitedBudget() });
         opts.emit({ type: "budget_exhausted", taskId: opts.taskId ?? "", reason: budgetDecision.reason, checkpoint: summary });
-        throw new MissionBudgetError(`${budgetDecision.reason}. Raise the session budget to continue.`, summary);
+        throw new MissionBudgetError(budgetDecision.reason, summary);
       }
-      const msg = `${budgetDecision.reason}. Raise the session budget to continue.`;
-      opts.emit({ type: "error", message: msg });
-      throw new Error(msg);
+      // The reason already tells the user to raise the ceiling. Emitting it here
+      // and throwing it is one report; markBudgetStop keeps the caller from
+      // broadcasting the same stop again.
+      opts.emit({ type: "error", message: budgetDecision.reason });
+      throw markBudgetStop(new Error(budgetDecision.reason));
     }
     // Budget pause policy: a stop always wins (handled above); a pause parks the
     // run at this boundary and keeps the transcript. The epoch-safe wait means a
@@ -777,57 +796,58 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
     const isArchitectural = /\b(architect|design|refactor|restructure|reorganize|multi-file|multiple file|several file)/i.test(opts.prompt + " " + recentMessages);
     const isMathAlgorithmic = /\b(algorithm|calculate|compute|math|equation|formula|optimization|complexity|recursive|dynamic programming|graph|tree|sort|search)/i.test(opts.prompt + " " + recentMessages);
     const hasTestFailure = messages.slice(-3).some(m => m.role === "tool" && /\b(test.*fail|fail.*test|error|exception|assertion.*fail)/i.test(m.content ?? ""));
-    const shouldThink = isLocalOllama && (lastStepFailed || isArchitectural || isMathAlgorithmic || hasTestFailure || consecutiveEmptyResults > 0);
-    
-    const chatRequest = {
-      model: opts.cfg.model,
+    const isWriting = /(?:write|presentation|slides|article|essay|explain|summar|عرض|اكتب|برزنتيشن|مقال|اشرح|صفحة)/i.test(opts.prompt);
+    const shouldThink = isLocalOllama && (lastStepFailed || isArchitectural || isMathAlgorithmic || hasTestFailure || consecutiveEmptyResults > 0 || isWriting);
+    let thinkingText = "";
+    let thinkingEmitAt = 0;
+    const onThinking = (delta: string) => {
+      if (!delta) return;
+      thinkingText += delta;
+      const now = Date.now();
+      if (now - thinkingEmitAt < 400 && thinkingText.length > delta.length) return;
+      thinkingEmitAt = now;
+      opts.emit({ type: "thinking", text: thinkingText });
+    };
+
+    // The selected model is sent on every step. A coding turn does not swap it
+    // for another provider in the coder chain.
+    const pinnedModel = (opts.model && opts.model.trim()) || opts.cfg.model;
+    const stepStartedAt = mission ? Date.now() : 0;
+    const offeredEarly = requestTools.map((tool) => tool.function.name);
+    const instructedFirst = !messages.some((message) => message.role === "tool")
+      ? instructedToolCall(opts.prompt, offeredEarly)
+      : null;
+    const result0: ChatResult = instructedFirst
+      ? { content: "", toolCalls: [instructedFirst], model: pinnedModel, usage: { promptTokens: 0, completionTokens: 0, durationMs: 0 } }
+      : await chatWithRouting({
+      cfg: opts.cfg,
+      ollama: opts.ollama,
       messages,
       tools: requestTools,
       temperature: opts.cfg.agent.temperature,
-      think: shouldThink,
-      ...(cacheControl ? { cacheControl: true } : {}),
-      // An explicit per-run model (the quick-edit route) wins over the config
-      // default; the router still replaces it with the strongest coder on a
-      // coding turn.
-      ...(opts.model && opts.model.trim() ? { model: opts.model.trim() } : {}),
+      timeoutMs: opts.cfg.agent.requestTimeoutMs,
       ...(opts.signal ? { signal: opts.signal } : {}),
-    };
-    // Neo N10: one dispatch point. A mapped route (per-tool, then effort) takes
-    // precedence; otherwise the existing coding-turn routing applies, and a run
-    // with no map at all keeps the plain fallback chain it had before N10.
-    const stepStartedAt = mission ? Date.now() : 0;
-    const result: ChatResult = routeCoding
-      ? await chatWithCodingRouter({
-          cfg: opts.cfg,
-          chat: chatRequest,
-          fallback: opts.ollama,
-          env: opts.env,
-          store: opts.cooldownStore,
-          createClient: opts.createProviderClient,
-          onRoute: opts.onCodingRoute,
-        })
-      : await chatWithRouting({
-          cfg: opts.cfg,
-          ollama: opts.ollama,
-          messages,
-          tools: requestTools,
-          temperature: opts.cfg.agent.temperature,
-          timeoutMs: opts.cfg.agent.requestTimeoutMs,
-          ...(opts.signal ? { signal: opts.signal } : {}),
-          ...(opts.model && opts.model.trim() ? { model: opts.model.trim() } : {}),
-          ...(cacheControl ? { cacheControl } : {}),
-          ...(outputType !== "auto" ? { outputType } : {}),
-          ...(effortLevel ? { effort: effortLevel } : {}),
-          ...(routingTool ? { tool: routingTool } : {}),
-          env: opts.env,
-          store: opts.cooldownStore,
-          createClient: opts.createProviderClient,
-          // Buffer candidate answers: streaming an unverified success claim would
-          // expose a result that the completion gate may subsequently reject.
-          notify: (message) => opts.emit({ type: "error", message }),
-        });
+      ...(pinnedModel ? { model: pinnedModel } : {}),
+      ...(cacheControl ? { cacheControl } : {}),
+      think: shouldThink,
+      onThinking,
+      ...(outputType !== "auto" ? { outputType } : {}),
+      ...(effortLevel ? { effort: effortLevel } : {}),
+      ...(routingTool ? { tool: routingTool } : {}),
+      env: opts.env,
+      store: opts.cooldownStore,
+      createClient: opts.createProviderClient,
+      onRoute: opts.onCodingRoute,
+      // Buffer candidate answers: streaming an unverified success claim would
+      // expose a result that the completion gate may subsequently reject.
+      notify: (message) => opts.emit({ type: "error", message }),
+    });
+    let result = result0;
     throwIfCancelled(opts.signal, opts.taskId);
     usedModel = result.model;
+    if (result.thinking && result.thinking !== thinkingText) {
+      opts.emit({ type: "thinking", text: result.thinking });
+    }
     if (providerCompaction) cacheMonitor.noteProviderCompaction();
     // Reusable boundary = cached reads plus cache writes (uncached input is not
     // reusable). Providers with no cache telemetry report neither field.
@@ -843,8 +863,19 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
       consumeWallClock(opts.budget, Date.now() - stepStartedAt);
       consumeCost(opts.budget, estimateCostUsd(usedModel, result.usage.promptTokens, result.usage.completionTokens));
     }
-    if (opts.budget && checkBudget(opts.budget).action === "warn") {
-      opts.emit({ type: "error", message: "Compute budget is close to its ceiling; consider raising it." });
+    if (opts.budget) {
+      const overTokens = opts.budget.tokenLimit !== undefined && totalTokens(opts.budget) >= opts.budget.tokenLimit;
+      if (overTokens && !notedTokenCeiling) {
+        notedTokenCeiling = true;
+        opts.budget.ceilingWarned = true;
+        opts.emit({
+          type: "error",
+          message: `Context token ceiling reached (${totalTokens(opts.budget)}/${opts.budget.tokenLimit}). The live window is summarized and the conversation continues.`,
+        });
+      } else if (opts.budget.ceilingWarned !== true && checkBudget(opts.budget).action === "warn") {
+        opts.budget.ceilingWarned = true;
+        opts.emit({ type: "error", message: "Compute budget is close to its ceiling; consider raising it." });
+      }
     }
     opts.onProgress?.({ steps: step, model: usedModel, usage: { ...usage } });
     const miss = cacheMonitor.finishRequest(reusableCacheTokens, readTokens);
@@ -872,6 +903,44 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
             }
           : {}),
       });
+    }
+
+    const offered = requestTools.map((tool) => tool.function.name);
+    const noToolsYet = !messages.some((message) => message.role === "tool");
+    const instructed = noToolsYet ? instructedToolCall(opts.prompt, offered) : null;
+    const proseCall = () => instructed ?? toolCallFromProse([thinkingText, result.thinking, result.content].filter(Boolean).join("\n"), offered);
+    const inferred = proseCall();
+    if (inferred) result = { ...result, toolCalls: [inferred] };
+    if (shouldThink && requestTools.length > 0 && result.toolCalls.length === 0) {
+      const retry = await chatWithRouting({
+        cfg: opts.cfg,
+        ollama: opts.ollama,
+        messages,
+        tools: requestTools,
+        temperature: opts.cfg.agent.temperature,
+        timeoutMs: opts.cfg.agent.requestTimeoutMs,
+        ...(opts.signal ? { signal: opts.signal } : {}),
+        ...(pinnedModel ? { model: pinnedModel } : {}),
+        ...(cacheControl ? { cacheControl } : {}),
+        think: false,
+        onThinking,
+        ...(outputType !== "auto" ? { outputType } : {}),
+        ...(effortLevel ? { effort: effortLevel } : {}),
+        ...(routingTool ? { tool: routingTool } : {}),
+        env: opts.env,
+        store: opts.cooldownStore,
+        createClient: opts.createProviderClient,
+        onRoute: opts.onCodingRoute,
+        notify: (message) => opts.emit({ type: "error", message }),
+      });
+      usedModel = retry.model;
+      addUsage(usage, retry.usage);
+      if (opts.budget) consumeTokens(opts.budget, retry.usage.promptTokens, retry.usage.completionTokens);
+      if (retry.toolCalls.length > 0) result = retry;
+      else {
+        const retried = instructed ?? toolCallFromProse([thinkingText, result.thinking, retry.thinking, retry.content].filter(Boolean).join("\n"), offered);
+        if (retried) result = { ...retry, toolCalls: [retried] };
+      }
     }
 
     if (result.toolCalls.length === 0) {
@@ -968,20 +1037,25 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
       // Neo N10: remember the batch's tool so the next request can honour a
       // per-tool routing entry. Parallel reads share one tool, so this is exact.
       lastToolCallName = prepared.length === 1 ? prepared[0]!.name : null;
-      const batchResults = await mapWithConcurrency(prepared, PARALLEL_READ_LIMIT, (item) =>
-        opts.tools.exec(item.name, item.args, {
-          cfg: opts.cfg,
-          workspace: opts.cfg.workspace,
-          emit: opts.emit,
-          ollama: opts.ollama,
-          signal: opts.signal,
-          allowedTools: runAllowedTools,
-          readState,
-          prunedStore,
-          ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
-          ...(opts.taskId ? { taskId: opts.taskId } : {}),
-        }),
-      );
+      const batchResults = await mapWithConcurrency(prepared, PARALLEL_READ_LIMIT, async (item) => {
+        const blocked = repeatBlockReason(opts.taskId, item.name, item.args);
+        const toolResult = blocked
+          ? { ok: false, content: blocked }
+          : await opts.tools.exec(item.name, item.args, {
+            cfg: opts.cfg,
+            workspace: opts.cfg.workspace,
+            emit: opts.emit,
+            ollama: opts.ollama,
+            signal: opts.signal,
+            allowedTools: runAllowedTools,
+            readState,
+            prunedStore,
+            ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
+            ...(opts.taskId ? { taskId: opts.taskId } : {}),
+          });
+        noteToolOutcome(opts.taskId, item.name, item.args, toolResult.ok, toolResult.content ?? "");
+        return toolResult;
+      });
       for (let i = 0; i < prepared.length; i++) {
         const item = prepared[i]!;
         const toolResult = batchResults[i]!;
@@ -1033,18 +1107,22 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
         const callId = toolCallIdOf(call, step, index++);
         if (logSession) recordToolCall(logSession, callId, name, opts.taskId);
         const t0 = Date.now();
-        const toolResult = await opts.tools.exec(name, args, {
-          cfg: opts.cfg,
-          workspace: opts.cfg.workspace,
-          emit: opts.emit,
-          ollama: opts.ollama,
-          signal: opts.signal,
-          allowedTools: runAllowedTools,
-          readState,
-          prunedStore,
-          ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
-          ...(opts.taskId ? { taskId: opts.taskId } : {}),
-        });
+        const blocked = repeatBlockReason(opts.taskId, name, args);
+        const toolResult = blocked
+          ? { ok: false, content: blocked }
+          : await opts.tools.exec(name, args, {
+            cfg: opts.cfg,
+            workspace: opts.cfg.workspace,
+            emit: opts.emit,
+            ollama: opts.ollama,
+            signal: opts.signal,
+            allowedTools: runAllowedTools,
+            readState,
+            prunedStore,
+            ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
+            ...(opts.taskId ? { taskId: opts.taskId } : {}),
+          });
+        noteToolOutcome(opts.taskId, name, args, toolResult.ok, toolResult.content ?? "");
 
         if (logSession) {
           recordToolResult(logSession, callId, name, toolResult.ok ? "succeeded" : "failed", toolResult.content, opts.taskId, opts.cfg.workspace);
@@ -1098,6 +1176,19 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
       directEnd = true;
       break;
     }
+    // A plan step names one call. Once that call succeeds, the next step is a
+    // separate worker, so this worker must not spend another model turn narrating.
+    const instructedDone =
+      instructed != null &&
+      stepToolOutcomes.length === 1 &&
+      stepToolOutcomes[0]?.ok === true &&
+      stepToolOutcomes[0].tool === instructed.function.name;
+    if (instructedDone) {
+      const evidence = stepToolOutcomes[0]?.content?.trim() ?? "";
+      finalText = evidence.slice(0, 2000) || `Completed ${instructed.function.name}.`;
+      directEnd = true;
+      break;
+    }
 
     if (stallNotices.length > 0) {
       messages.push({ role: "user", content: stallNotices.join("\n\n") });
@@ -1123,7 +1214,7 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
       if (after.action === "stop") {
         const stopped = budgetStoppedCheckpoint({ taskId: opts.taskId, prompt: opts.prompt, lastStep: step, budget: opts.budget });
         opts.emit({ type: "budget_exhausted", taskId: opts.taskId ?? "", reason: after.reason, checkpoint: stopped });
-        throw new MissionBudgetError(`${after.reason}. Raise the session budget to continue.`, stopped);
+        throw new MissionBudgetError(after.reason, stopped);
       }
     }
   }

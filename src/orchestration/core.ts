@@ -8,7 +8,7 @@ import type { Config } from "../config.js";
 import type { OllamaClient } from "../ollama.js";
 import { chatWithFallback } from "../agent/model.js";
 import { after } from "../protocol/eventLog.js";
-import { isCloudModel, pickCloudModel, NoCloudModelError } from "../llm/cloudModel.js";
+import { isCloudResponse, pickCloudModel, NoCloudModelError } from "../llm/cloudModel.js";
 import { ORCHESTRATION_DEFAULTS, clampOrchestration, type OrchestrationConfig } from "./config.js";
 import type { ModelPort } from "./modelPort.js";
 import { Tracer, type Span, type SpanContext } from "./tracing/tracer.js";
@@ -41,7 +41,7 @@ export function loamModelPort(cfg: Config, ollama: OllamaClient, tracer: Tracer,
       });
       span.recordContent("output", res.content);
       // A fallback chain may land on a non-cloud model; Core roles must not accept that.
-      if (!isCloudModel(cfg, res.model)) throw new NoCloudModelError(`core call (${req.model} fell back to ${res.model})`);
+      if (!isCloudResponse(cfg, req.model, res.model)) throw new NoCloudModelError(`core call (${req.model} fell back to ${res.model})`);
       return res;
     });
 }

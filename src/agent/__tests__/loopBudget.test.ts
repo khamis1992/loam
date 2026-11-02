@@ -151,6 +151,15 @@ describe("runAgent compute budget (linear path)", () => {
     assert.equal(budget.steps, 4);
   });
 
+  it("warns once while several steps sit between 80% and the ceiling", async () => {
+    const script = scriptedToolLoop();
+    const budget = createComputeBudget({ stepLimit: 10, tokenLimit: 100_000 });
+    const { events } = await run({ budget, script, maxSteps: 9, suppressFinal: true });
+    const warnings = events.filter((e) => e.type === "error" && /close to its ceiling/.test((e as { message?: string }).message ?? ""));
+    assert.equal(warnings.length, 1, "the 80% warning is not repeated on every later step");
+    assert.equal(script.calls, 9);
+  });
+
   it("stops before running a step that would cross the step ceiling", async () => {
     const script = scriptedToolLoop();
     const { events, error } = await run({
@@ -160,6 +169,11 @@ describe("runAgent compute budget (linear path)", () => {
       suppressFinal: true,
     });
     assert.match(error ?? "", /Compute budget exhausted/, "the ceiling is reported");
+    assert.equal(
+      (error ?? "").split("Raise the session budget to continue.").length - 1,
+      1,
+      "the raise instruction is stated once",
+    );
     assert.ok(
       events.some((e) => e.type === "error" && /Compute budget exhausted/.test((e as { message?: string }).message ?? "")),
       "the ceiling is emitted as an error event",
@@ -168,15 +182,16 @@ describe("runAgent compute budget (linear path)", () => {
     assert.equal(script.calls, 3, "no step runs past the ceiling");
   });
 
-  it("stops on the token ceiling as well", async () => {
+  it("continues after the token ceiling and reports that once", async () => {
     const script = scriptedToolLoop({ promptTokens: 100, completionTokens: 50 });
     const budget = createComputeBudget({ stepLimit: 100, tokenLimit: 250 });
-    const { error } = await run({ budget, script, maxSteps: 20, suppressFinal: true });
-    assert.match(error ?? "", /Compute budget exhausted.*tokens/, "the token ceiling is reported");
-    // 150 tokens per call; the guard checks BEFORE the step, so the third
-    // crossing is caught before the third call runs.
-    assert.equal(script.calls, 2, "no call runs past the token ceiling");
-    assert.ok(totalTokens(budget) >= 250, "the stop happens on the first crossing");
+    const { error, events } = await run({ budget, script, maxSteps: 6, suppressFinal: true });
+    assert.doesNotMatch(error ?? "", /tokens/, "the token ceiling does not end the run");
+    assert.match(error ?? "", /stopped after 6 steps/, "the run ends on the step cap instead");
+    const notices = events.filter((e) => e.type === "error" && /conversation continues/.test((e as { message?: string }).message ?? ""));
+    assert.equal(notices.length, 1, "the continuation notice is stated once");
+    assert.equal(script.calls, 6, "later steps still run");
+    assert.ok(totalTokens(budget) >= 250);
   });
 
   it("stops the default (non-suppressed) path too", async () => {

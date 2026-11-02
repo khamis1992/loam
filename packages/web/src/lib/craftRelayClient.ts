@@ -52,6 +52,8 @@ export interface CraftBridgeLike {
   open(name: string, bytes: Uint8Array): void;
   onSave(callback: (save: CraftSave) => void): () => void;
   call(method: string, params?: Record<string, unknown>, timeoutMs?: number): Promise<unknown>;
+  /** Present on the live bridge. The executor waits so a command is not posted before the app is listening. */
+  waitReady?(timeoutMs?: number): Promise<unknown>;
 }
 
 /** Everything a caller can override (tests inject fakes for all of them). */
@@ -76,6 +78,10 @@ export interface CraftRelayClientOptions {
   onError?: (error: unknown) => void;
   /** Called for every `workspace_open_request` (cr-03 auto-open hook). */
   onOpenRequest?: (request: RelayOpenRequest) => void;
+  /** Listen for open requests without executing commands or claiming a target. */
+  observeOnly?: boolean;
+  /** Targets this connection drives. Defaults to every Craft app. */
+  relayTargets?: readonly CraftApp[];
 }
 
 /** Stream event types this client reacts to. */
@@ -99,6 +105,8 @@ export interface CraftWaitSaveParams {
   command?: string;
   /** Params forwarded to that command. */
   params?: Record<string, unknown>;
+  /** Store the handed-over bytes under this file name. */
+  name?: string;
   /** How long to wait for the `craft:save` (default 60 s). */
   timeoutMs?: number;
 }
@@ -125,6 +133,8 @@ export class CraftRelayClient extends RelayClientBase<CraftRelayTarget> {
         reconnectDelayMs: options.reconnectDelayMs,
         onError: options.onError,
         onOpenRequest: options.onOpenRequest,
+        targets: options.observeOnly ? [] : (options.relayTargets ?? CRAFT_RELAY_TARGETS),
+        observeOnly: options.observeOnly,
       },
       getLoamBase,
     );
@@ -150,6 +160,7 @@ export function craftRelayExecutor(options: CraftRelayClientOptions): CraftRelay
     if (!bridge) {
       throw new Error(`no Loam ${String(command.target)} panel is mounted for task ${command.taskId}`);
     }
+    if (bridge.waitReady) await bridge.waitReady(20_000);
     if (command.method === 'craft.open') {
       await craftOpen(bridge, command, fetchBytes);
       return { opened: command.params.path ?? command.params.name ?? null };
@@ -158,7 +169,13 @@ export function craftRelayExecutor(options: CraftRelayClientOptions): CraftRelay
       const path = await craftWaitSave(bridge, command, uploadBytes);
       return { path };
     }
-    return bridge.call(command.method, command.params);
+    const value = await bridge.call(command.method, command.params);
+    // The editor wraps a successful reply as {ok:true, result}. Callers want the inner value.
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const record = value as { ok?: unknown; result?: unknown };
+      if (record.ok === true && 'result' in record) return record.result;
+    }
+    return value;
   };
 }
 
@@ -186,8 +203,9 @@ async function craftWaitSave(
   const saveCommand = typeof params.command === 'string' && params.command ? params.command : 'file.save';
   const saveParams = params.params && typeof params.params === 'object' && !Array.isArray(params.params) ? params.params : {};
   const timeoutMs = typeof params.timeoutMs === 'number' && params.timeoutMs > 0 ? params.timeoutMs : DEFAULT_WAIT_SAVE_TIMEOUT_MS;
+  const requestedName = typeof params.name === 'string' ? params.name.split(/[\\/]/).pop() ?? '' : '';
 
-  const stored = waitForSave(bridge, command.taskId, uploadBytes, timeoutMs);
+  const stored = waitForSave(bridge, command.taskId, uploadBytes, timeoutMs, requestedName);
   try {
     await bridge.call('engine.execute', { command: saveCommand, params: saveParams });
   } catch (err) {
@@ -208,6 +226,7 @@ function waitForSave(
   taskId: string,
   uploadBytes: (taskId: string, name: string, bytes: Uint8Array) => Promise<void>,
   timeoutMs: number,
+  requestedName = '',
 ): PendingSave {
   let unsubscribe: (() => void) | null = null;
   let settle!: (value: string) => void;
@@ -220,10 +239,11 @@ function waitForSave(
     unsubscribe = bridge.onSave((save) => {
       // The app hands the bytes to the host instead of downloading them: store
       // them in the task's files, exactly like the panel's own Save button.
-      void uploadBytes(taskId, save.name, save.bytes)
+      const storedName = requestedName || save.name;
+      void uploadBytes(taskId, storedName, save.bytes)
         .then(() => {
           finish();
-          settle(save.name);
+          settle(storedName);
         })
         .catch((err: unknown) => {
           finish();

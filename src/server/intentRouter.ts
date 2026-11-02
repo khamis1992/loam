@@ -5,9 +5,11 @@
  *
  * Order of resolution:
  *   1. empty/whitespace text -> "ask" immediately (no model call);
- *   2. Layer 2 model (src/server/intentModel.ts) — ONE cheap classification
+ *   2. a decisive keyword (a deck, a spreadsheet, a video) wins without a
+ *      model call, so "صفحة واحدة" cannot reclassify a presentation as a website;
+ *   3. Layer 2 model (src/server/intentModel.ts) — ONE cheap classification
  *      call; a null result (timeout, garbage, unknown id) falls through;
- *   3. Layer 1 keywords (src/server/intentKeywords.ts) — deterministic Arabic
+ *   4. Layer 1 keywords (src/server/intentKeywords.ts) — deterministic Arabic
  *      + English seed scoring, "ask" below the confidence threshold.
  *
  * routeIntent NEVER throws: any unexpected error degrades to the "ask"
@@ -50,11 +52,14 @@ export async function routeIntent(text: string, deps: IntentRouterDeps): Promise
     if (!trimmed) {
       return { mode: "ask", effort: classifyEffort(""), reason: ASK_FALLBACK_REASON, source: "keywords" };
     }
+    const keywords = classifyIntentByKeywords(trimmed);
+    if (keywords.decisive && keywords.mode !== "ask") {
+      return { mode: keywords.mode, effort: classifyEffort(trimmed), reason: keywordReason(keywords.matched), source: "keywords" };
+    }
     const model = await classifyIntentByModel(trimmed, deps);
     if (model) {
       return { mode: model.mode, effort: classifyEffort(trimmed), reason: model.reason, source: "model" };
     }
-    const keywords = classifyIntentByKeywords(trimmed);
     if (keywords.mode !== "ask") {
       return { mode: keywords.mode, effort: classifyEffort(trimmed), reason: keywordReason(keywords.matched), source: "keywords" };
     }

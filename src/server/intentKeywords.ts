@@ -16,6 +16,23 @@ import { LOAM_MODES } from "../modes/catalog.js";
 /** A request needs at least this many distinct seed hits to leave "ask". */
 export const KEYWORD_MIN_SCORE = 2;
 
+/** One of these is the whole request, so a single hit is enough to leave "ask". */
+const DECISIVE_SEEDS = new Set([
+  "presentation", "slides", "pptx", "powerpoint", "power point", "docx",
+  "عرض تقديمي", "عرضا تقديميا", "شرائح", "برزنتيشن", "برزنيشن", "بوربوينت", "وورد",
+  "excel", "xlsx", "spreadsheet", "اكسل",
+  "video", "فيديو", "subtitles", "screen recording", "سجل شاشتي",
+  "markdown", "readme",
+  "statistics",
+  "security headers",
+  "html slide page",
+  "cite sources",
+  "landing page",
+  "export mp4",
+  "labour law",
+  "dev flow",
+]);
+
 /**
  * Arabic + English seeds per mode id. Keys are validated against the catalog
  * at load time (see MODE_IDS below), so a renamed mode id silently drops out
@@ -30,31 +47,32 @@ const SEEDS: ReadonlyArray<readonly [string, readonly string[]]> = [
   ["build", [
     "ابن لي", "ابني", "بناء", "طور", "انشئ تطبيق", "انشئ موقع", "انشئ صفحة",
     "تطبيق ويب", "صفحة ويب", "برمج", "كود", "اصلاح", "اصلح",
-    "build", "develop", "implement", "website", "web app", "landing page", "refactor", "compile",
+    "build", "develop", "implement", "website", "web app", "landing page", "html slide page", "refactor", "compile",
   ]],
   ["research", [
     "ابحث", "بحث", "مصادر", "قارن", "دراسة", "استقصاء", "تحقيق",
-    "research", "search", "sources", "compare", "investigate", "browse", "look up", "literature",
+    "research", "search", "sources", "cite sources", "compare", "investigate", "browse", "look up", "literature",
   ]],
   ["write", [
-    "اكتب", "كتابة", "مستند", "مقال", "عرض تقديمي", "عرضا تقديميا", "شرائح", "رسالة", "مسودة", "سيرة ذاتية",
-    "write", "document", "presentation", "slides", "pptx", "docx", "essay", "letter", "draft", "memo",
+    "اكتب", "كتابة", "مستند", "مقال", "عرض تقديمي", "عرضا تقديميا", "شرائح", "برزنتيشن", "برزنيشن", "بوربوينت", "وورد", "رسالة", "مسودة", "سيرة ذاتية",
+    "write", "document", "presentation", "slides", "pptx", "powerpoint", "power point", "docx", "essay", "letter", "draft", "memo", "markdown", "readme",
   ]],
   ["data", [
-    "حلل", "تحليل بيانات", "بيانات", "جدول", "جداول", "خلايا", "رسم بياني", "مؤشرات",
-    "excel", "csv", "spreadsheet", "dataset", "chart", "pivot", "statistics", "analysis",
+    "حلل", "تحليل بيانات", "بيانات", "جدول", "جداول", "خلايا", "رسم بياني", "مؤشرات", "اكسل",
+    "excel", "xlsx", "csv", "spreadsheet", "dataset", "chart", "pivot", "statistics", "analysis",
   ]],
   ["media", [
     "صمم", "تصميم", "مشهد", "مجسم", "ثلاثي الابعاد", "فيديو", "موسيقي", "لوجو", "بوستر",
-    "3d", "render", "scene", "video", "music", "logo", "poster", "glb", "thumbnail",
+    "3d", "render", "scene", "video", "music", "logo", "poster", "glb", "thumbnail", "subtitles", "export mp4",
+    "screen recording", "سجل شاشتي", "تسجيل الشاشه",
   ]],
   ["security", [
     "ثغر", "اختراق", "فحص امني", "تقرير امني", "فحص ترويسات",
-    "pentest", "vulnerability", "security scan", "security audit", "sast", "sarif", "cve", "exploit", "red team",
+    "pentest", "vulnerability", "security scan", "security audit", "security headers", "sast", "sarif", "cve", "exploit", "red team",
   ]],
   ["legal", [
     "قانون", "عقد", "دعوي", "دعاوي", "محكمة", "تشريع", "مذكرة", "مرافعة",
-    "legal", "statute", "contract review", "litigation", "court", "qatar law",
+    "legal", "statute", "contract review", "litigation", "court", "qatar law", "labour law",
   ]],
   ["reverse-engineer", [
     "هندسة عكسية", "عكس هندسي", "فك تشفير", "تحليل ثنائي", "تحليل تطبيق",
@@ -122,18 +140,21 @@ export interface KeywordIntent {
   mode: string;
   score: number;
   matched: string[];
+  /** A single decisive seed (a deck, a spreadsheet, a video) named the mode. */
+  decisive: boolean;
 }
 
 /** Pure classifier: never touches the network, never throws on any input. */
 export function classifyIntentByKeywords(text: string): KeywordIntent {
   const normalized = normalizeText(typeof text === "string" ? text : "");
-  let best: KeywordIntent = { mode: "ask", score: 0, matched: [] };
+  let best: KeywordIntent = { mode: "ask", score: 0, matched: [], decisive: false };
   if (!normalized.trim()) return best;
   for (const [id, rules] of COMPILED) {
     const matched = rules.filter((rule) => hit(rule, normalized)).map((rule) => rule.seed);
     // Strictly greater: ties keep the earlier mode in SEEDS order.
-    if (matched.length > best.score) best = { mode: id, score: matched.length, matched };
+    if (matched.length > best.score) best = { mode: id, score: matched.length, matched, decisive: false };
   }
-  if (best.score < KEYWORD_MIN_SCORE) return { mode: "ask", score: best.score, matched: best.matched };
+  if (best.matched.some((seed) => DECISIVE_SEEDS.has(seed))) return { ...best, decisive: true };
+  if (best.score < KEYWORD_MIN_SCORE) return { mode: "ask", score: best.score, matched: best.matched, decisive: false };
   return best;
 }

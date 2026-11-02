@@ -114,6 +114,7 @@ export class OpenAICompatAdapter implements ProviderAdapter {
       const decoder = new TextDecoder();
       let buffer = "";
       let content = "";
+      let thinking = "";
       const toolCalls: any[] = [];
       const toolCallsMap = new Map<number, { id?: string; name?: string; args: string }>();
       let usage = { promptTokens: 0, completionTokens: 0 };
@@ -146,6 +147,12 @@ export class OpenAICompatAdapter implements ProviderAdapter {
                   if (options.onToken) {
                     options.onToken(choice.delta.content);
                   }
+                }
+
+                const reasoning = choice.delta?.reasoning_content || choice.delta?.reasoning || choice.delta?.thinking;
+                if (typeof reasoning === "string" && reasoning) {
+                  thinking += reasoning;
+                  options.onThinking?.(reasoning);
                 }
 
                 if (choice.delta?.tool_calls) {
@@ -200,6 +207,7 @@ export class OpenAICompatAdapter implements ProviderAdapter {
 
       return {
         content,
+        ...(thinking ? { thinking } : {}),
         toolCalls,
         model: options.model,
         doneReason: finishReason,

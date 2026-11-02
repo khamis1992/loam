@@ -21,6 +21,26 @@ import path from "node:path";
  */
 export interface CreativeStudioDeps {
   transcribe?: (mediaPath: string) => Promise<Transcript>;
+  /** When set, used instead of the live speech-runtime probe. Tests inject this. */
+  speechProbe?: () => Promise<string | null>;
+}
+
+const SPEECH_MISSING = "محرك التفريغ غير متاح. The speech runtime is not available. Start the local speech-to-text server or set LOAM_STT_URL, then retry.";
+
+/** Cheap reachability check. Fails in under 2s when the speech server is down. */
+export async function probeSpeechRuntime(fetchImpl: typeof fetch = fetch): Promise<string | null> {
+  const url = (process.env.LOAM_STT_URL || "http://127.0.0.1:3947").replace(/\/$/, "");
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 1_500);
+  try {
+    const res = await fetchImpl(url, { method: "GET", signal: ctrl.signal });
+    if (res.status >= 500) return SPEECH_MISSING;
+    return null;
+  } catch {
+    return SPEECH_MISSING;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 interface TimelineJob {
@@ -195,6 +215,10 @@ export function createCreativeStudioTools(deps: CreativeStudioDeps = {}): Tool[]
           return { ok: false, content: `مسار خارج مساحة المهمة غير مسموح: ${rel}` };
         }
         if (!fs.existsSync(file) || !fs.statSync(file).isFile()) return { ok: false, content: `ملف الوسائط غير موجود: ${rel}` };
+        if (!deps.transcribe) {
+          const problem = await (deps.speechProbe ?? probeSpeechRuntime)();
+          if (problem) return { ok: false, content: problem };
+        }
         let transcript: Transcript;
         try {
           transcript = await transcribeMedia(file);

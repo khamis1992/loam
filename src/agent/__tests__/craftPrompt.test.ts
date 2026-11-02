@@ -185,6 +185,25 @@ describe("craft guidance in the assembled prompt", () => {
     assert.match(PLANNER_SYSTEM, /engine\.commands/i);
     assert.match(PLANNER_SYSTEM, /fall back to the built-in editors/i);
   });
+
+  it("sends a new presentation to Loam Slides instead of an HTML page", () => {
+    assert.match(CRAFT_EDITORS_PROMPT, /presentation, slides, or pptx request opens Loam Slides/i);
+    assert.match(CRAFT_EDITORS_PROMPT, /Do not build an HTML page/i);
+    assert.match(PLANNER_SYSTEM, /Loam Slides task, not an HTML page/i);
+    assert.match(PLANNER_SYSTEM, /not a browser app, even when the user asks for one page/i);
+    const writePrompt = buildSystemPrompt(cfg, [], getLoamMode("write").tools);
+    assert.ok(!writePrompt.includes("save app-verification.json"), "a deck run must not carry the app-verification contract");
+    assert.match(buildSystemPrompt(cfg, [], getLoamMode("build").tools), /save app-verification.json/);
+    assert.match(PLANNER_SYSTEM, /Loam Docs/i);
+    assert.match(PLANNER_SYSTEM, /Loam Sheets/i);
+    const both = buildSystemPrompt(cfg, [], ["office_craft", "office_export", "loam_studio"]);
+    assert.match(both, /matching Craft editor/);
+    assert.doesNotMatch(both, /build the content in loam_studio/);
+    assert.match(getLoamMode("data").outputHint, /Loam Sheets/);
+    assert.match(getLoamMode("media").outputHint, /video_studio/);
+    assert.match(getLoamMode("write").outputHint, /Loam Slides/);
+    assert.ok(getLoamMode("write").tools.includes("office_craft"), "write mode must be able to open Loam Slides");
+  });
 });
 
 describe("branding contract", () => {

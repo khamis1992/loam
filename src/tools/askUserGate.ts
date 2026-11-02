@@ -222,7 +222,8 @@ export function needsAskUser(prompt: string, history?: Array<{ role?: string; co
   const hasHistoryContext = (history ?? []).some((m) => (m.content ?? "").trim().length > 40);
 
   // 1. Missing context: the request leans on something not in this transcript.
-  if (hasAmbiguous && !hasHistoryContext) {
+  const namesItsSubject = /:\s+\S+(?:\s+\S+){2,}/.test(text);
+  if (hasAmbiguous && !hasHistoryContext && !namesItsSubject) {
     const ref = AMBIGUOUS_PRONOUNS.find((phrase) => new RegExp(`\\b${phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(text));
     return {
       reason: "missing_context",

@@ -81,13 +81,13 @@ describe("Neo N10 output types", () => {
 
   it("maps each output type to its pipeline tools plus the run essentials", () => {
     const registered = [
-      "loam_document", "loam_studio", "loam_creative", "loam_canvas", "gen_image", "gen_video",
+      "office_craft", "loam_document", "loam_studio", "loam_creative", "loam_canvas", "gen_image", "gen_video",
       "office_export", "web_scaffold", "preview_serve", "artifact_publish", "file_read",
       "finish", "think",
     ];
     const slides = outputTypeTools("slides", registered);
     // The pipeline leads, so the deliverable tools stay first in the list.
-    assert.deepEqual(slides.slice(0, 2), ["loam_studio", "office_export"]);
+    assert.deepEqual(slides.slice(0, 3), ["office_craft", "loam_studio", "office_export"]);
     assert.ok(slides.includes("finish"), "a run must always be able to finish");
     assert.ok(slides.includes("artifact_publish"), "a run must always be able to publish");
     const website = outputTypeTools("website", registered);

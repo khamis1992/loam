@@ -15,6 +15,9 @@ import { handleAdvancedSecurityRoute } from "./advancedSecurityRoutes.js";
 import { handleVulnerabilityCatalogRoute } from "./vulnerabilityCatalogRoutes.js";
 import { handleNextSecurityRoute } from "./nextSecurityRoutes.js";
 import { handleEngineRoute } from "./engineRoutes.js";
+import { setServiceBaseUrl } from "../tools/serviceBridgeTools.js";
+import { announceRelayTargets } from "./relayAttach.js";
+import { isHostileCrossSite } from "./appShellOrigin.js";
 import { rehydrateAskUsers } from "../tools/askUserStore.js";
 import { rehydratePlanApprovals } from "../tools/planApprovalStore.js";
 import { rehydrateApprovals } from "./approvals.js";
@@ -146,6 +149,7 @@ import { handleGraphNodeRoutes } from "./routes/graphNodes.js";
 import { createCanvasBridgeUpgrade, handleCanvasBridgeParentRoutes, handleCanvasBridgeRoutes } from "./routes/canvasBridge.js";
 import { getLiveRunGraph, subscribeRunGraph } from "../agent/runGraphAdapter.js";
 import { handleCraftRoutes } from "./routes/craft.js";
+import { handleRecorderRoutes } from "./routes/recorder.js";
 import { handleInstructionsRoutes } from "./routes/instructions.js";
 import { handleAgentSpawnRoutes } from "./routes/agentSpawn.js";
 import { handleAutoVideoRoutes } from "./routes/autoVideo.js";
@@ -605,6 +609,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           res.setHeader("access-control-allow-origin", String(req.headers.origin));
           res.setHeader("access-control-allow-methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
           res.setHeader("access-control-allow-headers", "content-type,authorization,x-loam-local-token");
+          res.setHeader("access-control-allow-private-network", "true");
           res.setHeader("access-control-max-age", "600");
           if (req.method === "OPTIONS") {
             res.writeHead(204);
@@ -880,6 +885,8 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         }
 
         if (req.method === "GET" && p === "/api/health") {
+          const relayStage = url.searchParams.get("relay");
+          if (relayStage) log.info("relay_seen", { stage: relayStage });
           sendJson(res, 200, {
             ok: true,
             provider: cfg.model.endsWith(":cloud") ? "cloud" : "ollama",
@@ -2234,6 +2241,7 @@ loadAgents();
         })) return;
         // Craft apps (/api/craft/status): which vendored dists are installed.
         if (await handleCraftRoutes(req, res, p)) return;
+        if (await handleRecorderRoutes(req, res, p)) return;
         if (await handleInstructionsRoutes(req, res, p)) return;
         if (await handleAgentSpawnRoutes(req, res, p)) return;
         if (await handleAgentThreadRoutes(req, res, p)) return;
@@ -2948,21 +2956,27 @@ loadAgents();
         // result of a command that was dispatched over the task's event stream.
         // The /video-studio/result path stays as the fc-02 (Video Studio) alias.
         if (req.method === "POST" && /^\/api\/tasks\/[^/]+\/(?:workspace|video-studio)\/result$/.test(p)) {
-          const origin = req.headers.origin;
-          if ((origin && origin !== `http://${req.headers.host}`) || req.headers["sec-fetch-site"] === "cross-site") {
+          if (isHostileCrossSite(req)) {
+            log.info("relay_result_rejected", { origin: req.headers.origin ?? "", site: req.headers["sec-fetch-site"] ?? "" });
             return sendJson(res, 403, { error: "same-origin requests required" });
           }
           const route = p.includes("/video-studio/result") ? "/video-studio/result" : "/workspace/result";
           const taskId = decodeURIComponent(p.slice("/api/tasks/".length, -route.length));
           if (!getTask(taskId)) return sendJson(res, 404, { error: "task not found" });
           let raw: unknown;
-          try { raw = await readBody(req, 64_000); } catch { return sendJson(res, 400, { error: "invalid JSON body" }); }
+          // A finished export comes back as base64 video. The default 1 MB cap
+          // drops that body, so the render never lands in the task workspace.
+          try { raw = await readBody(req, 64_000_000); } catch (error) {
+            log.info("relay_result_body", { error: error instanceof Error ? error.message : String(error) });
+            return sendJson(res, 400, { error: "invalid JSON body" });
+          }
           const result = raw as WorkspaceRelayResult;
           if (!result || typeof result !== "object" || typeof result.id !== "string" || typeof result.taskId !== "string") {
             return sendJson(res, 400, { error: "id and taskId are required" });
           }
           if (result.taskId !== taskId) return sendJson(res, 400, { error: "taskId mismatch" });
           const handled = workspaceRelay.resolve(result);
+          log.info("relay_result", { taskId, id: result.id, ok: result.ok === true, handled });
           return sendJson(res, 200, { ok: handled, ...(handled ? {} : { ignored: true }) });
         }
 
@@ -2971,8 +2985,7 @@ loadAgents();
         // editor renders, the bytes come back through the relay and the file is
         // written into this task's workspace under exports/.
         if (req.method === "POST" && /^\/api\/tasks\/[^/]+\/video-studio\/export$/.test(p)) {
-          const origin = req.headers.origin;
-          if ((origin && origin !== `http://${req.headers.host}`) || req.headers["sec-fetch-site"] === "cross-site") {
+          if (isHostileCrossSite(req)) {
             return sendJson(res, 403, { error: "same-origin requests required" });
           }
           const taskId = decodeURIComponent(p.slice("/api/tasks/".length, -"/video-studio/export".length));
@@ -2999,7 +3012,7 @@ loadAgents();
           } catch (error) {
             const err = error as { code?: string; message?: string };
             if (err.code === "PANEL_NOT_OPEN") {
-              return sendJson(res, 409, { ok: false, reason: "panel_not_open", retry: true, message: err.message });
+              return sendJson(res, 409, { ok: false, reason: "panel_not_open", retry: false, message: err.message });
             }
             if (err.code === "CANCELLED") {
               return sendJson(res, 499, { ok: false, reason: "cancelled", message: err.message });
@@ -3011,6 +3024,9 @@ loadAgents();
 
         if (req.method === "GET" && p.startsWith("/api/tasks/") && p.endsWith("/stream")) {
           const id = decodeURIComponent(p.slice("/api/tasks/".length, -"/stream".length));
+          const announcedEarly = url.searchParams.has("targets");
+          const earlyTargets = (url.searchParams.get("targets") ?? "").split(",").map((part) => part.trim()).filter(Boolean);
+          log.info("task_stream", { taskId: id, targets: earlyTargets.join(","), announced: announcedEarly });
           const task = getTask(id);
           if (!task) return sendJson(res, 404, { error: "task not found" });
           res.writeHead(200, {
@@ -3025,9 +3041,15 @@ loadAgents();
           const unsub = subscribeTask(id, (event) => {
             res.write(`data: ${redact(JSON.stringify(event))}\n\n`);
           });
+          const detachTargets = announcedEarly ? announceRelayTargets(id, earlyTargets) : () => {};
+          for (const request of workspaceRelay.openRequestsFor(id)) {
+            res.write(`data: ${JSON.stringify({ type: "workspace_open_request", target: request.target, path: request.path })}\n\n`);
+          }
+          workspaceRelay.replayPending(id);
           const keepalive = setInterval(() => res.write(": ping\n\n"), 15_000);
           req.on("close", () => {
             clearInterval(keepalive);
+            detachTargets();
             unsub();
           });
           return;
@@ -3523,6 +3545,6 @@ loadAgents();
 
   return new Promise((resolve) => {
     server.once("close", () => { swarm?.close(); void realSwarm?.close(); void timeline.close(); });
-    server.listen(cfg.server.port, cfg.server.host, () => { const address = server.address(); if (address && typeof address !== "string") timeline.start(`http://127.0.0.1:${address.port}`); resolve(server); });
+    server.listen(cfg.server.port, cfg.server.host, () => { const address = server.address(); if (address && typeof address !== "string") { setServiceBaseUrl(`http://127.0.0.1:${address.port}`); timeline.start(`http://127.0.0.1:${address.port}`); } resolve(server); });
   });
 }

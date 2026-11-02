@@ -33,6 +33,8 @@ export interface ComputeBudget {
   costLimitUsd?: number;
   /** true once the user raised the ceiling after a stop. */
   raised?: boolean;
+  /** true after the 80% warning has been shown for the current ceiling. */
+  ceilingWarned?: boolean;
 }
 
 /** Verdict of a consumption attempt against the budget. */
@@ -136,8 +138,9 @@ export function costUsed(budget: ComputeBudget): number {
 
 /**
  * Decide whether the session may continue. Called BEFORE a step runs and
- * BEFORE the next tool call: the first crossing of 100% stops the run rather
- * than letting it burn one more step.
+ * BEFORE the next tool call: the first crossing of a step, wall-clock or cost
+ * ceiling stops the run. Crossing the token tally warns and the conversation
+ * continues after the live window is summarized.
  *
  * Order matters: a stop verdict always wins over a warn verdict so the hard
  * ceiling is never reported as "only a warning".
@@ -154,10 +157,12 @@ export function checkBudget(budget: ComputeBudget, limits: ComputeBudgetLimits =
       reason: `Compute budget exhausted: ${budget.steps}/${stepLimit} steps. Raise the session budget to continue.`,
     };
   }
+  // The token tally is cumulative spend. Crossing it summarizes the live window
+  // and the conversation continues. Steps, wall-clock and cost still stop the run.
   if (tokenLimit !== undefined && totalTokens(budget) >= tokenLimit) {
     return {
-      action: "stop",
-      reason: `Compute budget exhausted: ${totalTokens(budget)}/${tokenLimit} tokens. Raise the session budget to continue.`,
+      action: "warn",
+      reason: `Context token ceiling reached (${totalTokens(budget)}/${tokenLimit}). The live window is summarized and the conversation continues.`,
     };
   }
   const clock = wallClockUsed(budget);
@@ -237,6 +242,8 @@ export function raiseBudget(
     budget.costLimitUsd = (budget.costLimitUsd ?? costUsed(budget)) + costDelta;
   }
   budget.raised = true;
+  // The new ceiling has its own 80% line, so the warning may fire once more.
+  budget.ceilingWarned = false;
   return { ok: true };
 }
 
@@ -247,6 +254,7 @@ export function resetBudgetUsage(budget: ComputeBudget): void {
   budget.completionTokens = 0;
   budget.wallClockMs = 0;
   budget.costUsd = 0;
+  budget.ceilingWarned = false;
 }
 
 /** Test helper: a budget with generous limits, so a test controls its own numbers. */

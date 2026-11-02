@@ -37,3 +37,13 @@ export const OUTPUT_TYPE_MODE: Record<OutputType, string> = {
   slides: "write",
   website: "build",
 };
+
+const SLIDE_WORD = /برزنيشن|برزنتيشن|برزنتيشين|بوربوينت|عرض\s*تقديم|شرائح|\b(?:presentation|slides|pptx|powerpoint)\b/i;
+const CREATE_WORD = /اعمل|انشئ|أنشئ|سوي|اكتب|\b(?:create|make|build|design)\b/i;
+const EXPLICIT_WEB = /صفحة\s*ويب|موقع|\bhtml\b|\b(?:website|web\s*page|web\s*app)\b/i;
+
+/** A new deck, including a one-page deck and the common برزنيشن spelling.
+ *  "صفحة واحدة" is one slide. An explicit website or HTML request stays a web task. */
+export function isSlideDeckRequest(text: string): boolean {
+  return SLIDE_WORD.test(text) && CREATE_WORD.test(text) && !EXPLICIT_WEB.test(text);
+}

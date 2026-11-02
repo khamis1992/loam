@@ -181,6 +181,18 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
   };
 
   switch (event.type) {
+    case "thinking": {
+      const live: LiveStatusEvent = {
+        id: synthId(),
+        type: "liveStatus",
+        timestamp: ts,
+        text: event.text,
+        noPersistent: true,
+      };
+      out.push(live);
+      break;
+    }
+
     case "assistant_token": {
       if (!state.assistantBubbleTarget) state.assistantBubbleTarget = baseId();
       const delta: ChatDeltaEvent = {

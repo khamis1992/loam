@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { ROOT } from "../config.js";
 import type { PreviewService } from "../preview/serve.js";
 import { createCraftOfficeTool } from "./craftOffice.js";
+import { runNativeCraftFallback } from "./craftFallback.js";
 import { bool, num, str, type Tool, type ToolContext, type ToolResult } from "./registry.js";
 import { DEFAULT_BASE_NAME, ingestContent } from "../knowledge/ingest.js";
 import { fromFile, fromText, resolveImportPath } from "../knowledge/importers.js";
@@ -146,14 +147,14 @@ export async function switchFrontierMode(_workspace: string, modeId: string, _re
   }
 }
 
-export function createFrontierBridgeTools(preview?: PreviewService, knowledge: KnowledgeToolOptions = {}): Tool[] {
+export function createFrontierBridgeTools(preview?: PreviewService, knowledge: KnowledgeToolOptions = {}, coreDir?: string | null): Tool[] {
   // Phase-2 W2 «تحدث مع ملفاتك»: the rag_* redirectors rank through the same
   // garden wiring (embedder/model) as the kb_* tools, so one store, one ranking.
   const knowledgeSearchDefaults = {
     ...(knowledge.embedder ? { embedder: knowledge.embedder } : {}),
     ...(knowledge.model ? { model: knowledge.model } : {}),
   };
-  return [
+  const tools = [
     {
       name: "super_swarm",
       description:
@@ -322,44 +323,7 @@ export function createFrontierBridgeTools(preview?: PreviewService, knowledge: K
           ),
         };
       },
-      fallback: async (app, args, ctx) => {
-        const title = str(args, "title", "وثيقة استديو الأوفيس التنفيذية");
-        const instruction = str(args, "instruction");
-        const outDir = str(args, "outDir", "office-out");
-        // The legacy `engine: "studio"` generator built all three office files
-        // plus the live studio page through the single `office_studio` entry
-        // point; the per-app Craft fallback uses the matching `*_craft` one.
-        const legacyStudio = str(args, "engine").trim().toLowerCase() === "studio";
-        const officeMod = await importFrontierModule<{
-          createOfficeCraftService: (opts: { workspace: string }) => {
-            call: (name: string, a: Record<string, unknown>) => Promise<{ ok: boolean; result: Record<string, unknown> }>;
-          };
-        }>("office/office-studio.mjs");
-        const svc = officeMod.createOfficeCraftService({ workspace: ctx.workspace });
-        const toolName = legacyStudio
-          ? "office_studio"
-          : app === "docs"
-            ? "word_craft"
-            : app === "sheets"
-              ? "grid_craft"
-              : app === "slides"
-                ? "deck_craft"
-                : "office_studio";
-        const res = await svc.call(toolName, {
-          action: instruction ? "ai_edit" : legacyStudio ? "build_studio" : "create",
-          title,
-          instruction: instruction || undefined,
-          outDir,
-        });
-        if (preview && fs.existsSync(path.join(ctx.workspace, outDir, "index.html"))) {
-          try {
-            await preview.start(path.join(ctx.workspace, outDir));
-          } catch {
-            /* ignore */
-          }
-        }
-        return { ok: res.ok, content: JSON.stringify(res.result, null, 2) };
-      },
+      fallback: (app, args, ctx) => runNativeCraftFallback(app, args, ctx),
     }),
 
     {
@@ -471,7 +435,7 @@ export function createFrontierBridgeTools(preview?: PreviewService, knowledge: K
         outDir: { type: "string" },
       },
     }),
-    modeTool("presentation_build", "Build a rich interactive HTML5 slide deck (index.html) with SVG bar/line charts, KPI metrics, timelines, speaker notes, RTL support, plus slides.md export.", {
+    modeTool("presentation_build", "Only when the user explicitly asks for an HTML or web slide page: build that page as index.html with SVG charts, KPI metrics, timelines, speaker notes, and RTL support, plus slides.md. A normal presentation, slides, or pptx request uses Loam Slides (office_craft, app slides) instead of this tool.", {
       type: "object",
       properties: {
         title: { type: "string" },
@@ -665,6 +629,13 @@ export function createFrontierBridgeTools(preview?: PreviewService, knowledge: K
       },
     }),
   ];
+  const core = coreDir !== undefined ? coreDir : resolveFrontierCoreDir();
+  if (core) return tools;
+  // rag_* are local Knowledge Garden redirectors. office_craft drives the
+  // vendored editors and falls back to loam_studio. Everything else imports
+  // the missing Frontier core and must not be offered.
+  const local = new Set(["rag_index", "rag_query", "office_craft"]);
+  return tools.filter((tool) => local.has(tool.name));
 }
 
 // ============================================================================

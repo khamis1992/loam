@@ -266,6 +266,11 @@ describe('craft tool routing', () => {
     expect(decideWorkspaceOpen(ev)).toEqual({ path: null, kind: 'craft' });
   });
 
+  it('opens Loam Docs when the call names app docs and no file', () => {
+    const ev = toolEvent({ tool: 'office_craft', argumentsDetail: { app: 'docs', action: 'open' } });
+    expect(decideWorkspaceOpen(ev)).toEqual({ path: null, kind: 'craft', craftApp: 'docs' });
+  });
+
   it('does not open the workspace for unrelated tools', () => {
     const ev = toolEvent({ tool: 'terminal', argumentsDetail: { command: 'ls' } });
     expect(decideWorkspaceOpen(ev)).toBeNull();

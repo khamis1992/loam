@@ -27,6 +27,7 @@ const GENERATION_BY_KIND: Record<WorkspaceKind, number> = {
   slides: 2,
   canvas: 2,
   'loam-video': 3,
+  'loam-recorder': 3,
   craft: 3,
 };
 
