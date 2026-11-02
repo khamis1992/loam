@@ -808,6 +808,28 @@ export function createChatSocket(deps: SocketDeps): Server {
 
             emit({ type: "mode", ...modeEventInfo(resolvedMode) });
 
+            const openClock: ServerEnvelope = {
+              id: baseId(),
+              type: "event",
+              sessionId: um.sessionId,
+              timestamp: Date.now(),
+              event: {
+                id: baseId(),
+                type: "cascadeTaskClock",
+                timestamp: Date.now(),
+                clock: {
+                  sessionId: um.sessionId,
+                  taskId,
+                  startedAt: session.createdAt,
+                  accumulatedMs: 0,
+                  phase: "open",
+                  revision: 0,
+                },
+              },
+            };
+            store.appendEvent(um.sessionId, openClock);
+            io.to(um.sessionId).emit("message", openClock);
+
             // Option 18: the composer's model tier resolves to a concrete model id.
             const tierModel = isModelTier(um.extData.modelTier) ? resolveTierModel(loadConfig(), um.extData.modelTier).model : undefined;
 

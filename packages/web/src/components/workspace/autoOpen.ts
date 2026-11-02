@@ -46,6 +46,10 @@ export function isVideoStudioTool(tool: string): boolean {
   return name === 'video_studio' || name.startsWith('video_studio_') || name === 'loam_video_studio';
 }
 
+export function isRecorderTool(tool: string): boolean {
+  return (tool ?? '').toLowerCase() === 'loam_recorder';
+}
+
 /**
  * Edit intent in the user's own words (Arabic + English) for a document, sheet,
  * slide deck, image or layout.
@@ -300,6 +304,27 @@ function candidatePath(event: ToolUsedEvent): string | null {
   return match ? match[0] : null;
 }
 
+const CRAFT_APP_NAMES = new Set(['docs', 'sheets', 'slides', 'photo', 'design']);
+
+/** The Craft app named by an office_craft call, when the arguments include `app`. */
+function craftAppNamedByEvent(event: ToolUsedEvent): string | null {
+  const sources: unknown[] = [event.argumentsDetail, event.detail];
+  for (const raw of sources) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+    const app = (raw as Record<string, unknown>).app;
+    if (typeof app === 'string' && CRAFT_APP_NAMES.has(app)) return app;
+  }
+  return null;
+}
+
+/** Keep a Craft app the relay already chose when a later tool event does not name one. */
+export function mergeWorkspaceTarget(current: WorkspaceOpenTarget | null, next: WorkspaceOpenTarget): WorkspaceOpenTarget {
+  if (next.kind === 'craft' && !next.craftApp && current?.kind === 'craft' && current.craftApp) {
+    return { ...next, craftApp: current.craftApp };
+  }
+  return next;
+}
+
 /** Resolve the craft app for a path, or the one an explicit tool named. */
 function craftAppForTarget(tool: string, path: string | null): string | null {
   if (path) return craftAppForExtension(craftExtOf(path));
@@ -308,6 +333,7 @@ function craftAppForTarget(tool: string, path: string | null): string | null {
 
 /** Decide whether a tool event should open the right panel on the Workspace tab. */
 export function decideWorkspaceOpen(event: ToolUsedEvent): WorkspaceOpenTarget | null {
+  if (isRecorderTool(event.tool)) return { path: null, kind: 'loam-recorder' };
   if (isVideoStudioTool(event.tool)) {
     const path = candidatePath(event);
     return { path, kind: 'loam-video', importPath: path };
@@ -325,9 +351,14 @@ export function decideWorkspaceOpen(event: ToolUsedEvent): WorkspaceOpenTarget |
   }
   if (isWorkspaceToolName(event.tool)) {
     const target: WorkspaceOpenTarget = { path: null, kind: null };
-    // A craft/office tool without a path still belongs on the Workspace tab; the
-    // panel lists the task's files and the user opens one manually.
-    if (isCraftToolName(event.tool)) target.kind = 'craft';
+    // A craft/office tool without a path still belongs on the Workspace tab.
+    // The call names the app (docs, sheets, slides, photo, design); without
+    // that name the panel would open Slides and the other editor never attaches.
+    if (isCraftToolName(event.tool)) {
+      target.kind = 'craft';
+      const named = craftAppNamedByEvent(event);
+      if (named) target.craftApp = named;
+    }
     return target;
   }
   // A long-horizon tool with no file output still moves the run graph, so it

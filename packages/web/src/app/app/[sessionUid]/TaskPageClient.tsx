@@ -6,7 +6,7 @@ const sentDraftSessions = new Set<string>();
 import { usePathname, useSearchParams, useRouter } from 'next/navigation';
 import {
   Share, FileChartColumn, MoreHorizontal, PanelRight, CircleCheck, Copy, Repeat2,
-  Star, Loader2, AppWindow,
+  Star, Loader2, AppWindow, Square,
 } from 'lucide-react';
 import { useAppDispatch, useAppSelector, type AppDispatch } from '@/store';
 import { appendEvent, applyDelta, setStatus, setError } from '@/store/chatSlice';
@@ -23,6 +23,7 @@ import { AppBuilderWorkspace } from '@/components/appbuilder/AppBuilderWorkspace
 import { findProjectByTask, startRun, raceEstimate as fetchRaceEstimate, type AppProjectDto, type RaceEstimateDto } from '@/services/appBuilderApi';
 import { MatterComposer } from '@/components/legal/MatterComposer';
 import { EventList } from '@/components/chat/EventList';
+import { ThinkingTrace } from '@/components/chat/ThinkingTrace';
 import { SessionStatusBadge } from '@/components/chat/SessionStatusBadge';
 import { useSessionRuntime } from '@/components/chat/useSessionRuntime';
 // J7 idle session hibernation: release the derived render caches after a
@@ -47,12 +48,14 @@ import { CompletionCard } from '@/components/chat/CompletionCard';
 import {
   WorkspacePanel,
   latestWorkspaceDecision,
+  mergeWorkspaceTarget,
   subscribeWorkspaceEditors,
   workspaceEditorsVersion,
   type WorkspaceFile,
   type WorkspaceOpenTarget,
 } from '@/components/workspace';
 import { craftAppForExtension, craftExtOf, editorKindForExtension } from '@/components/workspace/craft';
+import { ensureTaskRelay, TaskRelayHost } from '@/components/workspace/TaskRelayHost';
 import { CRAFT_APPS } from '@/lib/craftBridge';
 import { ShareDialog } from '@/components/dialogs/ShareDialog';
 import { ChatSocket } from '@/services/chatSocket';
@@ -434,7 +437,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
     if (workspaceOpenActionRef.current === actionId) return;
     workspaceOpenActionRef.current = actionId;
     setSelectedTool(event.type === 'toolUsed' ? event : videoStudioStub(event));
-    setWorkspaceTarget(target);
+    setWorkspaceTarget((current) => mergeWorkspaceTarget(current, target));
     autoOpenedRef.current.add(sessionUid);
   }, [wsDecision, sessionUid]);
 
@@ -646,8 +649,8 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   };
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="flex h-row items-center justify-end gap-2 px-6">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="flex h-row shrink-0 items-center justify-end gap-2 overflow-x-auto px-4 sm:px-6">
         {running && taskId && !paused && (
           <button
             type="button"
@@ -683,7 +686,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
       </div>
 
       {paused && (
-        <div className="flex items-center gap-2 border-b border-border-main bg-fill-tsp px-6 py-2">
+        <div className="flex items-center gap-2 border-b border-border-main bg-fill-tsp px-4 py-2 sm:px-6">
           <span className="text-sm text-function-warning">{t('Paused')}</span>
           <input
             type="text"
@@ -704,10 +707,10 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
         </div>
       )}
 
-      <div className="flex flex-1 overflow-hidden">
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto">
-            <div className="mx-auto w-full max-w-[768px] px-6 py-4">
+      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="mx-auto w-full max-w-[min(100%,48rem)] px-4 py-4 sm:px-6">
               <div className="mb-2 flex items-center gap-2">
                 <span className="text-lg">◉</span>
                 <span className="text-base font-semibold text-text-primary">{PRODUCT}</span>
@@ -722,15 +725,13 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
               </div>
               {/* J7: local status only — never a message to the model. */}
               <HibernationNotice hibernated={hibernation.hibernated} />
-              {running && <div className="mb-2 text-sm text-text-tertiary">{t('{name} is thinking', { name: PRODUCT })}…</div>}
+              <ThinkingTrace
+                text={([...events].reverse().find((event): event is Extract<(typeof events)[number], { type: 'liveStatus' }> => event.type === 'liveStatus')?.text) ?? ''}
+                active={running || Boolean(userText && !assistantText && !running && !wasStoppedByUser && !error)}
+              />
               {clockEvent && !running && (
                 <div className="mb-2 text-sm text-text-tertiary">
                   {t('Worked for {duration}', { duration: formatDuration(computeClockDuration(clockEvent)) })} ›
-                </div>
-              )}
-              {userText && !assistantText && !running && !wasStoppedByUser && !error && (
-                <div className="mb-2 text-sm text-text-tertiary">
-                  {t('{name} is thinking', { name: PRODUCT })}…
                 </div>
               )}
               {error && !draftText && (
@@ -754,7 +755,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
               />
 
               {hasResult && hasClockClosed && !running && !wasStoppedByUser && (
-                <div className="mx-auto w-full max-w-[768px] px-[var(--ui-content-padding-x,24px)]">
+                <div className="mx-auto w-full max-w-[min(100%,48rem)] px-4 sm:px-6">
                   {!completionDismissed && (
                     <CompletionCard
                       onFill={(text) => composerRef.current?.setText(text)}
@@ -824,12 +825,25 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
             </div>
           </div>
 
-          <div className="mx-auto w-full max-w-[768px] px-6 pb-4">
-            <div className="mb-2 flex h-row-sm items-center gap-2 rounded-control bg-fill-tsp px-2 text-sm text-text-secondary">
+          <div className="mx-auto w-full max-w-[min(100%,48rem)] shrink-0 px-4 pb-4 sm:px-6">
+            <div className="mb-2 flex min-h-8 items-center gap-2 rounded-control bg-fill-tsp px-2 py-1 text-sm text-text-secondary">
               <span className={running ? 'animate-pulse text-icon-blue' : wasStoppedByUser ? 'text-function-warning' : hasResult && hasClockClosed ? 'text-func-success' : 'text-text-tertiary'}>
                 {running ? '●' : wasStoppedByUser ? '◼' : hasResult && hasClockClosed ? '✓' : '○'}
               </span>
               {running ? t('Working') : wasStoppedByUser ? t('Stopped') : hasResult && hasClockClosed ? t('Task completed') : t('Thinking')}
+              {running && (
+                <button
+                  type="button"
+                  onClick={handleStop}
+                  data-testid="stop-task"
+                  aria-label={t('Stop task')}
+                  title={t('Stop task')}
+                  className="ms-auto flex h-7 shrink-0 items-center gap-1 rounded-full bg-[var(--function-error)] px-3 text-xs font-medium text-white hover:opacity-90"
+                >
+                  <Square className="size-3 fill-current" aria-hidden />
+                  {t('Stop task')}
+                </button>
+              )}
             </div>
             {running && !selectedTool && (
               <ComputerDock
@@ -894,6 +908,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
                   events={events}
                   requestedPath={workspaceTarget?.path ?? null}
                   requestedKind={workspaceTarget?.kind ?? null}
+                  requestedCraftApp={workspaceTarget?.craftApp ?? null}
                   onChatEdit={handleWorkspaceChatEdit}
                 />
               ) : null
@@ -901,18 +916,37 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
           />
         )}
       </div>
+      {taskId ? (
+        <TaskRelayHost
+          taskId={taskId}
+          onOpen={(target) => {
+            const actionId = `relay-${target.kind ?? 'open'}-${target.path ?? target.craftApp ?? ''}`;
+            setSelectedTool({
+              id: actionId,
+              type: 'toolUsed',
+              tool: target.kind === 'loam-video' ? 'video_studio' : 'office_craft',
+              actionId,
+              status: 'success',
+              timestamp: Date.now(),
+              brief: target.craftApp ?? target.kind ?? '',
+            });
+            setWorkspaceTarget(target);
+            autoOpenedRef.current.add(sessionUid);
+          }}
+        />
+      ) : null}
       <ShareDialog open={shareOpen} onClose={() => setShareOpen(false)} taskId={taskId ?? null} />
 
       {/* Cap G §4.16: the Agent Studio App Builder workspace drawer. */}
       {appBuilderOpen && appProject && (
-        <div className="fixed inset-y-0 end-0 z-40 w-[min(560px,92vw)] border-s border-border-main bg-bg-panel shadow-xl" data-testid="appbuilder-workspace">
+        <div className="fixed inset-y-0 end-0 z-40 w-[min(35rem,100%)] border-s border-border-main bg-bg-panel shadow-xl" data-testid="appbuilder-workspace">
           <AppBuilderWorkspace projectId={appProject.id} onClose={() => setAppBuilderOpen(false)} />
         </div>
       )}
 
       {filesOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="flex max-h-[80vh] w-full max-w-[640px] flex-col rounded-card border border-border-main bg-bg-menu shadow-lg">
+          <div className="flex max-h-[min(80dvh,100%)] w-full max-w-[min(100%,40rem)] flex-col rounded-card border border-border-main bg-bg-menu shadow-lg">
             <div className="flex h-row items-center justify-between border-b border-border-main px-4">
               <h2 className="text-title-sm text-text-primary">{t('Files in this task')}</h2>
               <button
@@ -998,6 +1032,7 @@ function handleServerMessage(m: ServerMessage, sessionId: string, dispatch: AppD
         if (inner.type === 'statusUpdate') {
           dispatch(setStatus({ sessionId, status: (inner as StatusUpdateEvent).agentStatus }));
         }
+        if (inner.type === 'cascadeTaskClock' && inner.clock.taskId) ensureTaskRelay(inner.clock.taskId);
         const errorLike = inner as unknown as { type?: string; message?: string };
         if (errorLike.type === 'error') {
           dispatch(setError({ sessionId, error: errorLike.message ?? t('An error occurred') }));
@@ -1014,6 +1049,7 @@ function handleServerMessage(m: ServerMessage, sessionId: string, dispatch: AppD
   if (ev.type === 'statusUpdate') {
     dispatch(setStatus({ sessionId, status: (ev as StatusUpdateEvent).agentStatus }));
   }
+  if (ev.type === 'cascadeTaskClock' && ev.clock.taskId) ensureTaskRelay(ev.clock.taskId);
   const errorLike = ev as unknown as { type?: string; message?: string };
   if (errorLike.type === 'error') {
     dispatch(setError({ sessionId, error: errorLike.message ?? t('An error occurred') }));

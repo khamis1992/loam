@@ -105,6 +105,35 @@ describe('CraftRelayClient', () => {
     client.stop();
   });
 
+  it('stores a craft.waitSave under the requested file name', async () => {
+    const { bridge } = fakeBridge();
+    const uploadBytes = vi.fn(async () => undefined);
+    const posted: Array<{ body: Record<string, unknown> }> = [];
+    const fetchFn = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const href = String(url);
+      if (href.includes('/stream')) {
+        return sseResponse([craftFrame('ws_3', 'craft.waitSave', { command: 'file.save', name: 'edited.png' })]);
+      }
+      posted.push({ body: JSON.parse(String(init?.body)) as Record<string, unknown> });
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    });
+    const client = new CraftRelayClient({
+      taskId: 'task-1',
+      getBridge: () => bridge,
+      uploadBytes,
+      fetchFn: fetchFn as unknown as typeof fetch,
+      headers: () => ({}),
+      autoReconnect: false,
+    });
+
+    await client.start();
+    await vi.waitFor(() => expect(posted).toHaveLength(1));
+
+    expect(uploadBytes).toHaveBeenCalledWith('task-1', 'edited.png', expect.any(Uint8Array));
+    expect(posted[0]?.body).toMatchObject({ id: 'ws_3', ok: true, result: { path: 'edited.png' } });
+    client.stop();
+  });
+
   it('craft.open fetches the task file and drops it into the editor', async () => {
     const { bridge, opened } = fakeBridge();
     const fetchBytes = vi.fn(async () => new Uint8Array([1, 2, 3]));
@@ -216,5 +245,13 @@ describe('CraftRelayClient', () => {
     const command: CraftRelayCommand = { id: 'x', taskId: 't', target: 'sheets', method: 'sheet.read', params: { range: 'A1:B2' } };
     await expect(executor(command)).resolves.toEqual({ ok: true });
     expect(call).toHaveBeenCalledWith('sheet.read', { range: 'A1:B2' });
+  });
+
+  it('unwraps the editor envelope so a command catalog stays a list', async () => {
+    const call = vi.fn(async () => ({ ok: true, result: [{ id: 'file.new' }] }));
+    const bridge = { call } as unknown as CraftBridge;
+    const executor = craftRelayExecutor({ taskId: 't', getBridge: () => bridge as unknown as CraftBridgeLike });
+    const command: CraftRelayCommand = { id: 'x', taskId: 't', target: 'slides', method: 'engine.commands', params: {} };
+    await expect(executor(command)).resolves.toEqual([{ id: 'file.new' }]);
   });
 });
