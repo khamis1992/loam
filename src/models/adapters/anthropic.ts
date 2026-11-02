@@ -258,12 +258,14 @@ export class AnthropicAdapter implements ProviderAdapter {
   }
 
   async listModels() {
-    // Anthropic doesn't have a public models endpoint
-    // Return known models
-    return [
-      { remoteId: "claude-3-5-sonnet-20241022", contextWindow: 200000, tools: true, vision: true },
-      { remoteId: "claude-3-5-haiku-20241022", contextWindow: 200000, tools: true, vision: false },
-      { remoteId: "claude-3-opus-20240229", contextWindow: 200000, tools: true, vision: true },
-    ];
+    const res = await fetch(this.url("/models"), {
+      headers: this.headers(),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) throw new ProviderHttpError(`HTTP ${res.status}`, res.status, res.headers);
+    const data = (await res.json()) as { data?: Array<{ id?: string }> };
+    return (data.data ?? [])
+      .map((m) => ({ remoteId: m.id ?? "" }))
+      .filter((m) => m.remoteId.length > 0);
   }
 }

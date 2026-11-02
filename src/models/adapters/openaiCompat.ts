@@ -225,21 +225,15 @@ export class OpenAICompatAdapter implements ProviderAdapter {
   }
 
   async listModels() {
-    try {
-      const res = await fetch(this.url("/models"), {
-        headers: this.headers(),
-        signal: AbortSignal.timeout(15000),
-      });
-
-      if (!res.ok) return [];
-
-      const data = (await res.json()) as { data?: Array<{ id?: string; context_length?: number }> };
-      return (data.data ?? []).map((m) => ({
-        remoteId: m.id ?? "",
-        contextWindow: m.context_length,
-      })).filter((m) => m.remoteId.length > 0);
-    } catch {
-      return [];
-    }
+    const res = await fetch(this.url("/models"), {
+      headers: this.headers(),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) throw new ProviderHttpError(`HTTP ${res.status}`, res.status, res.headers);
+    const data = (await res.json()) as { data?: Array<{ id?: string; context_length?: number }> };
+    return (data.data ?? []).map((m) => ({
+      remoteId: m.id ?? "",
+      contextWindow: m.context_length,
+    })).filter((m) => m.remoteId.length > 0);
   }
 }

@@ -144,8 +144,12 @@ describe("gemini adapter", () => {
 });
 
 describe("ollama adapter", () => {
-  it("lists nothing until the tags endpoint is wired", async () => {
+  it("reads model names from /api/tags", async () => {
+    globalThis.fetch = (async (url) => {
+      assert.equal(String(url), "http://127.0.0.1:9/api/tags");
+      return new Response(JSON.stringify({ models: [{ name: "qwen2.5:14b" }, { name: "" }] }), { status: 200 });
+    }) as typeof fetch;
     const adapter = new OllamaAdapter(options());
-    assert.deepEqual(await adapter.listModels(), []);
+    assert.deepEqual(await adapter.listModels(), [{ remoteId: "qwen2.5:14b" }]);
   });
 });
