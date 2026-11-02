@@ -46,10 +46,10 @@ import { OUTPUT_TYPE_MODE, isOutputType, type OutputType } from "../modes/output
 /** Tools whose presence pins a run to its output type's pipeline. */
 export const OUTPUT_TYPE_TOOLS: Record<OutputType, readonly string[]> = {
   auto: [],
-  text: ["loam_document", "loam_studio", "office_export"],
+  text: ["office_craft", "loam_document", "loam_studio", "office_export"],
   image: ["loam_creative", "loam_canvas", "gen_image"],
-  video: ["loam_creative", "loam_canvas", "gen_video", "video_export", "auto_video"],
-  slides: ["loam_studio", "office_export"],
+  video: ["video_studio", "loam_creative", "loam_canvas", "gen_video", "video_export", "auto_video"],
+  slides: ["office_craft", "loam_studio", "office_export"],
   website: ["web_scaffold", "preview_serve", "artifact_publish"],
 };
 

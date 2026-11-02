@@ -93,6 +93,17 @@ describe("Neo N10 output type -> pipeline mode", () => {
 
   it("leaves auto and unset runs exactly as they were", () => {
     // Detection is untouched: these are the pre-N10 answers.
+    assert.equal(resolveLoamMode(um({}), "Write this as Markdown: a README for a CLI"), "write");
+    assert.equal(resolveLoamMode(um({}), "Make a 3D product scene with a metal base"), "media");
+    assert.equal(resolveLoamMode(um({}), "give me statistics per column"), "data");
+    assert.equal(resolveLoamMode(um({}), "make Arabic subtitles"), "media");
+    assert.equal(resolveLoamMode(um({}), "Check security headers of http://127.0.0.1:3000"), "security");
+    assert.equal(resolveLoamMode(um({}), "Build an HTML slide page about X"), "build");
+    assert.equal(resolveLoamMode(um({}), "Research the latest Node LTS and cite sources"), "research");
+    assert.equal(resolveLoamMode(um({}), "Build a responsive landing page"), "build");
+    assert.equal(resolveLoamMode(um({}), "cut at 2 s, add music, export mp4"), "media");
+    assert.equal(resolveLoamMode(um({}), "Find the Qatar labour law article on annual leave"), "legal");
+    assert.equal(resolveLoamMode(um({}), "Dev Flow: list the github issue on khamis1992/loam-r18-throwaway, create git branch r18-route, run the swarm, then open a draft pr. Do not push."), "devflow");
     assert.equal(resolveLoamMode(um({}), "create a presentation"), "write");
     assert.equal(resolveLoamMode(um({}), "hello"), "build");
     assert.equal(resolveLoamMode(um({ outputType: "auto" }), "create a logo"), "media");

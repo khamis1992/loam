@@ -99,6 +99,35 @@ describe("intent keyword layer (classifyIntentByKeywords)", () => {
     assert.equal(classifyIntentByKeywords("موقع").mode, "ask");
   });
 
+  it("routes a presentation request to write on one decisive word", () => {
+    assert.equal(classifyIntentByKeywords("اعمل برزنتيشن").mode, "write");
+    assert.equal(classifyIntentByKeywords("اعمل برزنيشن من صفحة واحده عن قطر").mode, "write");
+    assert.equal(classifyIntentByKeywords("اعمل برزنيشن من صفحة واحده عن قطر").decisive, true);
+    assert.equal(classifyIntentByKeywords("make a presentation").mode, "write");
+    assert.equal(classifyIntentByKeywords("اعمل ملف اكسل").mode, "data");
+    assert.equal(classifyIntentByKeywords("edit this video").mode, "media");
+    assert.equal(classifyIntentByKeywords("Write this as Markdown: a README for a CLI").mode, "write");
+    assert.equal(classifyIntentByKeywords("Write this as Markdown: a README for a CLI").decisive, true);
+    assert.equal(classifyIntentByKeywords("give me statistics per column").mode, "data");
+    assert.equal(classifyIntentByKeywords("give me statistics per column").decisive, true);
+    assert.equal(classifyIntentByKeywords("make Arabic subtitles").mode, "media");
+    assert.equal(classifyIntentByKeywords("make Arabic subtitles").decisive, true);
+    assert.equal(classifyIntentByKeywords("Check security headers of http://127.0.0.1:3000").mode, "security");
+    assert.equal(classifyIntentByKeywords("Check security headers of http://127.0.0.1:3000").decisive, true);
+    assert.equal(classifyIntentByKeywords("Build an HTML slide page about X").mode, "build");
+    assert.equal(classifyIntentByKeywords("Build an HTML slide page about X").decisive, true);
+    assert.equal(classifyIntentByKeywords("Research the latest Node LTS and cite sources").mode, "research");
+    assert.equal(classifyIntentByKeywords("Research the latest Node LTS and cite sources").decisive, true);
+    assert.equal(classifyIntentByKeywords("Build a responsive landing page").mode, "build");
+    assert.equal(classifyIntentByKeywords("Build a responsive landing page").decisive, true);
+    assert.equal(classifyIntentByKeywords("cut at 2 s, add music, export mp4").mode, "media");
+    assert.equal(classifyIntentByKeywords("cut at 2 s, add music, export mp4").decisive, true);
+    assert.equal(classifyIntentByKeywords("Find the Qatar labour law article on annual leave").mode, "legal");
+    assert.equal(classifyIntentByKeywords("Find the Qatar labour law article on annual leave").decisive, true);
+    assert.equal(classifyIntentByKeywords("Dev Flow: list the github issue on khamis1992/loam-r18-throwaway").mode, "devflow");
+    assert.equal(classifyIntentByKeywords("Dev Flow: list the github issue on khamis1992/loam-r18-throwaway").decisive, true);
+  });
+
   it("empty or whitespace text resolves to ask", () => {
     assert.equal(classifyIntentByKeywords("").mode, "ask");
     assert.equal(classifyIntentByKeywords("   ").mode, "ask");
@@ -179,6 +208,14 @@ describe("routeIntent (thin router)", () => {
     assert.equal(got.source, "keywords");
     assert.equal(calls.length, 0, "no model call for empty text");
     assert.ok(["solo", "lite", "full"].includes(got.effort.effort));
+  });
+
+  it("a one-page deck is write before the model can call it a website", async () => {
+    const { client, calls } = fakeOllama(() => '{"mode":"build","reason_ar":"صفحة"}');
+    const got = await routeIntent("اعمل برزنيشن من صفحة واحده عن قطر", { cfg, ollama: client });
+    assert.equal(got.mode, "write");
+    assert.equal(got.source, "keywords");
+    assert.equal(calls.length, 0, "decisive deck words skip the classifier call");
   });
 
   it("a model decision wins and carries source model", async () => {

@@ -32,6 +32,7 @@ export interface RoutingCallOptions {
   timeoutMs?: number;
   signal?: AbortSignal;
   onToken?: (text: string) => void;
+  onThinking?: (text: string) => void;
   onRoute?: (info: { model: string; chain: string[]; providerId?: string }) => void;
   /** Internal seam for tests: environment used for keys and the env overrides. */
   env?: Record<string, string | undefined>;
@@ -55,12 +56,34 @@ export interface RoutingCallOptions {
 /**
  * Resolve and perform one model call honouring the routing map.
  *
- * Precedence: an explicit `model` > the per-tool entry > the effort entry > the
- * existing coding chain. When nothing matches a map, the call degrades to the
- * plain Ollama client, exactly as before N10.
+ * An explicit `model` is the call: it is never replaced by the per-tool entry,
+ * the effort entry, or the coding chain. With no explicit model, precedence is
+ * the per-tool entry, then the effort entry, then the coding chain. An empty
+ * map keeps the plain Ollama client, exactly as before N10.
  */
 export async function chatWithRouting(options: RoutingCallOptions): Promise<ChatResult> {
   const env = options.env ?? process.env;
+  // The model the user picked is the model that answers. A coding chain, an
+  // effort entry, or a per-tool entry must not replace it with another provider.
+  const explicit = options.model?.trim() ?? "";
+  if (explicit) {
+    options.onRoute?.({ model: explicit, chain: [explicit] });
+    return chatWithFallback({
+      cfg: options.cfg,
+      ollama: options.ollama,
+      model: explicit,
+      messages: options.messages,
+      ...(options.tools && options.tools.length > 0 ? { tools: options.tools } : {}),
+      temperature: options.temperature,
+      timeoutMs: options.timeoutMs,
+      ...(options.signal ? { signal: options.signal } : {}),
+      ...(options.onToken ? { onToken: options.onToken } : {}),
+      ...(options.onThinking ? { onThinking: options.onThinking } : {}),
+      notify: options.notify,
+      think: options.think,
+      ...(options.cacheControl ? { cacheControl: true } : {}),
+    });
+  }
   const plan: RoutingPlan = resolveRouting({
     cfg: options.cfg,
     env,
@@ -92,6 +115,7 @@ export async function chatWithRouting(options: RoutingCallOptions): Promise<Chat
       timeoutMs: options.timeoutMs,
       ...(options.signal ? { signal: options.signal } : {}),
       ...(options.onToken ? { onToken: options.onToken } : {}),
+      ...(options.onThinking ? { onThinking: options.onThinking } : {}),
       notify: options.notify,
       think: options.think,
       ...(options.cacheControl ? { cacheControl: true } : {}),
@@ -108,6 +132,7 @@ export async function chatWithRouting(options: RoutingCallOptions): Promise<Chat
       timeoutMs: options.timeoutMs ?? options.cfg.agent.requestTimeoutMs,
       ...(options.signal ? { signal: options.signal } : {}),
       ...(options.onToken ? { onToken: options.onToken } : {}),
+      ...(options.onThinking ? { onThinking: options.onThinking } : {}),
       think: options.think ?? false,
       ...(options.cacheControl ? { cacheControl: true } : {}),
     },
