@@ -76,13 +76,14 @@ describe("scaffold_backend gateway exposure", () => {
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
   });
 
-  it("scaffold_backend is registered and wired into ALWAYS_ON_TOOLS", () => {
+  it("scaffold_backend is registered on the build catalog, not on every run", () => {
     assert.ok(registry.names().includes("scaffold_backend"));
-    assert.ok(ALWAYS_ON_TOOLS.includes("scaffold_backend"));
+    assert.ok(!ALWAYS_ON_TOOLS.includes("scaffold_backend"));
+    assert.ok(capabilitiesAllow.includes("scaffold_backend"));
   });
 
-  it("scaffold_backend is not a raw gateway tool (it is granted via the always-on merge)", () => {
-    assert.ok(!capabilitiesAllow.includes("scaffold_backend"));
+  it("scaffold_backend reaches a build run through the mode catalog", () => {
+    assert.ok(capabilitiesAllow.includes("scaffold_backend"));
   });
 
   it("a build-mode agent run exposes scaffold_backend to the model", () => {

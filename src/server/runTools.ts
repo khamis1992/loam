@@ -35,22 +35,14 @@ export const ALWAYS_ON_TOOLS: readonly string[] = [
   "ticket_claim",
   "ticket_update",
   "handoff_to_agent",
-  "scaffold_backend",
   "env_blueprint_generate",
   "env_build_status",
   "playbook_create_from_session",
-  "web_scaffold",
-  "design_create",
   "design_brand_kit_save",
   "design_image_generate",
   "design_page_images",
   "design_brief",
   "watch_url",
-  "video_edit",
-  "video_studio",
-  "deploy_app",
-  "export_build",
-  "loam_design",
   "design_lint",
   "design_autofix",
   "ui_examples_search",
@@ -82,5 +74,6 @@ export function mergeAlwaysOnTools(input: AlwaysOnMergeInput): string[] {
   for (const name of ALWAYS_ON_TOOLS) {
     if (registered.has(name) && !disabled.has(name)) merged.add(name);
   }
+  for (const name of disabled) merged.delete(name);
   return [...merged];
 }
