@@ -83,7 +83,13 @@
 - `tsc --noEmit` passed.
 - `npm run test:unit`: 5107 tests, 5098 passed, 0 failed, 9 skipped.
 - One Windows-only miss showed up on the way: the sync overlay push returned 500 because a pull stream still held the database file, so rename failed. Push now retries that replace and copies the temp file into place when Windows refuses the rename. `byokSync.test.ts` is 11 passed.
-- No commit, no push, and nothing was installed over the current Loam. R17 stays FAIL until a person upgrades the labour-law pack provenance. The fix-branch draft PR still waits for approval to snapshot the existing uncommitted work.
+- Nothing was installed over the current Loam. R17 stays FAIL until a person upgrades the labour-law pack provenance.
+
+## 2026-11-02 23:05 +03 — route commits
+
+- Commits on `fix/loam-service-routes`: `642f8b9` P1, `7df6f74` P2, `6684cfb` P3, `c396214` P4, `0bb45ef` P5, `e36de67` P6, `386b8c4` P7, `0083357` P8, `759c917` P9, `c7a1937` P10.
+- Left uncommitted on purpose: release builds, probe scripts, screenshots, the recorder package, and the earlier updater and shell edits. Those files are still in the working tree.
+- The draft pull request is not merged. R17 stays FAIL.
 
 ## 2026-11-02 00:09 +03 — isolated desktop launch
 
