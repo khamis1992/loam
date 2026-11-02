@@ -525,6 +525,8 @@ export const DEFAULTS: Config = {
       "qwen2": 32768,
       "qwen2.5": 32768,
       "glm": 32768,
+      "glm-5.3": 1_000_000,
+      "glm-5.3-flash": 1_000_000,
       "deepseek": 32768,
       "gemini": 1048576,
       "gemini-1.5": 1048576,
