@@ -280,6 +280,7 @@ async function ensureServer() {
     serverChild.on("exit", () => { exited = true; });
     // Legal mode: answer the server's key request with the DPAPI-unwrapped matters key.
     require("./legal-key.cjs").attachLegalKey(serverChild, app, safeStorage);
+    require("./model-secrets.cjs").attachModelSecrets(serverChild, app, safeStorage);
     serverChild.on("error", error => { exited = true; console.error("[electron] server: " + error.message); });
     serverChild.stdout?.on("data", (d) => {
       process.stdout.write("[server] " + d);
