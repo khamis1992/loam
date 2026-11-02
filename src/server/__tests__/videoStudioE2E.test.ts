@@ -162,6 +162,7 @@ describe("video_studio end-to-end over the real server", () => {
     );
     process.env.LOAM_CONFIG = configFile;
 
+    process.env.LOAM_RELAY_ATTACH_TIMEOUT_MS = "0";
     closeDb = (await import("../sqliteStore.js")).closeDb;
     db = await import("../db.js");
     const { loadConfig } = await import("../../config.js");
@@ -289,7 +290,7 @@ describe("video_studio end-to-end over the real server", () => {
     assert.equal(res.ok, false);
     const parsed = JSON.parse(res.content) as { reason: string; retry: boolean; fallback?: string };
     assert.equal(parsed.reason, "panel_not_open");
-    assert.equal(parsed.retry, true);
+    assert.equal(parsed.retry, false);
     assert.equal(parsed.fallback, undefined);
   });
 

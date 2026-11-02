@@ -235,10 +235,10 @@ describe("video_edit in the effective agent-run tool list (gateway + always-on)"
       registeredTools: [...registry.names(), ...COMPANION_DYNAMIC_TOOL_NAMES],
     });
     assert.ok(registry.names().includes("video_edit"));
-    assert.ok(!capabilities.allow.includes("video_edit"), "video_edit is an always-on tool, not a mode-catalog or service tool");
+    assert.ok(!capabilities.allow.includes("video_edit"), "video_edit belongs to media, not build");
   });
 
-  it("the model sees video_edit in every Loam mode and work mode", () => {
+  it("the model sees video_edit in media mode only", () => {
     for (const mode of LOAM_MODES) {
       const capabilities = resolveCompanionCapabilities({
         mode: mode.id,
@@ -247,23 +247,27 @@ describe("video_edit in the effective agent-run tool list (gateway + always-on)"
       });
       const runAllow = mergeAlwaysOnTools({ resolvedAllow: capabilities.allow, registeredTools: registry.names() });
       const tools = registry.forAllowlist(runAllow);
-      assert.ok(tools.names().includes("video_edit"), `mode ${mode.id} must expose video_edit`);
-      assert.ok(tools.toOllama().some((t) => t.function.name === "video_edit"), `model function list for ${mode.id} must include video_edit`);
+      if (mode.id === "media") {
+        assert.ok(tools.names().includes("video_edit"), "media must expose video_edit");
+        assert.ok(tools.toOllama().some((t) => t.function.name === "video_edit"));
+      } else {
+        assert.ok(!tools.names().includes("video_edit"), `mode ${mode.id} must not expose video_edit`);
+      }
     }
     for (const workMode of WORK_MODES) {
       const capabilities = resolveCompanionCapabilities({
-        mode: "build",
+        mode: "media",
         workMode: workMode.id,
         registeredTools: [...registry.names(), ...COMPANION_DYNAMIC_TOOL_NAMES],
       });
       const runAllow = mergeAlwaysOnTools({ resolvedAllow: capabilities.allow, registeredTools: registry.names() });
-      assert.ok(registry.forAllowlist(runAllow).names().includes("video_edit"), `work mode ${workMode.id} must expose video_edit`);
+      assert.ok(registry.forAllowlist(runAllow).names().includes("video_edit"), `media work mode ${workMode.id} must expose video_edit`);
     }
   });
 
   it("per-agent disabledTools still removes video_edit", () => {
     const capabilities = resolveCompanionCapabilities({
-      mode: "build",
+      mode: "media",
       workMode: "loam",
       disabledTools: ["video_edit"],
       registeredTools: [...registry.names(), ...COMPANION_DYNAMIC_TOOL_NAMES],

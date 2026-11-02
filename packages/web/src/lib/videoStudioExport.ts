@@ -118,7 +118,7 @@ async function watchExportProgress(
  */
 export async function exportLoamVideo(options: ExportVideoOptions): Promise<LoamVideoExportResult> {
   const { taskId, options: exportOptions, onProgress } = options;
-  const fetchFn = options.fetchFn ?? fetch;
+  const fetchFn: typeof fetch = options.fetchFn ?? ((input, init) => fetch(input, init));
   const apiBase = options.apiBase ?? getLoamBase();
   const controller = new AbortController();
 

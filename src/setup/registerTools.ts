@@ -23,6 +23,7 @@ import { createOfficeIntelligenceTools } from "../tools/officeIntelligenceTools.
 import { createServiceGapTools } from "../tools/serviceGapTools.js";
 import { createVideoEditTools } from "../tools/videoEditAgent.js";
 import { createVideoStudioTools } from "../tools/videoStudio.js";
+import { createLoamRecorderTools } from "../tools/loamRecorder.js";
 import { createDeployTools } from "../tools/deploy.js";
 import { createDesignExploreTools } from "../tools/designExplore.js";
 import { createDesignLintTools } from "../tools/designLint.js";
@@ -65,6 +66,7 @@ export function registerRuntimeTools(rt: {
   registry.registerAll(createServiceGapTools());
   registry.registerAll(createVideoEditTools());
   registry.registerAll(createVideoStudioTools({ relay: videoStudioRelay }));
+  registry.registerAll(createLoamRecorderTools());
   registry.registerAll(createDeployTools({ workspace: cfg.workspace, preview }));
   registry.registerAll(createDesignExploreTools());
   registry.registerAll(createDesignLintTools());

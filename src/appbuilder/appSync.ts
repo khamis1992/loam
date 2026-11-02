@@ -32,6 +32,30 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
   res.end(data);
 }
 
+/** Windows refuses rename while a pull stream still holds the file. Copy, then drop the temp. */
+function replaceAtomically(tmp: string, dest: string): void {
+  let last: unknown;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      fs.renameSync(tmp, dest);
+      return;
+    } catch (err) {
+      last = err;
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== "EPERM" && code !== "EACCES" && code !== "EBUSY") throw err;
+      try {
+        fs.copyFileSync(tmp, dest);
+        try { fs.unlinkSync(tmp); } catch { /* the replacement is already in place */ }
+        return;
+      } catch (copyErr) {
+        last = copyErr;
+      }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20 * (attempt + 1));
+    }
+  }
+  throw last;
+}
+
 /** The canonical handler. Returns true when the request was one of the sync routes. */
 export function createLoamSyncHandler(opts: LoamSyncOptions): LoamSyncHandler {
   const cap = opts.maxBytes ?? SYNC_MAX_BYTES;
@@ -83,7 +107,7 @@ export function createLoamSyncHandler(opts: LoamSyncOptions): LoamSyncHandler {
         fs.mkdirSync(path.dirname(dbPath), { recursive: true });
         const tmp = `${dbPath}.push-tmp`;
         fs.writeFileSync(tmp, body);      // same volume as the target…
-        fs.renameSync(tmp, dbPath);       // …so the rename replaces atomically
+        replaceAtomically(tmp, dbPath);   // …so the rename replaces atomically
         sendJson(res, 200, { ok: true, bytes: body.length });
       } catch {
         sendJson(res, 500, { error: "write_failed" });
@@ -128,6 +152,29 @@ function sendJson(res, status, body) {
   const data = JSON.stringify(body);
   res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
   res.end(data);
+}
+
+function replaceAtomically(tmp, dest) {
+  let last;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      fs.renameSync(tmp, dest);
+      return;
+    } catch (err) {
+      last = err;
+      const code = err && err.code;
+      if (code !== "EPERM" && code !== "EACCES" && code !== "EBUSY") throw err;
+      try {
+        fs.copyFileSync(tmp, dest);
+        try { fs.unlinkSync(tmp); } catch { /* the replacement is already in place */ }
+        return;
+      } catch (copyErr) {
+        last = copyErr;
+      }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20 * (attempt + 1));
+    }
+  }
+  throw last;
 }
 
 /** Same contract as Loam's createLoamSyncHandler: true when the request was handled. */
@@ -176,7 +223,7 @@ export function handleLoamSync(req, res, options = {}) {
       fs.mkdirSync(path.dirname(dbPath), { recursive: true });
       const tmp = dbPath + ".push-tmp";
       fs.writeFileSync(tmp, body);
-      fs.renameSync(tmp, dbPath);
+      replaceAtomically(tmp, dbPath);
       sendJson(res, 200, { ok: true, bytes: body.length });
     } catch { sendJson(res, 500, { error: "write_failed" }); }
   });

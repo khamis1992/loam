@@ -13,6 +13,7 @@ export interface ModelCallOptions {
   timeoutMs?: number;
   signal?: AbortSignal;
   onToken?: (text: string) => void;
+  onThinking?: (text: string) => void;
   /** Preferred model; "" or undefined = cfg.model. Falls back to cfg.model then cfg.fallbackModel. */
   model?: string;
   /** Called before each fallback attempt (never for the last candidate). */
@@ -52,6 +53,7 @@ export async function chatWithFallback(opts: ModelCallOptions): Promise<ChatResu
         timeoutMs: opts.timeoutMs ?? opts.cfg.agent.requestTimeoutMs,
         ...(opts.signal ? { signal: opts.signal } : {}),
         ...(opts.onToken ? { onToken: opts.onToken } : {}),
+        ...(opts.onThinking ? { onThinking: opts.onThinking } : {}),
         think: opts.think ?? false,
         ...(opts.cacheControl ? { cacheControl: true } : {}),
       });
@@ -67,6 +69,7 @@ export async function chatWithFallback(opts: ModelCallOptions): Promise<ChatResu
           timeoutMs: opts.timeoutMs ?? opts.cfg.agent.requestTimeoutMs,
           ...(opts.signal ? { signal: opts.signal } : {}),
           ...(opts.onToken ? { onToken: opts.onToken } : {}),
+          ...(opts.onThinking ? { onThinking: opts.onThinking } : {}),
           think: false,
           ...(opts.cacheControl ? { cacheControl: true } : {}),
         });

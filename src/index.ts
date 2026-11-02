@@ -42,7 +42,7 @@ import { publishTaskEvent } from "./server/streams.js";
 import { chatCommandPrompt, lazyLevelAnnouncement, parseChatCommand, setSessionLevel } from "./agent/lazySenior.js";
 import { videoStudioRelay } from "./server/videoStudioRelay.js";
 import { formatIssues, scanEncoding } from "./scripts/check-encoding.js";
-import { runAgent } from "./agent/loop.js";
+import { isBudgetStopError, runAgent } from "./agent/loop.js";
 import { isOutputType, modelAbChain, normalizeEffort, type EffortLevel } from "./llm/router.js";
 import { runOrchestratedAgent, type VerdictRecord } from "./agent/orchestrator.js";
 import { createOrchestrationCore } from "./orchestration/core.js";
@@ -844,8 +844,14 @@ async function main(): Promise<void> {
       }
       if (statusWritten) {
         if (!legalRun) recordWikiSession(effectiveCfg, task);
-        publishTaskEvent(task, cancelled ? { type: "cancelled" } : { type: "error", message });
-        wrappedEmit({ type: "error", message: cancelled ? "⏹ أُوقفت المهمة بناءً على طلبك" : message });
+        if (cancelled) {
+          publishTaskEvent(task, { type: "cancelled" });
+          wrappedEmit({ type: "error", message: "⏹ أُوقفت المهمة بناءً على طلبك" });
+        } else if (!isBudgetStopError(err)) {
+          // wrappedEmit already publishes. A budget stop was emitted by the
+          // loop before the throw, so publishing it here would show it twice.
+          wrappedEmit({ type: "error", message });
+        }
       }
       recordTelemetry("error", { model: effectiveCfg.model, steps: 0, usage: { promptTokens: 0, completionTokens: 0 }, error: cancelled ? "cancelled by user" : message });
       // Turn boundary on failure/cancel too: fsync whatever was logged so far.

@@ -848,6 +848,7 @@ export class RunGraph {
       case "step":
       case "workmode":
       case "assistant_token":
+      case "thinking":
       case "assistant_message":
       case "verification_progress":
       case "permission_mode_changed":

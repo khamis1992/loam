@@ -176,6 +176,7 @@ describe("ask user more (N9)", () => {
     });
 
     it("stays quiet for a concrete request", () => {
+      assert.equal(gate.needsAskUser("Write this as Markdown: a README for a CLI"), undefined);
       assert.equal(gate.needsAskUser("Add a snapshot test to src/parser.test.ts"), undefined);
       assert.equal(gate.needsAskUser("Fix the crash in packages/web/src/components/chat/EventList.tsx"), undefined);
     });

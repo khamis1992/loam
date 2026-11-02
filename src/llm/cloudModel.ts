@@ -26,6 +26,16 @@ export function isCloudModel(cfg: Config, model: string): boolean {
   return isCloudProvider(model, providerForModel(cfg, model));
 }
 
+/** A cloud request is still cloud when the provider echoes the id without `:cloud`.
+ *  `glm-5.3-flash:cloud` often comes back as `glm-5.3`. A different local model does not. */
+export function isCloudResponse(cfg: Config, requested: string, returned: string): boolean {
+  if (isCloudModel(cfg, returned)) return true;
+  if (!requested.endsWith(":cloud")) return false;
+  const asked = requested.slice(0, -":cloud".length);
+  if (!asked || !returned || returned.endsWith(":latest")) return false;
+  return asked === returned || asked.startsWith(`${returned}-`) || asked.startsWith(`${returned}:`);
+}
+
 export class NoCloudModelError extends Error {
   readonly code = "no_cloud_model";
   constructor(feature: string) {

@@ -179,20 +179,19 @@ function registry(): ToolRegistry {
 }
 
 describe("runAgent coding-model routing", () => {
-  it("routes a coding turn through the configured coder and logs the edit model", async () => {
+  it("keeps the selected model on a coding turn instead of the coder chain", async () => {
     resetEditModelMemory();
     const calls: string[] = [];
     const routed: Array<{ model: string; chain: string[]; providerId?: string }> = [];
-    // One stateful client instance: the router builds a client per call, so a
-    // fresh fake per call would restart its turn counter every step.
-    const coder = coderClient("coder-x");
+    const coder = coderClient("LongCat-2.5-Preview:cloud");
 
     const result = await runAgent({
       cfg: cfg({
-        failover: { providers: [codingProvider()] },
-        coding: { enabled: true, chain: ["coder-x"], logEdits: true },
+        model: "glm-5.3-flash:cloud",
+        failover: { providers: [codingProvider({ id: "longcat", model: "LongCat-2.5-Preview" })] },
+        coding: { enabled: true, chain: ["LongCat-2.5-Preview"], logEdits: true },
       }),
-      ollama: finiteClient([]),
+      ollama: finiteClient([EDIT_CALL], "glm-5.3-flash:cloud"),
       tools: registry(),
       emit: (() => {}) as Emit,
       prompt: "Fix the bug in src/app.ts",
@@ -207,10 +206,10 @@ describe("runAgent coding-model routing", () => {
       onCodingRoute: (info) => routed.push(info),
     });
 
-    assert.ok(calls.length >= 1 && calls[0] === "coder", `the coding turn must start with the configured coder, saw ${calls.join(" > ")}`);
-    assert.equal(result.model, "coder-x", "the edit is attributed to the coder that produced it");
-    assert.deepEqual(routed[0], { model: "coder-x", chain: ["coder-x"], providerId: "coder" });
-    assert.deepEqual(editModelCounts(), { "coder-x": 1 }, "the model-edit audit names the coder");
+    assert.deepEqual(calls, [], "the selected model must not be replaced by the coder chain");
+    assert.equal(result.model, "glm-5.3-flash:cloud", "the edit is attributed to the model the user selected");
+    assert.equal(routed[0]?.model, "glm-5.3-flash:cloud");
+    assert.deepEqual(editModelCounts(), { "glm-5.3-flash:cloud": 1 }, "the model-edit audit names the selected model");
 
     const record = recentEditModels()[0]!;
     assert.equal(record.tool, "file_write");
@@ -230,7 +229,7 @@ describe("runAgent coding-model routing", () => {
     );
     const persisted = readEditModelLog();
     assert.ok(persisted.length >= 1, "the edit must be persisted to the audit file");
-    assert.equal(persisted.at(-1)!.model, "coder-x");
+    assert.equal(persisted.at(-1)!.model, "glm-5.3-flash:cloud");
     assert.ok(fs.existsSync(path.join(DATA_DIR, "model-edits.jsonl")), "the audit file must exist under the redirected data dir");
   });
 
@@ -254,14 +253,13 @@ describe("runAgent coding-model routing", () => {
   it("does not record edits when coding.logEdits is false", async () => {
     resetEditModelMemory();
     const calls: string[] = [];
-    const coder = coderClient("coder-x");
 
     const result = await runAgent({
       cfg: cfg({
         failover: { providers: [codingProvider()] },
         coding: { enabled: true, chain: ["coder-x"], logEdits: false },
       }),
-      ollama: finiteClient([]),
+      ollama: finiteClient([EDIT_CALL], "weak-default"),
       tools: registry(),
       emit: (() => {}) as Emit,
       prompt: "Fix the bug in src/app.ts",
@@ -271,12 +269,12 @@ describe("runAgent coding-model routing", () => {
       cooldownStore: memoryStore(),
       createProviderClient: () => {
         calls.push("coder");
-        return coder;
+        return coderClient("coder-x");
       },
     });
 
-    assert.ok(calls.length >= 1 && calls[0] === "coder", `the coding turn must start with the configured coder, saw ${calls.join(" > ")}`);
-    assert.equal(result.model, "coder-x");
+    assert.deepEqual(calls, [], "a disabled audit still must not switch models");
+    assert.equal(result.model, "weak-default");
     assert.deepEqual(editModelCounts(), {}, "auditing disabled must leave the edit log empty");
   });
 

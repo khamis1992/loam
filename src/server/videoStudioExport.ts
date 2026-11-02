@@ -97,7 +97,7 @@ export interface VideoStudioExportResult {
 export { VIDEO_STUDIO_EXPORT_COMMAND_CANDIDATES };
 
 /** Job/queue command ids used to wait for a queued render. */
-export const VIDEO_STUDIO_JOB_COMMAND_CANDIDATES = ["jobs.poll", "jobs.list", "status.job.progress", "progress.job"] as const;
+export const VIDEO_STUDIO_JOB_COMMAND_CANDIDATES = ["export.queue.list", "jobs.poll", "jobs.list", "status.job.progress", "progress.job"] as const;
 
 // ---------------------------------------------------------------------------
 // Format handling
@@ -349,7 +349,14 @@ export function normalizeExportBytes(value: unknown): Buffer {
     // Legacy byte-indexed object ({0: 137, 1: 80, ...}).
     const keys = Object.keys(record).filter((key) => /^\d+$/.test(key));
     if (keys.length > 0) {
-      const max = Math.max(...keys.map(Number));
+      // Spreading the indexes into Math.max overflows the stack once the
+      // file is larger than a few dozen kilobytes.
+      let max = -1;
+      for (const key of keys) {
+        const index = Number(key);
+        if (index > max) max = index;
+      }
+      if (max > 64_000_000) throw new Error("the editor returned an export that is too large to read");
       const out = Buffer.alloc(max + 1);
       for (const key of keys) out[Number(key)] = Number(record[key]) & 0xff;
       return out;
@@ -367,6 +374,12 @@ export function normalizeExportBytes(value: unknown): Buffer {
 
 /** True for job states that mean the render is done and the file exists. */
 const DONE_STATES = new Set(["done", "finished", "complete", "completed", "succeeded", "success", "ok"]);
+/**
+ * States that mean the bytes are on the editor's virtual disk. `ok` and
+ * `success` only mean the command was accepted, and reading the echoed path
+ * then traps the engine.
+ */
+const FILE_READY_STATES = new Set(["done", "finished", "complete", "completed"]);
 /** True for job states that mean the render will never produce a file. */
 const FAILED_STATES = new Set(["failed", "error", "cancelled", "canceled", "aborted"]);
 
@@ -461,6 +474,12 @@ export interface VideoStudioExportContext {
   timeoutMs?: number;
   /** Poll interval while waiting (default 500ms). */
   pollIntervalMs?: number;
+  /**
+   * Command ids already read from this editor. When present, export does not
+   * call `commands` again: that call traps the editor after the timeline has
+   * been cut and audio has been placed.
+   */
+  catalog?: readonly string[];
 }
 
 const DEFAULT_EXPORT_TIMEOUT_MS = 600_000;
@@ -484,8 +503,45 @@ function emitProgress(context: VideoStudioExportContext, progress: VideoStudioEx
   }
 }
 
+/** A real sequence id from inspect. Ignores playhead-sized numbers. */
+function sequenceIdFrom(value: unknown): number | null {
+  const records: unknown[] = [value];
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    for (const key of ["project", "state", "timeline"]) {
+      if (record[key] && typeof record[key] === "object") records.push(record[key]);
+    }
+  }
+  for (const record of records) {
+    if (!record || typeof record !== "object") continue;
+    const fields = record as Record<string, unknown>;
+    for (const key of ["activeSequence", "sequence", "sequenceId"]) {
+      const raw = fields[key];
+      if (typeof raw === "number" && Number.isSafeInteger(raw) && raw > 0 && raw < 1_000_000) return raw;
+    }
+  }
+  return null;
+}
+
+async function readSequenceId(relay: VideoStudioExportRelay, taskId: string): Promise<number | null> {
+  try {
+    return sequenceIdFrom(await relay.enqueue(taskId, "film", "inspect", {}));
+  } catch {
+    return null;
+  }
+}
+
 function raise(message: string): never {
   throw new Error(message);
+}
+
+/** A new error, so the command name survives even when the original message cannot be changed. */
+function labelError(err: unknown, label: string): Error {
+  const detail = err instanceof Error ? err.message : String(err);
+  const labeled = new Error(`${label}: ${detail}`);
+  const code = (err as { code?: unknown } | null)?.code;
+  if (typeof code === "string") (labeled as { code?: string }).code = code;
+  return labeled;
 }
 
 /** Run the export and write the rendered file into the task workspace. */
@@ -506,8 +562,18 @@ export async function runVideoStudioExport(
 
   // 1. Resolve the export command id from the live catalog (never guess).
   emitProgress(context, { stage: "starting" });
-  const catalogRaw = await relay.enqueue(taskId, "film", "commands", {});
-  const catalog = toCommandIdList(catalogRaw);
+  let catalog: string[];
+  if (context.catalog && context.catalog.length > 0) {
+    catalog = [...context.catalog];
+  } else {
+    let catalogRaw: unknown;
+    try {
+      catalogRaw = await relay.enqueue(taskId, "film", "commands", {});
+    } catch (err) {
+      throw labelError(err, "commands");
+    }
+    catalog = toCommandIdList(catalogRaw);
+  }
   const command = resolveCommandId(catalog, VIDEO_STUDIO_EXPORT_COMMAND_CANDIDATES);
   if (!command) {
     const matches = closeMatches(catalog, VIDEO_STUDIO_EXPORT_COMMAND_CANDIDATES[0]!).slice(0, 5);
@@ -518,16 +584,54 @@ export async function runVideoStudioExport(
     );
   }
 
-  // 2. Run the export. `wait` is true, so the editor blocks until it finishes
-  //    and reports the produced file; if it returns a queued job we poll it.
-  const executed = await relay.enqueue(taskId, "film", "execute", { command, params });
-  let outputPath = outputPathFromResult(executed, virtualPath);
+  // 2. A blocking export traps the editor while media is decoding (`memory
+  //    access out of bounds`) or refuses with "run the export as a stepped
+  //    job". When the catalog has a queue, use that and poll it. Otherwise
+  //    block, and fall back to the queue only if the editor asks for it.
+  const sequence = await readSequenceId(relay, taskId);
+  if (sequence !== null) params["sequence"] = sequence;
+
+  const queueAdd = resolveCommandId(catalog, ["export.queue.add", "export.sendToQueue"]);
+  const queueStart = resolveCommandId(catalog, ["export.queue.start"]);
+  const queue = async (queueCommand: string, queueParams: Record<string, unknown>) => {
+    try {
+      return await relay.enqueue(taskId, "film", "execute", { command: queueCommand, params: queueParams });
+    } catch (queueErr) {
+      throw labelError(queueErr, queueCommand);
+    }
+  };
+  let executed: unknown;
+  let queued = false;
+  if (queueAdd) {
+    queued = true;
+    executed = await queue(queueAdd, { ...params, wait: false });
+    if (queueStart) await queue(queueStart, {});
+  } else {
+    try {
+      executed = await relay.enqueue(taskId, "film", "execute", { command, params });
+    } catch (err) {
+      const related = catalog.filter((id) => /export|queue|job/i.test(id)).slice(0, 40);
+      throw labelError(err, `${command} (export-related commands: ${related.join(", ") || "none"})`);
+    }
+  }
+  const reportedPath = outputPathFromResult(executed, "");
+  // The editor echoes the path we asked for before the file exists. Reading
+  // that path traps the engine, so it counts only when it is a different path
+  // or a job status says the render finished.
+  let outputPath = reportedPath && reportedPath !== virtualPath ? reportedPath : virtualPath;
+  let editorNamedFile = Boolean(reportedPath) && reportedPath !== virtualPath;
   let job = firstJob(executed);
+  // A ready status on the export call itself is the editor echoing the request.
+  // Only a later poll may allow reading that same path.
+  let polledReady = false;
+  // A queued render may answer with an id and no status. Keep polling until
+  // the queue reports a finished or failed item.
+  if (queued && !job) job = { status: "queued" };
 
   if (job) {
     let status = readStatus(job);
     const deadline = now() + timeoutMs;
-    const jobCommand = resolveCommandId(catalog, VIDEO_STUDIO_JOB_COMMAND_CANDIDATES);
+    const jobCommand = resolveCommandId(catalog, VIDEO_STUDIO_JOB_COMMAND_CANDIDATES) ?? "jobs.poll";
     while (status && !DONE_STATES.has(status) && !FAILED_STATES.has(status)) {
       const progress = readProgress(job);
       if (progress !== null) {
@@ -539,15 +643,24 @@ export async function runVideoStudioExport(
       // an editor that spells it differently is followed instead of being polled
       // through a command id it never exposed. If it exposes none, keep the
       // leading candidate rather than guessing on every iteration.
-      const polled = await relay.enqueue(taskId, "film", "execute", {
-        command: jobCommand ?? VIDEO_STUDIO_JOB_COMMAND_CANDIDATES[0]!,
-        params: {},
-      });
+      let polled: unknown;
+      try {
+        polled = await relay.enqueue(taskId, "film", "execute", {
+          command: jobCommand ?? VIDEO_STUDIO_JOB_COMMAND_CANDIDATES[0]!,
+          params: {},
+        });
+      } catch (err) {
+        throw labelError(err, jobCommand ?? VIDEO_STUDIO_JOB_COMMAND_CANDIDATES[0]!);
+      }
       job = firstJob(polled);
       if (!job) break;
       status = readStatus(job);
+      if (status && FILE_READY_STATES.has(status)) polledReady = true;
       const path = outputPathFromResult(job, "");
-      if (path) outputPath = path;
+      if (path && path !== virtualPath) {
+        outputPath = path;
+        editorNamedFile = true;
+      }
     }
     if (status && FAILED_STATES.has(status)) {
       const detail =
@@ -556,15 +669,54 @@ export async function runVideoStudioExport(
       raise(`the Loam Video export failed (${String(detail).trim()})`);
     }
     const finishedPath = outputPathFromResult(job, "");
-    if (finishedPath) outputPath = finishedPath;
+    if (finishedPath && finishedPath !== virtualPath) {
+      outputPath = finishedPath;
+      editorNamedFile = true;
+    }
+    if (status && FILE_READY_STATES.has(status) && polledReady) editorNamedFile = true;
+  }
+
+  // A finished job on the first answer is real when the editor has no poll
+  // command. When it does, one poll has to agree before the same path is read,
+  // because the export call can echo "done" before the file exists.
+  if (!editorNamedFile && job) {
+    const ready = readStatus(job);
+    const jobCommand = resolveCommandId(catalog, VIDEO_STUDIO_JOB_COMMAND_CANDIDATES);
+    if (ready && FILE_READY_STATES.has(ready) && !jobCommand) editorNamedFile = true;
+    if (ready && FILE_READY_STATES.has(ready) && jobCommand) {
+      let polled: unknown;
+      try {
+        polled = await relay.enqueue(taskId, "film", "execute", { command: jobCommand, params: {} });
+      } catch (err) {
+        throw labelError(err, jobCommand);
+      }
+      const polledJob = firstJob(polled);
+      const polledStatus = polledJob ? readStatus(polledJob) : null;
+      if (polledStatus && FILE_READY_STATES.has(polledStatus)) {
+        editorNamedFile = true;
+        const confirmed = outputPathFromResult(polledJob, "");
+        if (confirmed) outputPath = confirmed;
+      }
+    }
+  }
+
+  // Reading a path the editor has not produced traps the engine
+  // (`memory access out of bounds`), so stop before that call and keep the
+  // execute payload for the next attempt.
+  if (!editorNamedFile) {
+    raise(`the export did not name a finished file (${JSON.stringify(executed).slice(0, 700)})`);
   }
 
   // 3. Read the bytes back out of the editor's virtual FS.
   let raw: unknown;
   try {
     raw = await relay.enqueue(taskId, "film", "readFile", { path: outputPath });
-  } catch {
-    raw = await relay.enqueue(taskId, "film", "readFile", { file: outputPath });
+  } catch (pathErr) {
+    try {
+      raw = await relay.enqueue(taskId, "film", "readFile", { file: outputPath });
+    } catch (fileErr) {
+      throw labelError(fileErr, `readFile ${outputPath} (path read: ${pathErr instanceof Error ? pathErr.message : String(pathErr)})`);
+    }
   }
   const bytes = normalizeExportBytes(raw);
   if (bytes.length === 0) raise(`the Loam Video export produced an empty file at ${outputPath}`);

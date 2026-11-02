@@ -18,7 +18,7 @@ import {
   type MissionCheckpoint,
 } from "./mission.js";
 import { addUsage, sumUsage } from "./usageAccounting.js";
-import { MissionBudgetError, isMissionBudgetError } from "./loop.js";
+import { MissionBudgetError, isMissionBudgetError, markBudgetStop } from "./loop.js";
 import { openSession, closeSession, cancelled, type SessionEndReason } from "./sessionHooks.js";
 import { runLifecycleHooks } from "../policy/hooks.js";
 import { needsAskUser } from "../tools/askUserGate.js";
@@ -716,6 +716,8 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
   let failure: string | null = null;
   /** D19: set when a worker stopped on the compute-budget ceiling. */
   let budgetExhausted = false;
+  /** The worker loop already emitted the budget stop, so the caller must not. */
+  let budgetReported = false;
   /** C1: the ledger declared the goal satisfied mid-step; skip to final verification. */
   let ledgerFinish = false;
   /** Neo N6: the checkpoint of a clean mission budget stop, carried out of the
@@ -845,6 +847,9 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
           // stays idle and the user can raise the ceiling to continue.
           failedStep = outcome.error ?? "compute budget exhausted";
           budgetExhausted = true;
+          // The worker loop already emitted this stop. The throw below only
+          // fails the task; it must not be broadcast a second time.
+          budgetReported = true;
           // Neo N6: the worker stopped on its budget, so the mission checkpoint
           // is the boundary a resume continues from.
           if (mission && o.budget) {
@@ -1074,7 +1079,9 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
       // failure. The checkpoint already carries the summary, so the caller can
       // persist it and offer a raise instead of reporting an error.
       if (budgetExhausted && missionStopped) throw new MissionBudgetError(`orchestrator: ${failure}`, missionStopped);
-      throw new Error(`orchestrator: task incomplete: ${failure}`);
+      const error = new Error(`orchestrator: task incomplete: ${failure}`);
+      if (budgetExhausted && budgetReported) throw markBudgetStop(error);
+      throw error;
     }
 
     // Stop: a hook may force the orchestrated run to keep working instead of

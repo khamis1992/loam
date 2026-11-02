@@ -412,18 +412,48 @@ export function buildReattachReminder(options: {
  * path: pruning alone also removes the working context the model was mid-task
  * with.
  */
-function buildCompactionReminders(options: CompressOptions): ChatMessage[] {
+/** Write the pre-summary transcript so a later turn can search what the summary dropped. */
+export function archiveTranscript(workspace: string, messages: ChatMessage[]): string | undefined {
+  if (!workspace) return undefined;
+  try {
+    const dir = path.join(workspace, ".loam", "transcripts");
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, `transcript-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`);
+    const body = messages
+      .map((message) => {
+        const tool = message.tool_name ? ` ${message.tool_name}` : "";
+        return `## ${message.role}${tool}\n${message.content ?? ""}`;
+      })
+      .join("\n\n");
+    fs.writeFileSync(file, body, "utf8");
+    return file;
+  } catch {
+    return undefined;
+  }
+}
+
+function transcriptNote(archivePath?: string): string {
+  return archivePath
+    ? `Full conversation before this summary is saved at ${archivePath}. Search that file when a detail is missing from the summary.`
+    : "";
+}
+
+function buildCompactionReminders(options: CompressOptions, archivePath?: string): ChatMessage[] {
   const todos = options.todos ?? [];
   const reattachFiles = Math.max(0, Math.floor(options.cfg.compression.reattachFiles));
   const reattachFileChars = Math.max(1, Math.floor(options.cfg.compression.reattachFileChars));
-  if (todos.length === 0 && !(reattachFiles > 0 && options.readState)) return [];
-  const body = buildReattachReminder({
-    readState: options.readState ?? new ReadState(),
-    workspace: options.cfg.workspace,
-    todos,
-    reattachFiles,
-    reattachFileChars,
-  });
+  const note = transcriptNote(archivePath);
+  const hasBody = todos.length > 0 || (reattachFiles > 0 && Boolean(options.readState));
+  if (!hasBody && !note) return [];
+  const body = hasBody
+    ? buildReattachReminder({
+        readState: options.readState ?? new ReadState(),
+        workspace: options.cfg.workspace,
+        todos,
+        reattachFiles,
+        reattachFileChars,
+      }) + (note ? `\n\n${note}` : "")
+    : note;
   return [reminderMessage(body)];
 }
 
@@ -566,10 +596,13 @@ export async function compressContext(
     return { messages, compressed: false, step: 0, usage: zeroUsage(), reminders: [], hookBlocked: true };
   }
 
+  const archivePath = archiveTranscript(cfg.workspace, messages);
+
   // Critical: the next request would not fit. Recover synchronously instead of
   // spending an auxiliary summarizer call on a transcript that is already too big.
   if (originalTokens > critical) {
     const emergency = emergencyCompact(cfg, messages, window, originalTokens);
+    emergency.reminders = buildCompactionReminders(options, archivePath);
     emit({
       type: "compaction",
       step: 3,
@@ -649,7 +682,7 @@ export async function compressContext(
     });
     if (prune.strategy === "prune" || prunedTokens <= threshold) {
       emit({ type: "compaction", step: 1, originalTokens, afterPruneTokens: prunedTokens, finalTokens: prunedTokens });
-      return { messages: pruned, compressed: true, step: 1, usage: zeroUsage(), reminders: buildCompactionReminders(options), hookBlocked: false };
+      return { messages: pruned, compressed: true, step: 1, usage: zeroUsage(), reminders: buildCompactionReminders(options, archivePath), hookBlocked: false };
     }
     middle = result.messages;
   }
@@ -666,7 +699,7 @@ export async function compressContext(
       afterPruneTokens,
       finalTokens: afterPruneTokens,
     });
-    return { messages: afterPrune, compressed: true, step: 1, usage: zeroUsage(), reminders: buildCompactionReminders(options), hookBlocked: false };
+    return { messages: afterPrune, compressed: true, step: 1, usage: zeroUsage(), reminders: buildCompactionReminders(options, archivePath), hookBlocked: false };
   }
 
   const middleChars = prunedMiddle.reduce((sum, m) => sum + (m.content?.length ?? 0), 0);
@@ -701,7 +734,7 @@ export async function compressContext(
       finalTokens: afterPruneTokens,
       fallback: true,
     });
-    return { messages: afterPrune, compressed: true, step: 1, usage: zeroUsage(), reminders: [], hookBlocked: false };
+    return { messages: afterPrune, compressed: true, step: 1, usage: zeroUsage(), reminders: buildCompactionReminders(options, archivePath), hookBlocked: false };
   }
 
   if (summaryText.length === 0) {
@@ -713,7 +746,7 @@ export async function compressContext(
       finalTokens: afterPruneTokens,
       fallback: true,
     });
-    return { messages: afterPrune, compressed: true, step: 1, usage: zeroUsage(), reminders: [], hookBlocked: false };
+    return { messages: afterPrune, compressed: true, step: 1, usage: zeroUsage(), reminders: buildCompactionReminders(options, archivePath), hookBlocked: false };
   }
 
   const summaryMessage: ChatMessage = {
@@ -724,7 +757,7 @@ export async function compressContext(
   const finalTokens = totalTokens(finalMessages);
 
   // Re-attach recent file reads and the live todo list as a hidden reminder.
-  const reminders = buildCompactionReminders(options);
+  const reminders = buildCompactionReminders(options, archivePath);
 
   emit({
     type: "compaction",
