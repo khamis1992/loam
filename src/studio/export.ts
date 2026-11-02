@@ -1,3 +1,4 @@
+import JSZip from "jszip";
 import {chartScale} from '../../ui/chart-scale.js';
 import { exportImported } from "./roundtrip.js";
 import { positionWord } from './word-position.js';
@@ -76,7 +77,8 @@ export async function exportStudio(input: StudioArtifact, workspace?: string): P
     }
     if (!artifact.content.slides.length) deck.addSlide();
     const result = await deck.write({ outputType: "nodebuffer" });
-    return { buffer: Buffer.from(result as Uint8Array), filename: filename(artifact.title, "pptx"), contentType: "application/vnd.openxmlformats-officedocument.presentationml.presentation" };
+    const buffer = await markArabicSlides(Buffer.from(result as Uint8Array));
+    return { buffer, filename: filename(artifact.title, "pptx"), contentType: "application/vnd.openxmlformats-officedocument.presentationml.presentation" };
   }
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Loam"; workbook.title = artifact.title; workbook.calcProperties.fullCalcOnLoad = true;
@@ -96,6 +98,28 @@ export async function exportStudio(input: StudioArtifact, workspace?: string): P
   }
   if (!workbook.worksheets.length) workbook.addWorksheet("Loam");
   return { buffer: Buffer.from(await workbook.xlsx.writeBuffer()), filename: filename(artifact.title, "xlsx"), contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" };
+}
+
+/** pptxgenjs ignores rtlMode. Arabic slides need rtl="1" and a complex-script font. */
+async function markArabicSlides(buffer: Buffer): Promise<Buffer> {
+  const arabic = /[\u0590-\u08ff]/;
+  const zip = await JSZip.loadAsync(buffer);
+  let changed = false;
+  for (const name of Object.keys(zip.files)) {
+    if (!/^ppt\/slides\/slide\d+\.xml$/.test(name)) continue;
+    const file = zip.file(name);
+    if (!file) continue;
+    let xml = await file.async("string");
+    if (!arabic.test(xml) || xml.includes('rtl="1"')) continue;
+    xml = xml.replace(/<a:pPr\b([^>]*?)>/g, '<a:pPr rtl="1"$1>');
+    if (!xml.includes('rtl="1"')) xml = xml.replace(/<a:p\b/g, '<a:p rtl="1"');
+    xml = xml.replace(/<a:latin typeface="[^"]*"/g, '<a:latin typeface="Segoe UI"');
+    if (!xml.includes("<a:cs ")) xml = xml.replace(/<a:latin typeface="Segoe UI"\/>/g, '<a:latin typeface="Segoe UI"/><a:cs typeface="Segoe UI"/>');
+    zip.file(name, xml);
+    changed = true;
+  }
+  if (!changed) return buffer;
+  return Buffer.from(await zip.generateAsync({ type: "nodebuffer" }));
 }
 
 

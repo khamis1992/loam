@@ -50,8 +50,16 @@ export function createLoamTools(): Tool[] {
           // The agent retains tool arguments in its conversation history. Never put image bytes there.
           args=structuredClone(args);
           const action = str(args, "action");
-          if (action === "read") return { ok: true, content: JSON.stringify({ artifact: studioToolView(readStudio(ctx.workspace)) }) };
-          if (action !== "replace" && action !== "append") throw new StudioError("Invalid studio action");
+          if (action === "read") {
+            const artifact = studioToolView(readStudio(ctx.workspace));
+            return { ok: true, content: JSON.stringify(artifact ? { artifact } : { artifact: null, message: "No studio artifact yet. Create it with action replace and expectedRevision 0. Do not read again until that write succeeds. Write user-facing text in the user's language." }) };
+          }
+          if (action !== "replace" && action !== "append") throw new StudioError("Invalid studio action. Create the file with action replace and expectedRevision 0, then office_export. The live editor is office_craft with action open.");
+          if (typeof args.content === "string") {
+            try { args.content = JSON.parse(args.content) as typeof args.content; }
+            catch { return { ok: false, content: "content must be a JSON object" }; }
+          }
+          if (typeof args.expectedRevision === "string" && /^\d+$/.test(args.expectedRevision)) args.expectedRevision = Number(args.expectedRevision);
           // Resolve image files inside this task, then persist portable bounded raster data.
           const content=args.content as {blocks?:Array<Record<string,unknown>>;slides?:Array<{images?:Array<Record<string,unknown>>}>}|undefined;
           const current=readStudio(ctx.workspace);

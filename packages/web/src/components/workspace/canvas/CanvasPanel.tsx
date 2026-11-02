@@ -938,7 +938,8 @@ export function CanvasPanel({
     setReplayNotice(null);
     try {
       const base = apiBase ?? getLoamBase();
-      const res = await (fetchFn ?? fetch)(
+      const callFetch: typeof fetch = fetchFn ?? ((input, init) => fetch(input, init));
+      const res = await callFetch(
         `${base}/api/graph/${encodeURIComponent(taskId)}/replay/html`,
       );
       if (!res.ok) throw new Error(`status ${res.status}`);

@@ -6,6 +6,7 @@ import {
   Printer, RefreshCw, Save, Search, Underline,
 } from 'lucide-react';
 import { t } from '@/i18n/t';
+import { DOCUMENT_CANVAS, DOCUMENT_SHEET, DOCUMENT_TYPE } from '@/components/computer/DocumentPage';
 import type { WorkspaceEditorProps } from '../types';
 import { loadDoc, loadDocMeta } from './loadDoc';
 import { serializeEditor, splitMarker, normalizeFontSizes } from './serialize';
@@ -693,7 +694,7 @@ export default function DocEditor({ file, live, onSave, onChatEdit }: WorkspaceE
       {message && (
         <div className="border-b border-border-main px-3 py-2 text-[11px] text-text-secondary">{message}</div>
       )}
-      <div className="doc-print-area flex-1 overflow-y-auto px-6 py-6">
+      <div className={`doc-print-area flex-1 overflow-y-auto px-6 py-6 ${DOCUMENT_CANVAS}`}>
         {loading ? (
           <div className="flex h-full items-center justify-center gap-2 text-text-secondary">
             <Loader2 className="size-5 animate-spin" /> {t('Loading')}
@@ -707,11 +708,12 @@ export default function DocEditor({ file, live, onSave, onChatEdit }: WorkspaceE
                 pendingContentRef.current = null;
               }
             }}
+            dir="auto"
             contentEditable={editable}
             suppressContentEditableWarning
             spellCheck={false}
             onInput={() => { setDirty(true); updateCounts(); }}
-            className="doc-print-surface mx-auto max-w-3xl rounded-card border border-border-main bg-bg-main px-10 py-8 outline-none [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:text-xl [&_h2]:font-bold [&_h3]:text-lg [&_h3]:font-bold [&_li]:list-disc [&_ol>li]:list-decimal [&_p]:my-2 [&_table]:my-3 [&_table]:w-full [&_td]:border [&_td]:border-border-main [&_td]:px-2 [&_td]:py-1 [&_ul]:my-2"
+            className={`doc-print-surface outline-none ${DOCUMENT_SHEET} ${DOCUMENT_TYPE}`}
           />
         )}
       </div>
