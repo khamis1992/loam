@@ -647,6 +647,7 @@ async function main(): Promise<void> {
         // catalog's ask toolset instead of the run's full grant.
         ...(lazyCommand?.kind === "audit" ? { tools: agentTools.forMode("ask") } : {}),
         emit: wrappedEmit,
+        loamMode: lazyCommand?.kind === "audit" ? "ask" : effectiveMode,
         prompt: commandPrompt,
         history,
         memories,

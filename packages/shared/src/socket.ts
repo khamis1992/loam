@@ -455,6 +455,12 @@ export interface AskUserResolvedEvent extends ChatEventBase {
   };
 }
 
+export interface SecondLookEvent extends ChatEventBase {
+  type: 'secondLook';
+  verdict: 'findings' | 'lgtm' | 'error' | 'skipped';
+  findings?: string;
+}
+
 export type ChatEvent =
   | ChatMessageEvent
   | ChatDeltaEvent
@@ -487,6 +493,7 @@ export type ChatEvent =
   | AskUserRequestedEvent
   | AskUserResolvedEvent
   | RecipeUpdateEvent
-  | RecipeRestartEvent;
+  | RecipeRestartEvent
+  | SecondLookEvent;
 
 export type ServerMessage = ServerEnvelope | { type: 'session_write_access'; sessionId: string; writable: boolean };

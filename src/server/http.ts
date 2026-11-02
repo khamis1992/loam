@@ -23,6 +23,7 @@ import { rehydratePlanApprovals } from "../tools/planApprovalStore.js";
 import { rehydrateApprovals } from "./approvals.js";
 import { expireDue } from "../orchestration/durable/interrupts.js";
 import { GRAPHIFY_PIN } from "../codegraph/config.js";
+import { getRecallService } from "../memory/recall/instance.js";
 import http from "node:http";
 import { startSseHeartbeat } from './sseHeartbeat.js';
 import { TimelineService } from '../creative/timeline.js';
@@ -1399,6 +1400,61 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           if (!memory) return sendJson(res, 503, { error: "memory disabled in config" });
           const id = decodeURIComponent(p.slice("/api/memory/".length));
           sendJson(res, 200, { deleted: memory.remove(id) });
+          return;
+        }
+
+        if (req.method === "GET" && p === "/api/recall/stats") {
+          const service = getRecallService();
+          if (!service) return sendJson(res, 200, { enabled: false });
+          sendJson(res, 200, { enabled: true, ...(await service.stats()) });
+          return;
+        }
+
+        if (req.method === "GET" && p === "/api/recall/search") {
+          const service = getRecallService();
+          const query = url.searchParams.get("q") ?? "";
+          if (!service || !query.trim()) return sendJson(res, 200, { hits: [] });
+          const hits = await service.search({ text: query, scope: ["user"], limit: 20 });
+          sendJson(res, 200, { hits: hits.map((hit) => ({ id: hit.memory.id, content: hit.memory.content, kind: hit.memory.kind, state: hit.memory.state, score: hit.score })) });
+          return;
+        }
+
+        if (req.method === "POST" && p === "/api/recall/confirm") {
+          const service = getRecallService();
+          const body = (await readBody(req)) as { id?: unknown };
+          if (!service || typeof body.id !== "string") return sendJson(res, 400, { error: "id required" });
+          await service.confirm(body.id);
+          sendJson(res, 200, { ok: true });
+          return;
+        }
+
+        if (req.method === "POST" && p === "/api/recall/forget") {
+          const service = getRecallService();
+          const body = (await readBody(req)) as { id?: unknown; hard?: unknown; confirm?: unknown };
+          if (!service || typeof body.id !== "string") return sendJson(res, 400, { error: "id required" });
+          if (body.hard === true && body.confirm !== true) return sendJson(res, 400, { error: "hard forget needs confirmation" });
+          await service.forget(body.id, body.hard === true ? "hard" : "soft");
+          sendJson(res, 200, { ok: true });
+          return;
+        }
+
+        if (req.method === "POST" && p === "/api/recall/restore") {
+          const service = getRecallService();
+          const body = (await readBody(req)) as { id?: unknown };
+          if (!service || typeof body.id !== "string") return sendJson(res, 400, { error: "id required" });
+          await service.restore(body.id);
+          sendJson(res, 200, { ok: true });
+          return;
+        }
+
+        if (req.method === "POST" && p === "/api/recall/settings") {
+          const service = getRecallService();
+          const body = (await readBody(req)) as { rerank?: unknown; embedder?: unknown; reviewModes?: unknown };
+          if (!service) return sendJson(res, 200, { ok: false });
+          if (typeof body.rerank === "boolean") service.repo.setSetting("rerank", body.rerank ? "1" : "0");
+          if (typeof body.embedder === "string") service.repo.setSetting("embedder", body.embedder.slice(0, 120));
+          if (body.reviewModes && typeof body.reviewModes === "object") service.repo.setSetting("reviewModes", JSON.stringify(body.reviewModes));
+          sendJson(res, 200, { ok: true });
           return;
         }
 

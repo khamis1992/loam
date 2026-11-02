@@ -693,6 +693,18 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
     case "critique":
     case "revise":
     case "replan":
+      break;
+
+    case "review":
+      out.push({
+        id: synthId(),
+        type: "secondLook",
+        timestamp: ts,
+        verdict: event.verdict,
+        ...(event.findings ? { findings: event.findings } : {}),
+      });
+      break;
+
     case "verify":
     case "verification_progress":
     case "permission_mode_changed":

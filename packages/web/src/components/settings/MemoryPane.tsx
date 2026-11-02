@@ -7,6 +7,7 @@ import { t } from '@/i18n/t';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
 import { Section, Row } from './SettingsDialog';
 import { MemoryDebugPane } from './MemoryDebugPane';
+import { RecallControls } from './RecallControls';
 import { WikiSection } from './WikiSection';
 
 interface MemoryEntry {
@@ -121,6 +122,7 @@ export function MemoryPane() {
         )}
       </Section>
 
+      <RecallControls />
       <WikiSection />
 
       <MemoryDebugPane />

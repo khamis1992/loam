@@ -20,6 +20,7 @@ import { KnowledgeGardenPane } from './KnowledgeGardenPane';
 import { LegalPanel } from '@/components/legal/LegalPanel';
 import { LessonsPanel } from './LessonsPanel';
 import { MemoryPane } from './MemoryPane';
+import { SecondLookPane } from './SecondLookPane';
 import { BridgesPane } from './BridgesPane';
 import { InAppBrowserPane } from './InAppBrowserPane';
 import { PersonalizationPane } from './PersonalizationPane';
@@ -48,6 +49,7 @@ const TABS = [
   { id: 'Skills', group: 'integrations', icon: 'Blocks' },
   { id: 'Playbooks', group: 'integrations', icon: 'BookMarked' },
   { id: 'Memory', group: 'memory', icon: 'Database' },
+  { id: 'Second Look', group: 'memory', icon: 'Blocks' },
   { id: 'Knowledge Garden', group: 'memory', icon: 'Leaf' },
   { id: 'Legal', group: 'security', icon: 'BookMarked' },
   { id: 'Learned lessons', group: 'memory', icon: 'GraduationCap' },
@@ -62,7 +64,7 @@ const TABS = [
   { id: 'About', group: 'advanced', icon: 'Info' },
 ];
 
-const MVP_TAB_IDS = new Set(['General', 'Account', 'Appearance', 'Shortcuts', 'Data controls', 'Personalization', 'My Computer', 'Usage', 'About', 'Connectors', 'Skills', 'Playbooks', 'Memory', 'Knowledge Garden', 'Legal', 'Learned lessons', 'App bridges', 'In-App Browser', 'Email', 'Phone', 'Wallet', 'Integrations', 'Developers']);
+const MVP_TAB_IDS = new Set(['General', 'Account', 'Appearance', 'Shortcuts', 'Data controls', 'Personalization', 'My Computer', 'Usage', 'About', 'Connectors', 'Skills', 'Playbooks', 'Memory', 'Second Look', 'Knowledge Garden', 'Legal', 'Learned lessons', 'App bridges', 'In-App Browser', 'Email', 'Phone', 'Wallet', 'Integrations', 'Developers']);
 
 /** Group id → i18n key for the Arabic nav header («عام», «الذاكرة والمعرفة», …). */
 const GROUP_LABELS: Record<string, string> = {
@@ -173,6 +175,7 @@ function SettingsContent({ tab }: { tab: string }) {
     case 'Skills': return <SkillsPane />;
     case 'Playbooks': return <PlaybooksPane />;
     case 'Memory': return <MemoryPane />;
+    case 'Second Look': return <SecondLookPane />;
     case 'Knowledge Garden': return <KnowledgeGardenPane />;
     case 'Legal': return <LegalPanel />;
     case 'Learned lessons': return <LessonsPanel />;

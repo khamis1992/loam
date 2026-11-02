@@ -31,8 +31,16 @@ import { initPty, disposePty, ptyStatus, ptyTools } from "../tools/pty.js";
 import { registerMcpTools, type McpToolset } from "../tools/mcp.js";
 import { prepareApiAnything } from "../tools/apiAnything/server.js";
 import { createApiAnythingLearnTools } from "../tools/apiAnything/learnTools.js";
-import { OllamaEmbedder } from "../memory/embeddings.js";
-import { MemoryStore, startMemoryDreamJob } from "../memory/store.js";
+import { fromBase64, OllamaEmbedder } from "../memory/embeddings.js";
+import { MemoryStore, setMemoryRecallMirror, setRecallGardenerStarter, startMemoryDreamJob } from "../memory/store.js";
+import { database } from "../server/sqliteStore.js";
+import { createRecallService } from "../memory/recall/service.js";
+import { getRecallService, setRecallService } from "../memory/recall/instance.js";
+import type { Embedder } from "../memory/recall/types.js";
+import { migrateLegacyStore } from "../memory/recall/migrateLegacy.js";
+import { startGardener } from "../memory/recall/gardener.js";
+import { createLoamMemoryTools } from "../tools/memoryTools.js";
+import { configureTurnHooks, textModelFromOllama } from "../review/turnHook.js";
 import { createMemoryTools, createRecallTools } from "../tools/memory.js";
 import { recallIndex } from "../graph/recall.js";
 import { createSkillTools } from "../tools/skills.js";
@@ -172,6 +180,15 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   registry.registerAll(mirofishTools().map(tool => ({ ...tool, integration: true })));
 
   const embedder = new OllamaEmbedder(cfg.ollamaUrl, cfg.memory.model);
+  const recallEmbedders = new Set(["nomic-embed-text:latest", "bge-m3", "embeddinggemma"]);
+  const recallEmbedder: Embedder = {
+    async embed(texts) {
+      const chosen = getRecallService()?.repo.getSetting("embedder");
+      const model = chosen && recallEmbedders.has(chosen) ? chosen : cfg.memory.model;
+      const active = model === cfg.memory.model ? embedder : new OllamaEmbedder(cfg.ollamaUrl, model);
+      return active.embed(texts);
+    },
+  };
   // C9 memory ranking (default off, OD-7): recency + importance re-ranking
   // of cosine hits, enabled only by the orchestration switch.
   const mr = cfg.orchestration?.memoryRanking;
@@ -183,6 +200,35 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
           : []),
       )
     : null;
+  const loamRecall = cfg.memory.enabled
+    ? createRecallService(database(), {
+        embedder: recallEmbedder,
+        model: textModelFromOllama(ollama, cfg.model),
+        config: { models: { generator: cfg.model, embedder: cfg.memory.model } },
+        dbBytes: () => 0,
+      })
+    : null;
+  if (loamRecall) {
+    setRecallService(loamRecall);
+    configureTurnHooks({ model: textModelFromOllama(ollama, cfg.model), mode: "ask" });
+    setMemoryRecallMirror(async (entry) => {
+      const kind = entry.kind === "preference" ? "preference" : "fact";
+      const chosen = loamRecall.repo.getSetting("embedder");
+      const sameModel = !chosen || chosen === cfg.memory.model;
+      await loamRecall.remember({
+        content: entry.text,
+        scope: "user",
+        kind,
+        origin: entry.source === "user" ? "user" : "assistant",
+        tags: entry.tags,
+        ...(sameModel && entry.vector && entry.dim ? { embedding: fromBase64(entry.vector, entry.dim) } : {}),
+      });
+    });
+    setRecallGardenerStarter(() => startGardener(loamRecall.repo, loamRecall.config, () => textModelFromOllama(ollama, cfg.model)));
+    void migrateLegacyStore(loamRecall, cfg.memory.file, embedder, loamRecall.config).catch((error) => {
+      log.warn(`recall migration skipped: ${error instanceof Error ? error.message : String(error)}`);
+    });
+  }
   // Background consolidation ("dreaming"): merges duplicates and drops stale
   // unused entries while preserving user preferences. Idempotent; unref'd timer.
   const stopDream = memory
@@ -197,6 +243,7 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   // Always hand tools a WriteGate object; per-write gateActive() decides staging vs. direct apply.
   const gate = writeGate;
   if (memory) registry.registerAll(createMemoryTools(memory, { gate }));
+  if (loamRecall) registry.registerAll(createLoamMemoryTools());
   // N16 cross-run recall: the shelf shares the memory embedder, and without it
   // the shelf still answers lexically, so the tools are always registered and a
   // node is vectorized exactly when memory embeddings are on. Reachability is
@@ -306,6 +353,9 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
     mcp,
     dispose: async (): Promise<void> => {
       stopDream?.();
+      setRecallService(null);
+      setMemoryRecallMirror(null);
+      setRecallGardenerStarter(null);
       screenLive.stop();
       preview.stop();
       disposeShellSessions();

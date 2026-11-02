@@ -120,6 +120,23 @@ function newId(): string {
   return `mem_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 }
 
+/** Optional bridge into Loam Recall. The JSON store keeps its own exports. */
+let recallMirror: ((entry: MemoryEntry) => Promise<void>) | null = null;
+let gardenerStarter: (() => () => void) | null = null;
+
+export function setMemoryRecallMirror(fn: ((entry: MemoryEntry) => Promise<void>) | null): void {
+  recallMirror = fn;
+}
+
+export function setRecallGardenerStarter(fn: (() => () => void) | null): void {
+  gardenerStarter = fn;
+}
+
+function mirrorRecall(entry: MemoryEntry): void {
+  if (!recallMirror) return;
+  void recallMirror(entry).catch(() => undefined);
+}
+
 /** Tiny local vector store (JSON on disk, brute-force cosine over normalized vectors).
  *  Good for thousands of entries — no external service, no native deps. */
 export class MemoryStore {
@@ -214,6 +231,7 @@ export class MemoryStore {
         useCount: 0,
       });
       this.save();
+      mirrorRecall(existing);
       return existing;
     }
     const vec = normalize(await this.embedder.embedOne(trimmed));
@@ -236,6 +254,7 @@ export class MemoryStore {
       });
       this.save();
       log.info(`memory: merged near-duplicate into ${existing.id} (score ${near.score.toFixed(3)})`);
+      mirrorRecall(existing);
       return existing;
     }
     const entry: MemoryEntry = {
@@ -256,6 +275,7 @@ export class MemoryStore {
     this.entries.push(entry);
     this.vectors.push(vec);
     this.save();
+    mirrorRecall(entry);
     return entry;
   }
 
@@ -559,5 +579,9 @@ export function startMemoryDreamJob(store: MemoryStore, opts: MemoryDreamJobOpti
     void tick();
   }, intervalMs);
   timer.unref?.();
-  return () => clearInterval(timer);
+  const stopRecall = gardenerStarter?.() ?? (() => undefined);
+  return () => {
+    clearInterval(timer);
+    stopRecall();
+  };
 }

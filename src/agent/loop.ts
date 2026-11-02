@@ -33,6 +33,7 @@ import type { ToolMeta } from "./prune/types.js";
 import { ContextSelector } from "./contextSelector.js";
 import { runLifecycleHooks, wrapHookContext } from "../policy/hooks.js";
 import { throwIfCancelled, isCancelled, isCancelledError } from "../server/runControl.js";
+import { beginForeground, endForeground, maybeSecondLook, noteTouchedPath, queueTurnIngest, recallSystemBlock } from "../review/turnHook.js";
 import { openSession, closeSession } from "./sessionHooks.js";
 import { isUntrustedTool, markUntrusted, type SandboxMode } from "../policy/riskTier.js";
 import { guardUntrusted } from "../orchestration/contracts/injectionGuard.js";
@@ -166,6 +167,8 @@ export interface RunOptions {
   suppressFinal?: boolean;
   /** Subagent delegation depth for this run (0 = top-level). */
   depth?: number;
+  /** Active Loam mode for this run. Recall and Second Look read it per turn. */
+  loamMode?: string;
   /** Internal evidence channel, independent of abbreviated UI tool events. */
   onToolEvidence?: (item: ToolTraceItem) => void;
   /** Internal accounting snapshot, including work preceding a worker failure. */
@@ -436,9 +439,14 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   // A session's file-touch reader marks are worthless once it is gone; forget
   // them on every exit path so finished sessions are never notified.
   const sessionId = opts.sessionId ?? opts.taskId ?? `session-${process.pid}-${Date.now()}`;
+  beginForeground();
+  let result: RunResult | undefined;
   try {
-    return await runAgentInner(opts, sessionId);
+    result = await runAgentInner(opts, sessionId);
+    return result;
   } finally {
+    endForeground();
+    if (result) queueTurnIngest(sessionId, opts.cfg.workspace, opts.prompt, result.text, (opts.depth ?? 0) > 0);
     forgetFileTouchSession(sessionId);
     // A parked run that ends (finished or cancelled) has no waiter left, so its
     // pause state must not outlive it and trap the next run of the same task.
@@ -485,7 +493,13 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
   // before them. `auto` adds nothing, which keeps pre-N10 prompts byte-identical.
   const outputInstruction = outputTypeSuffix(outputType);
   const routingSystem = outputInstruction ? `${system}\n\n${outputInstruction}` : system;
-  let messages: ChatMessage[] = [{ role: "system", content: routingSystem }];
+  const memoryBlock = await recallSystemBlock(opts.prompt, opts.cfg.workspace, (opts.depth ?? 0) > 0, opts.loamMode);
+  const routed = memoryBlock ? `${routingSystem}\n\n${memoryBlock}` : routingSystem;
+  let messages: ChatMessage[] = [{ role: "system", content: routed }];
+  const touched: string[] = [];
+  let toolCallCount = 0;
+  let reviewed = false;
+  const turnStartedAt = Date.now();
 
   if (opts.history && opts.history.length > 0) {
     // History selection already preserves user constraints under its explicit
@@ -654,6 +668,30 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
       const session = await openSession({ workspace, prompt: opts.prompt, signal: opts.signal, taskId: opts.taskId, enabled: true, wikiCfg: opts.cfg });
       if (session.injected) messages.push({ role: "user", content: session.injected });
     }
+
+  async function injectSecondLook(): Promise<boolean> {
+    if (reviewed) return false;
+    reviewed = true;
+    const note = await maybeSecondLook({
+      runId: opts.taskId ?? sessionId,
+      workspace: opts.cfg.workspace,
+      requests: [opts.prompt],
+      reply: finalText,
+      turnStartedAt,
+      touched,
+      toolCalls: toolCallCount,
+      depth: opts.depth ?? 0,
+      aborted: Boolean(opts.signal?.aborted),
+      alreadyReviewed: false,
+      ollama: opts.ollama,
+      modelName: usedModel || opts.cfg.model,
+      ...(opts.loamMode ? { mode: opts.loamMode } : {}),
+    });
+    if (!note) return false;
+    opts.emit({ type: "review", verdict: "findings", findings: note });
+    messages.push({ role: "user", content: note });
+    return true;
+  }
 
   for (step = (restored?.steps ?? (mission && opts.resumeMission ? resumeStep(opts.resumeMission) - 1 : 0)) + 1; step <= stepCeiling; step++) {
     // Neo N6: a mission checkpoints BEFORE its step runs, marking the step as
@@ -987,6 +1025,7 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
         }
         lastStepFailed = false;
         finalText = checked.finalAnswer ?? finalText;
+        if (await injectSecondLook()) continue;
         opts.emit({ type: "assistant_message", text: finalText });
         opts.emit({ type: "done", text: finalText, steps: step, model: usedModel });
         endedReason = "completed";
@@ -1029,6 +1068,8 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
         const name = call.function?.name ?? "";
         const args = normalizeArgs(call.function?.arguments);
         opts.emit({ type: "tool_call", name, args });
+        toolCallCount += 1;
+        noteTouchedPath(name, args, touched);
         return { name, args, t0: Date.now(), callId: toolCallIdOf(call, step, index++) };
       });
       if (logSession) {
@@ -1102,6 +1143,8 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
         const name = call.function?.name ?? "";
         const args = normalizeArgs(call.function?.arguments);
         opts.emit({ type: "tool_call", name, args });
+        toolCallCount += 1;
+        noteTouchedPath(name, args, touched);
         lastToolCallName = name;
 
         const callId = toolCallIdOf(call, step, index++);
@@ -1173,6 +1216,7 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
     if (direct) {
       opts.emit({ type: "return_direct", tool: stepToolOutcomes[0]!.tool, chars: direct.length });
       finalText = direct;
+      if (await injectSecondLook()) continue;
       directEnd = true;
       break;
     }
@@ -1186,6 +1230,7 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
     if (instructedDone) {
       const evidence = stepToolOutcomes[0]?.content?.trim() ?? "";
       finalText = evidence.slice(0, 2000) || `Completed ${instructed.function.name}.`;
+      if (await injectSecondLook()) continue;
       directEnd = true;
       break;
     }

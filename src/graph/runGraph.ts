@@ -868,6 +868,7 @@ export class RunGraph {
       case "video_studio_export":
       case "workspace_open_request":
       case "simulation_progress":
+      case "review":
         // Live-only signals with no canvas node of their own.
         return [];
       case "fanout_branch":

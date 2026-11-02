@@ -332,6 +332,8 @@ export type AgentEvent =
       scheduleId?: string;
       summary?: string;
     }
+  /** Fresh-context self-review. Findings are also injected once; they never block the turn. */
+  | { type: "review"; verdict: "findings" | "lgtm" | "error" | "skipped"; findings?: string }
   /** Orchestration Core (BUILD_SPEC §4.0.4): ledger, checkpoints, interrupts,
    * selection, guard, workflows, direct return. Additive union member. */
   | OrchestrationEvent

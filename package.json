@@ -127,6 +127,7 @@
     "test:design-pipeline": "node --import tsx --test src/design/__tests__/pipeline.test.ts src/models/__tests__/route.test.ts src/scripts/__tests__/check-design-pipeline.test.ts",
     "test:electron": "node --test electron/__tests__/*.test.cjs",
     "test:memory": "node --import tsx --test src/memory/__tests__/cache.test.ts src/memory/__tests__/caps.test.ts src/server/__tests__/debugMemory.test.ts src/protocol/__tests__/blobRoute.test.ts",
+    "test:recall": "node --import tsx --test src/memory/recall/__tests__/recall.test.ts src/review/__tests__/review.test.ts src/mcp/__tests__/recall.mcp.test.ts",
     "test:mirofish": "node --import tsx --test src/tools/mirofish/__tests__/nutrio-e2e.test.ts",
     "test:normalize": "node --import tsx --test src/security/normalize/__tests__/*.test.ts",
     "test:pentest-bench": "node --import tsx --test src/scripts/__tests__/check-pentest-bench.test.ts",
