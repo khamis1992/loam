@@ -35,7 +35,9 @@ test("a saved provider keeps a vault id and drops the raw key", async () => {
     defaultModelId: model.id,
     fallbackModelId: null,
   });
-  assert.equal(registry.models[0].id, "openai/gpt-4o");
+  const saved = registry.models[0];
+  assert.ok(saved);
+  assert.equal(saved.id, "openai/gpt-4o");
 });
 
 test("anthropic and gemini keys use their header names", async () => {
