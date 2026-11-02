@@ -67,8 +67,8 @@ export function ModelMenu({
 
       {open && (
         <div
-          className="absolute z-50 mt-1 w-[366px] rounded-card bg-bg-menu p-1 shadow-menu"
-          style={{ backdropFilter: "blur(40px)" }}
+          className="absolute bottom-full start-0 z-50 mb-1 flex max-h-[min(420px,70vh)] w-[366px] max-w-[calc(100vw-32px)] flex-col overflow-hidden rounded-card bg-bg-menu p-1 shadow-menu"
+          style={{ backdropFilter: "blur(40px)", overflowAnchor: "none" }}
         >
           <RealModelPicker
             onTier={(tier) => onSelect(tier)}

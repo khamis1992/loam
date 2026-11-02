@@ -23,8 +23,7 @@ export class OllamaAdapter implements ProviderAdapter {
   }
 
   async listModels() {
-    // TODO Phase 3b: Implement /api/tags fetching
-    // For now return empty (non-critical for Phase 3a skeleton)
-    return [];
+    const names = await this.client.listLocalModels();
+    return names.map((remoteId) => ({ remoteId }));
   }
 }

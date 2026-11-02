@@ -132,6 +132,32 @@ export async function fetchModelDirectory(): Promise<ModelDirectory | null> {
  * slot, cloud/provider models route through Flex. The tier the UI should
  * switch to comes back in `tier`.
  */
+const RUN_MODEL_KEY = 'loam-run-model';
+
+/** Remember the concrete model id the next message must run. */
+export function rememberRunModel(model: string): void {
+  try {
+    sessionStorage.setItem(RUN_MODEL_KEY, model);
+    window.dispatchEvent(new Event('loam-run-model'));
+  } catch {
+    /* session storage can be blocked; the server settings still hold the pick */
+  }
+}
+
+export function rememberedRunModel(): string {
+  try {
+    return sessionStorage.getItem(RUN_MODEL_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+/** Label for a run id: drop the registry prefix and the cloud marker. */
+export function displayModelId(model: string): string {
+  const bare = model.startsWith('registry:') ? model.slice(model.lastIndexOf('/') + 1) : model;
+  return bare.endsWith(':cloud') ? bare.slice(0, -':cloud'.length) : bare;
+}
+
 export async function selectModel(input: { id: string; source: string }): Promise<
   | { ok: true; tier: 'standard' | 'flex'; model: string; needsKey: boolean; active: ModelDirectory['active'] }
   | { error: string }

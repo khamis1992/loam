@@ -10,10 +10,15 @@ import { providerForModel } from "./router.js";
 
 const LOCAL_HOSTS = /^(localhost|127\.\d+\.\d+\.\d+|\[::1\]|0\.0\.0\.0)$/i;
 
-export function isCloudProvider(model: string, p: Pick<FailoverProvider, "kind" | "baseUrl" | "enabled"> | undefined): boolean {
+export function isCloudProvider(
+  model: string,
+  p: (Pick<FailoverProvider, "kind" | "baseUrl" | "enabled"> & { providerRef?: { location?: "local" | "cloud" } }) | undefined,
+): boolean {
   if (!model) return false;
   if (model.endsWith(":cloud")) return true;
   if (!p || !p.enabled) return false;
+  if (p.providerRef?.location === "cloud") return true;
+  if (p.providerRef?.location === "local") return false;
   if (p.kind === "ollama") return false;
   try {
     return !LOCAL_HOSTS.test(new URL(p.baseUrl).hostname);

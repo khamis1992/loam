@@ -90,11 +90,31 @@ describe("registryClient", () => {
     delete process.env.LOAM_TEST_ANTHROPIC_KEY;
   });
 
-  test("createRegistryRunClient: compat kinds and unknown refs return null", async () => {
+  test("createRegistryRunClient: openai-compatible sends the remote id to that provider", async () => {
     const { createRegistryRunClient } = await import("../registryClient.js");
     assert.equal(await createRegistryRunClient("gpt-x:cloud"), null, "not a ref");
-    assert.equal(await createRegistryRunClient("registry:compat-provider/gpt-x"), null, "openai-compatible routes via Flex, not here");
     assert.equal(await createRegistryRunClient("registry:missing/model"), null, "unresolvable ref");
+    const original = globalThis.fetch;
+    let called = "";
+    let sentModel = "";
+    globalThis.fetch = (async (url, init) => {
+      called = String(url);
+      sentModel = JSON.parse(String(init?.body)).model;
+      return new Response(
+        `data: ${JSON.stringify({ choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] })}\n\ndata: [DONE]\n`,
+        { status: 200 },
+      );
+    }) as typeof fetch;
+    try {
+      const run = await createRegistryRunClient("registry:compat-provider/gpt-x");
+      assert.ok(run);
+      const result = await run!.client.chat({ model: "ignored", messages: [{ role: "user", content: "hi" }] });
+      assert.equal(called, "https://compat.example/v1/chat/completions");
+      assert.equal(sentModel, "gpt-x");
+      assert.equal(result.content, "ok");
+    } finally {
+      globalThis.fetch = original;
+    }
   });
 
   test("selectModel native pick writes ref + default + chain head; other picks clear it", async () => {

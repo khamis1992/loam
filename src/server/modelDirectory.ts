@@ -30,7 +30,7 @@ import { getSettings, updateSettings, type Settings } from "./settings.js";
 import { getRegistry } from "../models/registry/init.js";
 import { saveRegistry } from "../models/registry/store.js";
 import { registryModelRef } from "../models/registry/registryClient.js";
-import type { ProviderRecord } from "../models/registry/types.js";
+import type { ModelCapabilities, ProviderRecord } from "../models/registry/types.js";
 import { getVault } from "../models/secrets/vault.js";
 import { log } from "../log.js";
 
@@ -100,6 +100,32 @@ export interface SourceState {
 export interface ModelDirectory {
   models: ModelEntry[];
   sources: SourceState[];
+}
+
+/** Saved registry models for GET /api/models `entries`. No secrets. */
+export interface RegistryDirectoryEntry {
+  id: string;
+  label: string;
+  providerId: string;
+  location: "local" | "cloud";
+  enabled: boolean;
+  capabilities: ModelCapabilities;
+}
+
+export function registryModelEntries(): RegistryDirectoryEntry[] {
+  const registry = getRegistry();
+  if (!registry) return [];
+  return registry.models.map((model) => {
+    const provider = registry.providers.find((item) => item.id === model.providerId);
+    return {
+      id: model.id,
+      label: model.label,
+      providerId: model.providerId,
+      location: provider?.location ?? "local",
+      enabled: model.enabled,
+      capabilities: model.capabilities,
+    };
+  });
 }
 
 /** Test seam: replace the directory's fetch (defaults to global fetch). */
@@ -262,6 +288,21 @@ export interface SelectResult {
   needsKey: boolean;
 }
 
+/** Write a registry ref so the run uses this provider's adapter and its own key. */
+async function selectViaRegistry(
+  registry: NonNullable<ReturnType<typeof getRegistry>>,
+  provider: ProviderRecord,
+  remoteId: string,
+): Promise<SelectResult | { ok: false; error: string }> {
+  const record = registry.models.find((m) => m.providerId === provider.id && m.remoteId === remoteId && m.enabled);
+  if (!record) return { ok: false, error: `نموذج غير معروف أو معطّل لهذا المزوّد: ${remoteId}` };
+  const model = registryModelRef(record.id);
+  updateSettings({ theme: getSettings().theme, model });
+  setRegistryDefault(registry, record.id);
+  const needsKey = provider.auth.type !== "none" && !(await registryProviderHasKey(provider));
+  return { ok: true, tier: "standard", model, needsKey };
+}
+
 /** Apply a real-model pick: local models go to settings.model; cloud/provider
  *  models are routed through the Flex slot (its key stays whatever the vault
  *  or the provider's env var provides). Registry providers (PR #4) resolve
@@ -288,26 +329,20 @@ export async function selectModel(cfg: Config, input: { id: unknown; source: unk
     const provider = registry?.providers.find((p) => `registry:${p.id}` === source);
     if (!provider) return { ok: false, error: `unknown registry provider: ${source}` };
     if (provider.kind === "anthropic" || provider.kind === "google-gemini") {
-      // Native protocols: route through the provider's own adapter. The pick
-      // writes a `registry:<provider>/<model>` ref into settings.model (the
-      // standard tier reads it) plus the registry defaultModelId — the run
-      // client (registryClient.ts) turns the ref into an adapter-backed
-      // client at start. This is the routing leg PR #4 left open.
-      const record = registry?.models.find((m) => m.providerId === provider.id && m.remoteId === id && m.enabled);
-      if (!record) return { ok: false, error: `نموذج غير معروف أو معطّل لهذا المزوّد: ${id}` };
-      const patch: Settings = { theme: getSettings().theme, model: registryModelRef(record.id) };
-      updateSettings(patch);
-      setRegistryDefault(registry!, record.id);
-      const needsKey = provider.auth.type !== "none" && !(await registryProviderHasKey(provider));
-      return { ok: true, tier: "standard", model: registryModelRef(record.id), needsKey };
+      return selectViaRegistry(registry!, provider, id);
     }
     if (provider.kind === "ollama") {
       const same = provider.baseUrl.replace(/\/+$/, "") === cfg.ollamaUrl.replace(/\/+$/, "");
-      if (!same) return { ok: false, error: "مزوّد Ollama بعيد: وجّه ollamaUrl إليه في config.json ثم اختر نموذجه" };
-      const patch: Settings = { theme: getSettings().theme, model: id };
-      updateSettings(patch);
-      clearRegistryDefault();
-      return { ok: true, tier: "standard", model: id, needsKey: false };
+      if (same) {
+        const patch: Settings = { theme: getSettings().theme, model: id };
+        updateSettings(patch);
+        clearRegistryDefault();
+        return { ok: true, tier: "standard", model: id, needsKey: false };
+      }
+      return selectViaRegistry(registry!, provider, id);
+    }
+    if (provider.auth.type !== "none") {
+      return selectViaRegistry(registry!, provider, id);
     }
     baseUrl = provider.baseUrl;
     registryHasKey = await registryProviderHasKey(provider);
@@ -331,8 +366,10 @@ export async function selectModel(cfg: Config, input: { id: unknown; source: unk
   const stored = setFlexConfig({ baseUrl, model: id });
   if (!("ok" in stored) || !stored.ok) return { ok: false, error: "error" in stored ? stored.error : "flex save failed" };
   clearRegistryDefault();
+  const runModel = `${id}:cloud`;
+  updateSettings({ theme: getSettings().theme, model: runModel });
   const hasKey = providerHasKey || (!switchingProvider && flexNow.hasKey);
-  return { ok: true, tier: "flex", model: `${id}:cloud`, needsKey: !hasKey };
+  return { ok: true, tier: "flex", model: runModel, needsKey: !hasKey };
 }
 
 /** Make a registry model the default: defaultModelId + head of the default

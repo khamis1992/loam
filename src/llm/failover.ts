@@ -8,6 +8,9 @@ import {
   type ChatResult,
 } from "../ollama.js";
 import { createAdapter } from "../models/adapters/index.js";
+import { compileChain, type CompiledProvider } from "../models/registry/compile.js";
+import { getRegistry } from "../models/registry/init.js";
+import { resolveProviderApiKey } from "../models/registry/registryClient.js";
 import { log } from "../log.js";
 import { CancelledError, isCancelledError } from "../server/runControl.js";
 
@@ -241,19 +244,25 @@ export class JsonCooldownStore implements CooldownStore {
 export function createProviderClient(
   p: FailoverProvider,
   env: Record<string, string | undefined> = process.env,
+  resolvedKey?: string,
 ): ProviderClient {
+  const compiled = (p as CompiledProvider).providerRef ? (p as CompiledProvider) : null;
+  const envKey = p.apiKeyEnv ? (env[p.apiKeyEnv] ?? "").trim() : "";
+  const apiKey = (resolvedKey ?? envKey).trim();
+  const authHeader = compiled?.providerRef.auth.type === "header" ? compiled.providerRef.auth.header : undefined;
+  const timeoutMs = compiled?.providerRef.timeoutMs ?? 180_000;
   if (p.kind === "ollama") return new OllamaClient(p.baseUrl);
-  if (p.kind === "anthropic" || p.kind === "google-gemini") {
-    const apiKey = p.apiKeyEnv ? (env[p.apiKeyEnv] ?? "").trim() : "";
+  if (p.kind === "anthropic" || p.kind === "google-gemini" || compiled) {
     const adapter = createAdapter(p.kind, {
       baseUrl: p.baseUrl,
       ...(apiKey ? { apiKey } : {}),
-      timeoutMs: 180_000,
+      ...(authHeader ? { authHeader } : {}),
+      ...(compiled && Object.keys(compiled.providerRef.extraHeaders).length > 0 ? { extraHeaders: compiled.providerRef.extraHeaders } : {}),
+      timeoutMs,
     });
     const remoteId = p.model;
     return { chat: (options: ChatOptions) => adapter.chat({ ...options, model: remoteId }) };
   }
-  const apiKey = p.apiKeyEnv ? (env[p.apiKeyEnv] ?? "").trim() : "";
   return new OllamaClient(p.baseUrl, { baseUrl: p.baseUrl, apiKey: apiKey || undefined });
 }
 
@@ -268,6 +277,12 @@ export function hasUsableKey(
   p: FailoverProvider,
   env: Record<string, string | undefined> = process.env,
 ): boolean {
+  const auth = (p as CompiledProvider).providerRef?.auth;
+  if (auth) {
+    if (auth.type === "none") return true;
+    if (auth.type === "env") return Boolean((env[auth.envVar] ?? "").trim());
+    return auth.credentialId.trim().length > 0;
+  }
   if (p.kind !== "openai-compatible") return true;
   const key = p.apiKeyEnv ? (env[p.apiKeyEnv] ?? "").trim() : "";
   return key.length > 0;
@@ -437,7 +452,19 @@ export class FailoverClient extends OllamaClient {
   }
 
   override async chat(options: ChatOptions): Promise<ChatResult> {
-    return chatWithFailover({ providers: this.providers, chat: options, store: this.store });
+    const keys = new Map<string, string>();
+    for (const provider of this.providers) {
+      const compiled = provider as CompiledProvider;
+      if (!compiled.providerRef || compiled.providerRef.auth.type === "none") continue;
+      const key = await resolveProviderApiKey(compiled.providerRef);
+      if (key) keys.set(providerKey(provider), key);
+    }
+    return chatWithFailover({
+      providers: this.providers,
+      chat: options,
+      store: this.store,
+      createClient: (provider) => createProviderClient(provider, process.env, keys.get(providerKey(provider))),
+    });
   }
 }
 
@@ -469,22 +496,11 @@ export function createFailoverClient(cfg: {
  */
 function loadProvidersFromRegistry(): FailoverProvider[] {
   try {
-    // Dynamic import to avoid circular dependency
-    const initModule = require("../models/registry/init.js") as any;
-    const compileModule = require("../models/registry/compile.js") as any;
-    
-    const registry = initModule.getRegistry();
+    const registry = getRegistry();
     if (!registry) return [];
-    
-    // Get default chain or all enabled models
-    const enabledModels = registry.models.filter((m: any) => m.enabled);
-    const modelIds = enabledModels.map((m: any) => m.id);
-    
-    if (modelIds.length === 0) return [];
-    
-    // Compile to FailoverProvider format
-    const compiled = compileModule.compileChain(registry, modelIds);
-    return compiled;
+    const compiled = compileChain(registry, "default");
+    if (compiled.length > 0) return compiled;
+    return compileChain({ ...registry, chains: [] });
   } catch (error) {
     log.error(`[failover] Registry load failed: ${error}`);
     return [];
