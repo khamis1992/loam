@@ -81,7 +81,7 @@ import { createReTools } from "../tools/reTools.js";
 import { createFuzzTools } from "../tools/fuzzTools.js";
 import { createRemediateTools } from "../tools/remediateTools.js";
 // devflow mode: the نتريو swarm agent tools (same /api/swarm/runs surface the UI uses).
-import { createSwarmTools } from "../tools/serviceBridgeTools.js";
+import { createSecurityTools, createSwarmTools } from "../tools/serviceBridgeTools.js";
 import { CodeGraphService } from "../codegraph/service.js";
 import { createCodeGraphTools } from "../codegraph/tools.js";
 import { setWorkspaceMutationObserver } from "../codegraph/mutations.js";
@@ -155,6 +155,7 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   // devflow: swarm_run/swarm_status call the local realswarm API; reachability is
   // still per-mode (only the devflow catalog entry lists them).
   registry.registerAll(createSwarmTools());
+  registry.registerAll(createSecurityTools());
 
   // Code map: tools exist only when enabled, so disabled installs see no extra schemas.
   const codeGraph = cfg.codeGraph?.enabled ? new CodeGraphService(cfg.codeGraph) : null;
