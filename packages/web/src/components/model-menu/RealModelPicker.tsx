@@ -10,13 +10,13 @@
  * their tier plumbing for persistence — picks fire onTier('standard') for
  * local models and onTier('flex') for cloud/BYOK picks.
  */
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Check, KeyRound, Loader2, Plus, Search, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 import { t } from '@/i18n/t';
 import {
   fetchFlexConfig, saveFlexConfig, removeFlexKey,
-  fetchModelDirectory, selectModel,
+  fetchModelDirectory, selectModel, rememberRunModel, rememberedRunModel, displayModelId,
   type FlexConfig, type ModelDirectory, type ProviderPreset,
 } from '@/services/modelTiersApi';
 
@@ -26,6 +26,7 @@ export type PickTier = 'standard' | 'flex';
 export function useModelDirectory() {
   const [directory, setDirectory] = useState<ModelDirectory | null>(null);
   const [failed, setFailed] = useState(false);
+  const [picked, setPicked] = useState('');
   useEffect(() => {
     let mounted = true;
     fetchModelDirectory().then((data) => {
@@ -33,16 +34,16 @@ export function useModelDirectory() {
       if (data) setDirectory(data);
       else setFailed(true);
     });
-    return () => { mounted = false; };
+    const onPick = () => setPicked(rememberedRunModel());
+    onPick();
+    window.addEventListener('loam-run-model', onPick);
+    return () => { mounted = false; window.removeEventListener('loam-run-model', onPick); };
   }, []);
-  const activeId = directory
-    ? (directory.active.flex.model || directory.active.settingsModel || stripCloud(directory.active.model))
+  const saved = directory
+    ? (directory.active.settingsModel || directory.active.flex.model || directory.active.model)
     : '';
+  const activeId = displayModelId(picked || saved);
   return { directory, failed, activeId };
-}
-
-function stripCloud(id: string): string {
-  return id.endsWith(':cloud') ? id.slice(0, -':cloud'.length) : id;
 }
 
 export function RealModelPicker({ onTier, forceFlexForm = false }: {
@@ -91,6 +92,7 @@ function RealModels({ directory, failed, activeId, onPicked }: {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [needsKey, setNeedsKey] = useState(false);
+  const listRef = useRef<HTMLDivElement>(null);
 
   const groups = useMemo(() => {
     if (!directory) return [] as Array<{ source: ModelDirectory['sources'][number]; models: ModelDirectory['models'][number][] }>;
@@ -103,6 +105,15 @@ function RealModels({ directory, failed, activeId, onPicked }: {
       bySource.set(model.source, list);
     }
     return directory.sources.map((source) => ({ source, models: bySource.get(source.source) ?? [] }));
+  }, [directory, query]);
+
+  // The menu sits on the bottom composer and opens upward. Keep the list
+  // pinned to the first models; scroll anchoring otherwise jumps to the end
+  // whenever the directory arrives or the selection re-renders.
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    list.scrollTop = 0;
   }, [directory, query]);
 
   if (failed) return null;
@@ -120,6 +131,7 @@ function RealModels({ directory, failed, activeId, onPicked }: {
     const result = await selectModel({ id, source });
     setBusyId(null);
     if ('error' in result) { setError(result.error); return; }
+    rememberRunModel(result.model);
     setNeedsKey(result.needsKey);
     onPicked(result.tier);
   };
@@ -136,7 +148,7 @@ function RealModels({ directory, failed, activeId, onPicked }: {
           className="w-full rounded-control border border-border-main bg-bg-main px-2 py-1 text-xs text-text-primary placeholder:text-text-tertiary"
         />
       </div>
-      <div className="max-h-64 overflow-y-auto">
+      <div ref={listRef} className="max-h-64 min-h-0 flex-1 overflow-y-auto overscroll-contain" style={{ overflowAnchor: 'none' }}>
         {groups.map(({ source, models }) => (
           <div key={source.source} className="px-1 pb-1">
             <p className={clsx('px-2 py-1 text-[10px] font-medium uppercase tracking-wide', source.error ? 'text-func-error' : 'text-text-tertiary')}>

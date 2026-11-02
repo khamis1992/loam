@@ -10,11 +10,114 @@
  */
 
 import http from "node:http";
+import { createAdapter } from "../../models/adapters/index.js";
 import { getRegistry, reloadRegistry } from "../../models/registry/init.js";
+import { resolveProviderApiKey } from "../../models/registry/registryClient.js";
 import { saveRegistry } from "../../models/registry/store.js";
 import { redactSecretsFromObject } from "../../models/registry/redact.js";
+import { ProviderZ, ModelZ } from "../../models/registry/schema.js";
+import { getVault } from "../../models/secrets/vault.js";
 import { log } from "../../log.js";
-import type { ProviderRecord } from "../../models/registry/types.js";
+import type { AuthScheme, ModelCapabilities, ModelRecord, ProviderKind, ProviderRecord } from "../../models/registry/types.js";
+
+const SLUG = /^[a-z0-9][a-z0-9-]{1,39}$/;
+
+/** A label-derived slug that does not collide with providers already stored. */
+export function uniqueProviderId(label: string, taken: Iterable<string>): string {
+  const used = new Set(taken);
+  const base = label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32);
+  const root = SLUG.test(base) ? base : "provider";
+  let id = root;
+  let n = 2;
+  while (used.has(id)) {
+    const suffix = `-${n++}`;
+    id = `${root.slice(0, 40 - suffix.length)}${suffix}`;
+  }
+  return id;
+}
+
+function authForKind(kind: ProviderKind, credentialId: string): AuthScheme {
+  if (kind === "anthropic") return { type: "header", credentialId, header: "x-api-key" };
+  if (kind === "google-gemini") return { type: "header", credentialId, header: "x-goog-api-key" };
+  return { type: "bearer", credentialId };
+}
+
+export interface ProviderDraftInput {
+  kind?: string;
+  label?: string;
+  baseUrl?: string;
+  apiKey?: string;
+  enabled?: boolean;
+  extraHeaders?: Record<string, string>;
+}
+
+/** Build a schema-valid provider. The raw key is handed to `putSecret` and never copied onto the record. */
+export async function buildProviderDraft(
+  takenIds: Iterable<string>,
+  body: ProviderDraftInput,
+  putSecret: (value: string, label: string) => Promise<{ credentialId: string }>,
+): Promise<ProviderRecord> {
+  const kind = adapterKind(body.kind ?? "");
+  const label = (body.label ?? "").trim();
+  const baseUrl = (body.baseUrl ?? "").trim();
+  if (!kind || !label || !baseUrl) throw new Error("kind, baseUrl, and label are required");
+  if (label.length > 60) throw new Error("Label too long (max 60 characters)");
+  const now = new Date().toISOString();
+  const key = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
+  const auth: AuthScheme = key
+    ? authForKind(kind, (await putSecret(key, label)).credentialId)
+    : { type: "none" };
+  return ProviderZ.parse({
+    id: uniqueProviderId(label, takenIds),
+    kind,
+    baseUrl,
+    label,
+    location: /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(?::|\/|$)/i.test(baseUrl) ? "local" : "cloud",
+    enabled: body.enabled ?? true,
+    auth,
+    extraHeaders: body.extraHeaders ?? {},
+    timeoutMs: 30_000,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
+export function buildModelDraft(
+  provider: ProviderRecord,
+  modelData: { remoteId?: string; label?: string; capabilities?: Partial<ModelCapabilities>; contextWindow?: number },
+): ModelRecord {
+  const remoteId = (modelData.remoteId ?? "").trim();
+  if (!remoteId) throw new Error("remoteId is required");
+  const given = modelData.capabilities ?? {};
+  const contextWindow = typeof modelData.contextWindow === "number" && modelData.contextWindow > 0
+    ? modelData.contextWindow
+    : given.contextWindow ?? null;
+  return ModelZ.parse({
+    id: `${provider.id}/${remoteId}`,
+    remoteId,
+    providerId: provider.id,
+    label: (modelData.label || remoteId).slice(0, 80),
+    enabled: true,
+    capabilities: {
+      tools: given.tools ?? "unknown",
+      vision: given.vision ?? "unknown",
+      jsonMode: given.jsonMode ?? "unknown",
+      thinking: given.thinking ?? "unknown",
+      contextWindow,
+      maxOutputTokens: given.maxOutputTokens ?? null,
+      source: given.source ?? "provider-list",
+    },
+    defaults: {},
+    tags: [],
+  });
+}
+
+function adapterKind(kind: string): ProviderKind | null {
+  if (kind === "ollama" || kind === "openai-compatible" || kind === "anthropic" || kind === "google-gemini") return kind;
+  if (kind === "openai" || kind === "openrouter" || kind === "lmstudio" || kind === "llamacpp" || kind === "custom") return "openai-compatible";
+  if (kind === "gemini") return "google-gemini";
+  return null;
+}
 
 /**
  * Handle /api/model-registry/* routes.
@@ -123,41 +226,20 @@ export function handleModelRegistryRoutes(req: http.IncomingMessage, res: http.S
         for await (const chunk of req) {
           chunks.push(chunk);
         }
-        const body = JSON.parse(Buffer.concat(chunks).toString()) as any;
+        const body = JSON.parse(Buffer.concat(chunks).toString()) as ProviderDraftInput;
+        const provider = await buildProviderDraft(
+          registry.providers.map((p) => p.id),
+          body,
+          (value, label) => getVault().put(value, label),
+        );
 
-        // Validate required fields
-        if (!body.kind || !body.baseUrl || !body.label) {
-          res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "kind, baseUrl, and label are required" }));
-          return;
-        }
-
-        // Generate ID
-        const id = `provider_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-
-        // Create provider record
-        const now = new Date().toISOString();
-        const provider: ProviderRecord = {
-          id,
-          kind: body.kind,
-          baseUrl: body.baseUrl,
-          label: body.label,
-          location: body.baseUrl.startsWith("http://127.0.0.1") || body.baseUrl.startsWith("http://localhost") ? "local" : "cloud",
-          enabled: body.enabled ?? true,
-          auth: body.apiKey 
-            ? { type: "header", credentialId: `cred_${Date.now()}`, header: "Authorization" }
-            : { type: "none" },
-          extraHeaders: body.extraHeaders ?? {},
-          timeoutMs: 30000,
-          createdAt: now,
-          updatedAt: now,
-        };
-
-        // Add to registry
         registry.providers.push(provider);
-
-        // Save registry
-        saveRegistry(registry);
+        try {
+          saveRegistry(registry);
+        } catch (error) {
+          registry.providers.pop();
+          throw error;
+        }
 
         log.info(`[registry] Added provider: ${provider.label} (${provider.id})`);
 
@@ -194,47 +276,33 @@ export function handleModelRegistryRoutes(req: http.IncomingMessage, res: http.S
 
         log.info(`[registry] Testing connection to ${body.baseUrl} (${body.kind})`);
 
-        // Import adapters
-        const { OllamaAdapter } = await import("../../models/adapters/ollama.js");
-        const { OpenAICompatAdapter } = await import("../../models/adapters/openaiCompat.js");
-        const { AnthropicAdapter } = await import("../../models/adapters/anthropic.js");
-        const { GeminiAdapter } = await import("../../models/adapters/gemini.js");
-
-        // Create adapter options
-        const adapterOpts = {
-          baseUrl: body.baseUrl,
-          apiKey: body.apiKey,
-          timeoutMs: 10000, // 10s for connection test
-        };
-
-        let adapter: any;
-        switch (body.kind) {
-          case "ollama":
-            adapter = new OllamaAdapter(adapterOpts);
-            break;
-          case "openai-compatible":
-          case "openai":
-          case "openrouter":
-          case "lmstudio":
-          case "llamacpp":
-          case "custom":
-            adapter = new OpenAICompatAdapter(adapterOpts);
-            break;
-          case "anthropic":
-            adapter = new AnthropicAdapter(adapterOpts);
-            break;
-          case "google-gemini":
-          case "gemini":
-            adapter = new GeminiAdapter(adapterOpts);
-            break;
-          default:
-            res.writeHead(400, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ success: false, error: `Unknown provider kind: ${body.kind}` }));
-            return;
+        const kind = adapterKind(String(body.kind));
+        if (!kind) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ success: false, error: `Unknown provider kind: ${body.kind}` }));
+          return;
         }
 
-        // Test by listing models
-        const models = await adapter.listModels();
+        let apiKey = typeof body.apiKey === "string" && body.apiKey.trim() ? body.apiKey.trim() : undefined;
+        let authHeader = typeof body.authHeader === "string" ? body.authHeader : undefined;
+        if (!apiKey && typeof body.providerId === "string") {
+          const provider = getRegistry()?.providers.find((p) => p.id === body.providerId);
+          if (provider) {
+            apiKey = await resolveProviderApiKey(provider);
+            if (provider.auth.type === "header") authHeader = provider.auth.header;
+          }
+        }
+
+        const adapter = createAdapter(kind, {
+          baseUrl: body.baseUrl,
+          ...(apiKey ? { apiKey } : {}),
+          ...(authHeader ? { authHeader } : {}),
+          timeoutMs: 10000,
+        });
+
+        const listModels = adapter.listModels;
+        if (!listModels) throw new Error("هذا البروتوكول لا يسرد النماذج");
+        const models = await listModels.call(adapter);
         
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ 
@@ -285,45 +353,19 @@ export function handleModelRegistryRoutes(req: http.IncomingMessage, res: http.S
 
         log.info(`[registry] Discovering models from ${provider.label} (${provider.id})`);
 
-        // Import adapters
-        const { OllamaAdapter } = await import("../../models/adapters/ollama.js");
-        const { OpenAICompatAdapter } = await import("../../models/adapters/openaiCompat.js");
-        const { AnthropicAdapter } = await import("../../models/adapters/anthropic.js");
-        const { GeminiAdapter } = await import("../../models/adapters/gemini.js");
-
-        // Get API key from auth
-        let apiKey: string | undefined;
-        if (provider.auth.type === "header" && provider.auth.credentialId) {
-          // TODO: Retrieve from vault using credentialId
-          apiKey = undefined;
-        } else if (provider.auth.type === "env") {
-          apiKey = process.env[provider.auth.envVar];
-        }
-
-        // Create adapter
-        const adapterOpts = {
+        const apiKey = await resolveProviderApiKey(provider);
+        const authHeader = provider.auth.type === "header" ? provider.auth.header : undefined;
+        const adapter = createAdapter(provider.kind, {
           baseUrl: provider.baseUrl,
-          apiKey,
-          timeoutMs: 30000,
-        };
+          ...(apiKey ? { apiKey } : {}),
+          ...(authHeader ? { authHeader } : {}),
+          ...(Object.keys(provider.extraHeaders).length > 0 ? { extraHeaders: provider.extraHeaders } : {}),
+          timeoutMs: provider.timeoutMs || 30000,
+        });
 
-        let adapter: any;
-        if (provider.kind === "ollama") {
-          adapter = new OllamaAdapter(adapterOpts);
-        } else if (provider.kind === "openai-compatible") {
-          adapter = new OpenAICompatAdapter(adapterOpts);
-        } else if (provider.kind === "anthropic") {
-          adapter = new AnthropicAdapter(adapterOpts);
-        } else if (provider.kind === "google-gemini") {
-          adapter = new GeminiAdapter(adapterOpts);
-        } else {
-          res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: `Unsupported provider kind: ${provider.kind}` }));
-          return;
-        }
-
-        // Discover models
-        const discovered = await adapter.listModels();
+        const listModels = adapter.listModels;
+        if (!listModels) throw new Error("هذا البروتوكول لا يسرد النماذج");
+        const discovered = await listModels.call(adapter);
         
         log.info(`[registry] Discovered ${discovered.length} models from ${provider.label}`);
 
@@ -425,35 +467,28 @@ export function handleModelRegistryRoutes(req: http.IncomingMessage, res: http.S
           return;
         }
 
-        const added: any[] = [];
+        const added: ModelRecord[] = [];
         for (const modelData of body.models) {
-          const id = `model_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-          const now = new Date().toISOString();
-          
-          const model = {
-            id,
-            remoteId: modelData.remoteId,
-            providerId: provider.id,
-            label: modelData.label || modelData.remoteId,
-            enabled: true,
-            capabilities: modelData.capabilities || {
-              tools: false,
-              vision: false,
-              thinking: "none" as const,
-              contextWindow: modelData.contextWindow || 8192,
-            },
-            defaults: {},
-            tags: [],
-            createdAt: now,
-            updatedAt: now,
-          };
-
+          const model = buildModelDraft(provider, modelData);
+          if (registry.models.some((m) => m.id === model.id)) continue;
           registry.models.push(model);
           added.push(model);
         }
+        if (added.length === 0) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "no new models to add" }));
+          return;
+        }
 
-        // Save registry
-        saveRegistry(registry);
+        try {
+          saveRegistry(registry);
+        } catch (error) {
+          for (const model of added) {
+            const index = registry.models.indexOf(model);
+            if (index >= 0) registry.models.splice(index, 1);
+          }
+          throw error;
+        }
 
         log.info(`[registry] Added ${added.length} models from ${provider.label}`);
 

@@ -296,8 +296,8 @@ async function main(): Promise<void> {
     if (legalPlan && rt.legal) rt.legal.runModels.set(task, legalPlan.model);
     // Option 18 Flex: when the chosen model is the vault-backed flex model, run through the
     // user's own base URL/key with a run-scoped client. The key never leaves this boundary.
-    const flexCreds = opts.model && opts.model.trim().length > 0 ? flexCredentials() : null;
-    const flexModelId = flexCreds ? (flexCreds.model.endsWith(":cloud") ? flexCreds.model : `${flexCreds.model}:cloud`) : "";
+    const flexCreds = flexCredentials();
+    const flexModelId = flexCreds?.model ? (flexCreds.model.endsWith(":cloud") ? flexCreds.model : `${flexCreds.model}:cloud`) : "";
     // Registry native-protocol pick (Anthropic/Gemini via the model picker):
     // the `registry:<provider>/<model>` ref resolves to the provider's own
     // adapter with its vault/env credential — the run pipeline speaks the
@@ -308,7 +308,7 @@ async function main(): Promise<void> {
     const runOllama = legalPlan
       ? new OllamaClient(cfg.ollamaUrl)
       : registryRun ? registryRun.client
-      : flexCreds && effectiveCfg.model === flexModelId ? new OllamaClient(cfg.ollamaUrl, { baseUrl: flexCreds.baseUrl, apiKey: flexCreds.apiKey }) : ollama;
+      : flexCreds && flexModelId && effectiveCfg.model === flexModelId ? new OllamaClient(cfg.ollamaUrl, { baseUrl: flexCreds.baseUrl, apiKey: flexCreds.apiKey }) : ollama;
     if (registryRun) log.info(`run ${task}: registry primary ${registryRun.label} (${registryRun.ref})`);
 
     // Loam task controls: explicit mode and execution effort.

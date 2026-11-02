@@ -20,7 +20,7 @@ import { speak, stopSpeaking } from '@/services/speech';
 import clsx from 'clsx';
 import { t, getLocale, PRODUCT } from '@/i18n/t';
 import { ModelMenu, type AgentMode } from '@/components/model-menu';
-import { useAppDispatch, openSettings } from '@/store';
+import { rememberedRunModel } from '@/services/modelTiersApi';
 import { IconButton } from '@/components/ui/Button';
 import { desktopApis } from '@/services/desktopApis';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
@@ -113,7 +113,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   ref: Ref<ComposerHandle>,
 ) {
   const router = useRouter();
-  const dispatch = useAppDispatch();
   const [text, setText] = useState('');
   // S15: the picked model tier persists across composers (loam.composer.prefs).
   const [mode, setMode] = useState<TaskMode>(() => (getComposerPrefs().tier as TaskMode | undefined) ?? 'standard');
@@ -143,12 +142,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   // settings destination, not a runnable tier until BYOK keys are configured).
   const modelMode: AgentMode = mode === 'max' || mode === 'lite' ? mode : 'standard';
   const handleModelSelect = (next: AgentMode) => {
-    if (next === 'flex') {
-      dispatch(openSettings('Connectors'));
-      return;
-    }
-    setMode(next);
-    setComposerPrefs({ tier: next });
+    const tier = next === 'flex' ? 'standard' : next;
+    setMode(tier);
+    setComposerPrefs({ tier });
   };
   // UX-W2 «صندوق واحد»: the advanced controls fold behind ⚙️ and the default
   // send routes through the intent router when no explicit mode is picked.
@@ -300,7 +296,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     if (effectiveLoamMode) extData.loamMode = effectiveLoamMode;
     if (attachedSkills.length > 0) extData.skills = attachedSkills;
     if (attachedConnectors.length > 0) extData.connectors = attachedConnectors;
-    if (modelTier) extData.modelTier = modelTier;
+    const runModel = rememberedRunModel();
+    if (runModel) extData.runModel = runModel;
+    else if (modelTier) extData.modelTier = modelTier;
     if (projectId) extData.projectId = projectId;
     if (worktreeEnabled) extData.worktreeEnabled = true;
     if (!onToggleApproveForMe && homeApprove) extData.approveForMe = true;
@@ -352,8 +350,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   };
 
   const addFiles = (incoming: FileList | null) => {
-    if (!incoming) return;
-    setFiles((prev) => [...prev, ...Array.from(incoming)]);
+    if (!incoming || incoming.length === 0) return;
+    const picked = Array.from(incoming);
+    setFiles((prev) => [...prev, ...picked]);
   };
 
   const removeFile = (target: File) => {
@@ -487,7 +486,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           ))}
         </ul>
       )}
-      <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1">
+      <div className="mt-1 flex items-center gap-1.5">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1">
         {home ? (
           <div className="relative flex items-center gap-1" ref={menuRef}>
             <button
@@ -509,7 +509,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               <ChevronDown className="size-3" />
             </button>
             {menuOpen && (
-              <div className="absolute bottom-full start-0 z-50 mb-1 min-w-[200px] max-w-[calc(100vw-32px)] max-h-[60vh] overflow-y-auto rounded-card border border-border-main bg-bg-menu p-1 shadow-lg">
+              <div className="absolute bottom-full start-0 z-50 mb-1 min-w-[200px] max-h-[60dvh] max-w-[min(18rem,calc(100dvw-2rem))] overflow-y-auto rounded-card border border-border-main bg-bg-menu p-1 shadow-lg">
                 <button
                   type="button"
                   onClick={() => { fileRef.current?.click(); setMenuOpen(false); }}
@@ -606,7 +606,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               <ChevronDown className="size-3" />
             </IconButton>
             {menuOpen && (
-              <div className="absolute bottom-full start-0 z-50 mb-1 min-w-[200px] max-w-[calc(100vw-32px)] max-h-[60vh] overflow-y-auto rounded-card border border-border-main bg-bg-menu p-1 shadow-lg">
+              <div className="absolute bottom-full start-0 z-50 mb-1 min-w-[200px] max-h-[60dvh] max-w-[min(18rem,calc(100dvw-2rem))] overflow-y-auto rounded-card border border-border-main bg-bg-menu p-1 shadow-lg">
                 <button
                   type="button"
                   onClick={() => { fileRef.current?.click(); setMenuOpen(false); }}
@@ -733,7 +733,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           onClick={onToggleApproveForMe ?? (() => setHomeApprove((v) => !v))}
           aria-pressed={approveChipOn}
           className={clsx(
-            'hidden items-center gap-1 rounded-full border px-2 py-1 text-xs sm:flex',
+            'flex items-center gap-1 rounded-full border px-2 py-1 text-xs',
             approveChipOn ? 'border-icon-blue bg-fill-tsp text-icon-blue' : 'border-border-main text-text-secondary hover:bg-fill-hover',
           )}
         >
@@ -746,7 +746,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           aria-pressed={knowledgeChipOn}
           title={t('Let this run read your Knowledge Garden sources')}
           className={clsx(
-            'hidden items-center gap-1 rounded-full border px-2 py-1 text-xs sm:flex',
+            'flex items-center gap-1 rounded-full border px-2 py-1 text-xs',
             knowledgeChipOn ? 'border-icon-blue bg-fill-tsp text-icon-blue' : 'border-border-main text-text-secondary hover:bg-fill-hover',
           )}
         >
@@ -771,7 +771,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         )}
 
         {race && (
-          <span className="relative hidden items-center gap-1 sm:flex">
+          <span className="relative flex items-center gap-1">
             <button
               type="button"
               onClick={race.onToggle}
@@ -819,7 +819,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         {/* Neo N10: output type narrows the tool set and the routing map; effort
             picks the model tier behind the run. Both default to "decide for me". */}
         {advancedOpen && (
-        <label className="hidden items-center gap-1 text-xs text-text-tertiary sm:flex">
+        <label className="flex items-center gap-1 text-xs text-text-tertiary">
           <span className="sr-only">{t('Output type')}</span>
           <select
             value={selectedOutputType}
@@ -836,7 +836,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         )}
 
         {advancedOpen && (
-        <label className="hidden items-center gap-1 text-xs text-text-tertiary sm:flex">
+        <label className="flex items-center gap-1 text-xs text-text-tertiary">
           <span className="sr-only">{t('Effort')}</span>
           <select
             value={selectedEffort}
@@ -859,7 +859,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             aria-pressed={compareModels}
             title={t('Compare models (A/B)')}
             className={clsx(
-              'hidden items-center gap-1 rounded-full border px-2 py-1 text-xs sm:flex',
+              'flex items-center gap-1 rounded-full border px-2 py-1 text-xs',
               compareModels
                 ? 'border-icon-blue bg-fill-tsp text-icon-blue'
                 : 'border-border-main text-text-secondary hover:bg-fill-hover',
@@ -881,7 +881,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           data-testid="composer-auto-mode"
           title={t('Auto: Loam picks the working mode from your request')}
           className={clsx(
-            'hidden items-center gap-1 rounded-full border px-2 py-1 text-xs sm:flex',
+            'flex items-center gap-1 rounded-full border px-2 py-1 text-xs',
             autoMode ? 'border-icon-blue bg-fill-tsp text-icon-blue' : 'border-border-main text-text-secondary hover:bg-fill-hover',
           )}
         >
@@ -896,7 +896,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           title={t('Advanced options')}
           data-testid="composer-advanced-toggle"
           className={clsx(
-            'hidden h-8 w-8 items-center justify-center rounded-full border transition-colors sm:flex',
+            'flex h-8 w-8 items-center justify-center rounded-full border transition-colors',
             advancedOpen ? 'border-icon-blue bg-fill-tsp text-icon-blue' : 'border-border-main text-text-secondary hover:bg-fill-hover',
           )}
         >
@@ -922,7 +922,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         <button
           type="button"
           className={clsx(
-            'hidden h-8 w-8 items-center justify-center rounded-full border border-border-main transition-colors hover:bg-fill-hover sm:flex',
+            'flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border-main transition-colors hover:bg-fill-hover',
             voiceModeOn ? 'bg-fill-hover text-text-primary' : 'text-text-secondary',
           )}
           aria-label={t(voiceModeOn ? 'Stop voice mode' : 'Voice mode')}
@@ -935,7 +935,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         <button
           type="button"
           className={clsx(
-            'hidden h-8 w-8 items-center justify-center rounded-full border border-border-main transition-colors hover:bg-fill-hover sm:flex',
+            'flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border-main transition-colors hover:bg-fill-hover',
             voice.state !== 'idle' && 'bg-fill-hover text-text-primary',
             voice.state === 'recording' && 'text-function-error',
           )}
@@ -946,20 +946,25 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           {voice.state === 'transcribing' ? <Loader2 className="size-4 animate-spin" /> : <Mic className="size-4" />}
         </button>
         {voice.error && (
-          <span role="alert" title={voice.error} className="hidden max-w-[10rem] truncate text-xs text-function-error sm:inline">
+          <span role="alert" title={voice.error} className="max-w-full truncate text-xs text-function-error">
             {voice.error}
           </span>
         )}
 
+        </div>
         {running
           ? (
-            <IconButton
-              label={t('Stop')}
+            <button
+              type="button"
               onClick={onStop}
-              className="rounded-full bg-text-primary text-text-onblack hover:opacity-90"
+              data-testid="composer-stop"
+              aria-label={t('Stop task')}
+              title={t('Stop task')}
+              className="flex h-8 shrink-0 items-center gap-1 rounded-full bg-[var(--function-error)] px-3 text-xs font-medium text-white hover:opacity-90"
             >
-              <Square className="size-4 fill-current" />
-            </IconButton>
+              <Square className="size-3.5 fill-current" aria-hidden />
+              {t('Stop')}
+            </button>
           )
           : (
             <IconButton
@@ -968,7 +973,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               onClick={() => { void submit(); }}
               data-testid={race?.active ? 'appbuilder-send-as-race' : undefined}
               className={clsx(
-                'rounded-full',
+                'shrink-0 rounded-full',
                 canSend ? 'bg-text-primary text-text-onblack hover:opacity-90' : 'bg-fill-tsp text-text-secondary',
               )}
             >
@@ -1091,7 +1096,7 @@ export function ComposerContextBar({
         {menuOpen && (
           <div
             role="menu"
-            className="absolute bottom-full left-0 z-30 mb-1 min-w-[220px] max-w-[280px] rounded-card border border-border-main bg-bg-menu p-1 shadow-lg"
+            className="absolute bottom-full start-0 z-30 mb-1 min-w-[220px] max-w-[min(18rem,calc(100dvw-2rem))] rounded-card border border-border-main bg-bg-menu p-1 shadow-lg"
           >
             {(projects ?? []).length === 0 && (
               <p className="px-2 py-1.5 text-xs text-text-tertiary">{t('No projects yet. Create one in Projects.')}</p>
@@ -1102,7 +1107,7 @@ export function ComposerContextBar({
                 type="button"
                 role="menuitem"
                 onClick={() => { setMenuOpen(false); onSelectProject?.(p); }}
-                className="flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-left text-xs hover:bg-fill-hover"
+                className="flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-start text-xs hover:bg-fill-hover"
               >
                 <FolderGit className="size-3.5 shrink-0 text-text-tertiary" />
                 <span className="min-w-0 flex-1 truncate">{p.name}</span>
@@ -1114,7 +1119,7 @@ export function ComposerContextBar({
               type="button"
               role="menuitem"
               onClick={() => { setMenuOpen(false); onChooseProject?.(); }}
-              className="flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-left text-xs hover:bg-fill-hover"
+              className="flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-start text-xs hover:bg-fill-hover"
             >
               <Folder className="size-3.5 shrink-0 text-text-tertiary" />
               {t('Use a folder')}
@@ -1124,7 +1129,7 @@ export function ComposerContextBar({
                 type="button"
                 role="menuitem"
                 onClick={() => { setMenuOpen(false); onSelectProject?.(null); }}
-                className="flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-left text-xs hover:bg-fill-hover"
+                className="flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-start text-xs hover:bg-fill-hover"
               >
                 <X className="size-3.5 shrink-0 text-text-tertiary" />
                 {t('Clear project')}

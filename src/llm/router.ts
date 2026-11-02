@@ -22,6 +22,8 @@
  *   env `LOAM_ROUTING_PER_TOOL`, `LOAM_ROUTING_FAST`, `LOAM_ROUTING_MAX`
  */
 import type { Config } from "../config.js";
+import { compileChain } from "../models/registry/compile.js";
+import { getRegistry } from "../models/registry/init.js";
 import { codingProviders, matchCoderProvider, usableProviders } from "./codingRouter.js";
 import type { FailoverProvider } from "./failover.js";
 
@@ -404,7 +406,15 @@ export function modelAbChain(input: RoutingResolveInput, count: number): string[
 /** Which provider serves a model id, for callers that need the client boundary. */
 export function providerForModel(cfg: Config, model: string, env: Record<string, string | undefined> = process.env): FailoverProvider | undefined {
   const providers = providersForModels(cfg, [model], env);
-  return providers[0] ?? fallbackProviders(cfg, env).find((p) => p.model === model);
+  return providers[0] ?? fallbackProviders(cfg, env).find((p) => p.model === model) ?? registryProviderForModel(model);
+}
+
+/** A saved registry model, when the legacy failover list does not name it. */
+function registryProviderForModel(model: string): FailoverProvider | undefined {
+  const registry = getRegistry();
+  if (!registry) return undefined;
+  const bare = model.startsWith("registry:") ? model.slice("registry:".length) : model;
+  return compileChain({ ...registry, chains: [] }).find((p) => p.registryModelId === bare || p.model === bare || p.model === model);
 }
 
 /** The model id a run should report as its routing decision (canvas label). */

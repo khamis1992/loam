@@ -198,6 +198,7 @@ function attachModelSecrets(child, app, safeStorage) {
         const result = putCredential(app, safeStorage, message.id, message.value, message.label);
         child.postMessage({
           type: MSG_PUT_RESPONSE,
+          requestId: message.requestId,
           id: message.id,
           ok: result.ok,
           error: result.ok ? undefined : result.error,
@@ -207,6 +208,7 @@ function attachModelSecrets(child, app, safeStorage) {
         const result = getCredential(app, safeStorage, message.id);
         child.postMessage({
           type: MSG_GET_RESPONSE,
+          requestId: message.requestId,
           id: message.id,
           value: result.value,
           error: result.error,
@@ -214,12 +216,14 @@ function attachModelSecrets(child, app, safeStorage) {
       } else if (message.type === MSG_HINTS) {
         child.postMessage({
           type: MSG_HINTS_RESPONSE,
+          requestId: message.requestId,
           hints: getHints(app),
         });
       } else if (message.type === MSG_DELETE) {
         const result = deleteCredential(app, message.id);
         child.postMessage({
           type: MSG_DELETE_RESPONSE,
+          requestId: message.requestId,
           id: message.id,
           ok: result.ok,
         });

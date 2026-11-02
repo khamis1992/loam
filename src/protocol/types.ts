@@ -73,6 +73,8 @@ export interface UserMessage extends Base {
     worktreeEnabled?: boolean;
     /** Option 18: composer model tier ("max" | "standard" | "lite" | "flex"). */
     modelTier?: string;
+    /** Concrete model id from the picker. Wins over modelTier. */
+    runModel?: string;
     /** Neo N3: opt this run into the user's Knowledge Garden (kb_* tools). */
     knowledge?: boolean;
     /** Legal mode: id of the active matter (opaque; the server reloads it from the encrypted store). */

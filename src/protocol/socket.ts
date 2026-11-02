@@ -831,7 +831,8 @@ export function createChatSocket(deps: SocketDeps): Server {
             io.to(um.sessionId).emit("message", openClock);
 
             // Option 18: the composer's model tier resolves to a concrete model id.
-            const tierModel = isModelTier(um.extData.modelTier) ? resolveTierModel(loadConfig(), um.extData.modelTier).model : undefined;
+            const explicitModel = typeof um.extData.runModel === "string" ? um.extData.runModel.trim() : "";
+            const tierModel = explicitModel || (isModelTier(um.extData.modelTier) ? resolveTierModel(loadConfig(), um.extData.modelTier).model : undefined);
 
             const result = await runTask({
               prompt,

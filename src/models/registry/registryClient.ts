@@ -57,7 +57,7 @@ export function resolveRegistryModel(ref: RegistryModelRef): { provider: Provide
 }
 
 /** Resolve a provider's credential to an apiKey string (undefined = none). */
-async function resolveApiKey(provider: ProviderRecord): Promise<string | undefined> {
+export async function resolveProviderApiKey(provider: ProviderRecord): Promise<string | undefined> {
   const auth = provider.auth;
   if (auth.type === "none") return undefined;
   if (auth.type === "env") {
@@ -84,9 +84,9 @@ export interface RegistryRunClient {
 
 /**
  * Build a run-scoped chat client for a registry model ref. Returns null when
- * the model isn't a registry ref, isn't resolvable, or is NOT a native
- * protocol — openai-compatible registry picks route through the Flex slot
- * (they don't need an adapter), and ollama picks through the local client.
+ * the model isn't a registry ref or isn't resolvable. Every protocol,
+ * including OpenAI-compatible and a remote Ollama, talks through its adapter
+ * so the vault or env key for that provider is the one on the wire.
  */
 export async function createRegistryRunClient(model: string, loopbackUrl = "http://127.0.0.1:11434"): Promise<RegistryRunClient | null> {
   const ref = parseRegistryModelRef(model);
@@ -97,22 +97,24 @@ export async function createRegistryRunClient(model: string, loopbackUrl = "http
     return null;
   }
   const { provider, model: record } = resolved;
-  if (provider.kind !== "anthropic" && provider.kind !== "google-gemini") return null;
 
-  const apiKey = await resolveApiKey(provider);
+  const apiKey = await resolveProviderApiKey(provider);
   if (provider.auth.type !== "none" && !apiKey) {
     log.warn(`[registry] ${provider.label} needs a credential (vault/env) — run would fail; check the key in Settings`);
   }
+  const authHeader = provider.auth.type === "header" ? provider.auth.header : undefined;
   const options: AdapterOptions = {
     baseUrl: provider.baseUrl,
     ...(apiKey ? { apiKey } : {}),
+    ...(authHeader ? { authHeader } : {}),
     ...(provider.extraHeaders && Object.keys(provider.extraHeaders).length > 0 ? { extraHeaders: provider.extraHeaders } : {}),
     timeoutMs: provider.timeoutMs,
   };
   const adapter = createAdapter(provider.kind, options);
   const remoteId = record.remoteId;
-  // Bridge: only chat() is overridden; everything else stays loopback.
-  const client = new OllamaClient(loopbackUrl);
+  // Bridge: chat() goes to this provider. Other methods stay on its base URL
+  // for Ollama, and on loopback for protocols that are not Ollama.
+  const client = new OllamaClient(provider.kind === "ollama" ? provider.baseUrl : loopbackUrl);
   (client as unknown as { chat: OllamaClient["chat"] }).chat = (chatOptions) => adapter.chat({ ...chatOptions, model: remoteId });
   return {
     client,

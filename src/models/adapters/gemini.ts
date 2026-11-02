@@ -233,23 +233,17 @@ export class GeminiAdapter implements ProviderAdapter {
   }
 
   async listModels() {
-    try {
-      const res = await fetch(this.url("/models?pageSize=1000"), {
-        headers: this.headers(),
-        signal: AbortSignal.timeout(15000),
-      });
-
-      if (!res.ok) return [];
-
-      const data = (await res.json()) as { models?: Array<{ name?: string; supportedGenerationMethods?: string[] }> };
-      return (data.models ?? [])
-        .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
-        .map((m) => ({
-          remoteId: this.normalizeModelId(m.name ?? ""),
-        }))
-        .filter((m) => m.remoteId.length > 0);
-    } catch {
-      return [];
-    }
+    const res = await fetch(this.url("/models?pageSize=1000"), {
+      headers: this.headers(),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) throw new ProviderHttpError(`HTTP ${res.status}`, res.status, res.headers);
+    const data = (await res.json()) as { models?: Array<{ name?: string; supportedGenerationMethods?: string[] }> };
+    return (data.models ?? [])
+      .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
+      .map((m) => ({
+        remoteId: this.normalizeModelId(m.name ?? ""),
+      }))
+      .filter((m) => m.remoteId.length > 0);
   }
 }
