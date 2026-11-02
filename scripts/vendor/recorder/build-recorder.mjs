@@ -57,6 +57,11 @@ export function rewritePackageJson(pkg, removals) {
   for (const [d, v] of Object.entries(removals.setDependencies || {})) {
     if (out.devDependencies?.[d]) out.devDependencies[d] = v; else out.dependencies[d] = v;
   }
+  for (const [scope, v] of Object.entries(removals.bumpScopes || {})) {
+    for (const field of ['dependencies', 'devDependencies']) {
+      for (const d of Object.keys(out[field] || {})) if (d.startsWith(scope)) out[field][d] = v;
+    }
+  }
   out.overrides = { ...(out.overrides || {}), ...(removals.overrides || {}) };
   out.name = 'loam-recorder-vendor';
   delete out.build;
@@ -70,7 +75,23 @@ export function applyRemovals(root, removals) {
   const pkgFile = path.join(root, 'package.json');
   const pkg = JSON.parse(fs.readFileSync(pkgFile, 'utf8'));
   fs.writeFileSync(pkgFile, JSON.stringify(rewritePackageJson(pkg, removals), null, '\t') + '\n');
+  // Drop stale lock entries for bumped packages so npm re-resolves them together.
+  const lockFile = path.join(root, 'package-lock.json');
+  if (fs.existsSync(lockFile)) {
+    const lock = JSON.parse(fs.readFileSync(lockFile, 'utf8'));
+    fs.writeFileSync(lockFile, JSON.stringify(pruneLock(lock, removals.lockPrune || []), null, '\t') + '\n');
+  }
   return patches;
+}
+
+/** Removes lockfile entries whose package name starts with any prefix. Pure. */
+export function pruneLock(lock, prefixes) {
+  const out = structuredClone(lock);
+  for (const key of Object.keys(out.packages || {})) {
+    const name = key.replace(/^.*node_modules\//, '');
+    if (key && prefixes.some((p) => name.startsWith(p))) delete out.packages[key];
+  }
+  return out;
 }
 
 /** Counts high/critical from `npm audit --json` output. */
