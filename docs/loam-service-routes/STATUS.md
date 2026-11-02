@@ -91,6 +91,11 @@
 - Left uncommitted on purpose: release builds, probe scripts, screenshots, the recorder package, and the earlier updater and shell edits. Those files are still in the working tree.
 - Draft pull request: https://github.com/khamis1992/loam/pull/6 — open, not merged. R17 stays FAIL.
 
+## 2026-11-02 23:08 +03 — Windows x64 build of the route tree
+
+- `npm run build:server` then `electron-builder --win --dir --publish never` wrote `release-build-r68\win-unpacked\Loam.exe` (246819840 bytes, x64, version 0.5.43). It was not launched and was not installed over the current Loam.
+- The folder stays untracked. The earlier updater and shell edits stayed uncommitted.
+
 ## 2026-11-02 00:09 +03 — isolated desktop launch
 
 - `electron/main.cjs` now reads `AS_PROTOCOL_PORT` (default 8787) and injects that address plus the Loam port into the desktop page. A normal launch still uses 8787 and 3939.
