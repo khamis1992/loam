@@ -102,6 +102,6 @@ try {
   await srv.close();
 }
 
-const output = { model: "qwen3.6:35b-a3b", syntheticFixtures: true, officialCorpus: false, results };
+const output = { model: process.env.LOAM_LEGAL_LIVE_MODEL || "qwen3.6:35b-a3b", syntheticFixtures: true, officialCorpus: false, results };
 console.log(JSON.stringify(output, null, 2));
 if (results.some((result) => !result.ok)) process.exitCode = 1;

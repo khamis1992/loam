@@ -31,14 +31,15 @@ export async function startMockServer(port = 0, token = crypto.randomBytes(16).t
   const keys = options.keys ?? new StaticKeyProvider(crypto.randomBytes(32));
   const vaultDir = options.dataDir ? path.join(options.dataDir, "vault") : fs.mkdtempSync(path.join(os.tmpdir(), "legal-mock-vault-"));
   fs.mkdirSync(vaultDir, { recursive: true });
+  const localModel = process.env.LOAM_LEGAL_LIVE_MODEL || "qwen3.6:35b-a3b";
   const ctx: LegalRouteContext = {
     corpus: loadFixtureCorpus(options.dataDir ? path.join(options.dataDir, "corpus.db") : ":memory:"),
     matters: new MattersStore(options.dataDir ? path.join(options.dataDir, "matters.db") : ":memory:", keys, now),
-    egress: { localModel: "qwen3.6:35b-a3b", approvedLocalModels: ["qwen3.6:35b-a3b"], ollamaUrl: "http://127.0.0.1:11434" },
+    egress: { localModel, approvedLocalModels: [localModel], ollamaUrl: "http://127.0.0.1:11434" },
     enabled: true,
     keys,
     vault: new LegalFileVault(vaultDir, keys),
-    model: createLegalModelPort({ config: { localModel: "qwen3.6:35b-a3b", approvedLocalModels: ["qwen3.6:35b-a3b"], ollamaUrl: "http://127.0.0.1:11434" } }),
+    model: createLegalModelPort({ config: { localModel, approvedLocalModels: [localModel], ollamaUrl: "http://127.0.0.1:11434" } }),
     buildDefense: (matterId) => buildDefensePackage(ctx.matters, ctx.corpus, { port: ctx.model.port, config: ctx.egress }, matterId),
     buildResponse: (input) => buildLegalResponse(ctx.matters, ctx.corpus, { port: ctx.model.port, config: ctx.egress }, input),
     analyzeDocuments: (matterId) => analyzeDocuments(ctx.matters, ctx.corpus, { port: ctx.model.port, config: ctx.egress }, matterId),
