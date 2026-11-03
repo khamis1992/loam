@@ -76,6 +76,14 @@ extraResources:
       - "uv.json"
       - "requirements-0.9.95-mcp.txt"
       - "LICENSE-uv"
+  # agent-desktop (D2): the pinned exe must ship as a real file outside asar,
+  # with its Apache-2.0 LICENSE and the VERSION pin note.
+  - from: resources/agent-desktop
+    to: app.asar.unpacked/resources/agent-desktop
+    filter:
+      - "agent-desktop.exe"
+      - "LICENSE"
+      - "VERSION"
   # Remediate advisory packs (E9): hash-pinned data shipped read-only with the app.
   - from: security/advisories
     to: app/security/advisories

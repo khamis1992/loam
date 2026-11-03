@@ -73,6 +73,8 @@ export const MUTATING_TOOLS: readonly string[] = [
   "computer_key",
   "computer_ui_click",
   "computer_ui_set_text",
+  "computer_act",
+  "computer_batch",
   "device_exec",
   "device_write_file",
   "device_push_file",

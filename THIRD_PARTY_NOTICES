@@ -377,3 +377,14 @@ verbatim into this repository, the "Ponytail" name and logo are not used in
 Loam's UI, and Ponytail's published benchmark figures are not presented
 anywhere in Loam as if Loam measured them; Loam reports only its own A/B
 numbers from bench/lazy-senior.
+
+## agent-desktop (Apache-2.0)
+
+agent-desktop 1.0.2 — Vercel Labs — Apache License 2.0 — unmodified binary —
+source https://github.com/vercel-labs/agent-desktop
+
+The binary is vendored by scripts/vendor-agent-desktop.mjs (sha256-pinned
+tarball + exe, extracted with the Windows System32 tar), ships inside the
+installer with its LICENSE beside it, and is never modified. No code from the
+upstream repository (Rust, JavaScript, SKILL.md, npm postinstall) is copied
+into Loam; all Loam-side integration code is original.

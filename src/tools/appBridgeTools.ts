@@ -13,8 +13,10 @@ import { str } from "./registry.js";
 const NEEDS_APPROVAL: ReadonlySet<BridgeEffect> = new Set(["exec_script", "external"]);
 
 const UI_HINT =
-  "No bridge covers this. As a fallback, drive the window with computer_ui_tree / computer_ui_list to find the control, " +
-  "then computer_ui_click or computer_ui_set_text. Those steps are never started for you.";
+  "No bridge covers this. As a fallback, drive the window with computer_snapshot (skeleton, then drill with root=@ref) " +
+  "or computer_find to locate the control, then computer_act on its ref. " +
+  "Legacy path: computer_ui_tree / computer_ui_list then computer_ui_click or computer_ui_set_text. " +
+  "Those steps are never started for you.";
 
 function asArgs(v: unknown): Record<string, unknown> {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
