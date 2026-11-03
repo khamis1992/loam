@@ -14,6 +14,7 @@ const TARGETS = [
   ["contradictions", "payload_enc", "contradiction"],
   ["pipeline_runs", "payload_enc", "pipeline"],
   ["approval_artifacts", "data_enc", "approval-artifact"],
+  ["work_items", "payload_enc", "work-item"],
 ] as const;
 
 export function rotateMattersKey(dbPath: string, backupPath: string, oldKey: Buffer, newKey: Buffer): { records: number; backupPath: string } {

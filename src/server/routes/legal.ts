@@ -15,6 +15,9 @@
  *  POST   /api/legal/verify                             verify a document (+ structure)
  *  GET    /api/legal/matters | POST /api/legal/matters
  *  GET    /api/legal/matters/:id | PATCH | DELETE
+ *  GET    /api/legal/matters/:id/work-items | POST
+ *  PATCH  /api/legal/matters/:id/work-items/:workId | DELETE
+ *  GET    /api/legal/matters/:id/report
  *  GET    /api/legal/matters/:id/contracts | POST
  *  GET    /api/legal/matters/:id/contracts/:cid/clauses
  *  POST   /api/legal/matters/:id/contracts/:cid/review
@@ -264,6 +267,30 @@ export async function handleLegalRoutes(req: http.IncomingMessage, res: http.Ser
         return true;
       }
       if (seg.length === 2 && method === "DELETE") { sendJson(res, 200, { deleted: ctx.matters.deleteMatter(matter.id, "user") }); return true; }
+      if (seg.length === 3 && seg[2] === "work-items" && method === "GET") {
+        sendJson(res, 200, { items: ctx.matters.work.list(matter.id) });
+        return true;
+      }
+      if (seg.length === 3 && seg[2] === "work-items" && method === "POST") {
+        const body = await readJson(req);
+        sendJson(res, 201, { item: ctx.matters.work.add(matter.id, body as unknown as import("../../legal/work/types.js").NewMatterWorkItem, "user") });
+        return true;
+      }
+      if (seg.length === 4 && seg[2] === "work-items" && (method === "PATCH" || method === "DELETE")) {
+        const current = ctx.matters.work.get(seg[3]!);
+        if (!current || current.matterId !== matter.id) throw new HttpError(404, "work item not found");
+        if (method === "DELETE") {
+          sendJson(res, 200, { deleted: ctx.matters.work.delete(current.id, matter.id, "user") });
+        } else {
+          const body = await readJson(req);
+          sendJson(res, 200, { item: ctx.matters.work.update(current.id, matter.id, body as import("../../legal/work/types.js").MatterWorkPatch, "user") });
+        }
+        return true;
+      }
+      if (seg.length === 3 && seg[2] === "report" && method === "GET") {
+        sendJson(res, 200, { report: ctx.matters.work.report(matter.id) });
+        return true;
+      }
       if (seg.length === 3 && seg[2] === "runs" && method === "POST") {
         const body = await readJson(req, 10_000_000);
         const kind = s(body.kind);

@@ -25,17 +25,19 @@ test("key rotation reencrypts every stored record and restores on a new device",
     const evidencePath = path.join(dir, "evidence.txt");
     fs.writeFileSync(evidencePath, "الضرر 1000 ريال بتاريخ 2091/12/01.");
     const evidence = await importMatterDocument(store, matter.id, evidencePath);
+    const work = store.work.add(matter.id, { kind: "hearing", title: "جلسة سرية", status: "pending", dueAt: "2091-12-15", assignee: "المحامي المختبر", notes: "إحضار الأصل" }, "user");
     const before = store.db.prepare("SELECT payload_enc FROM matters WHERE id=?").get(matter.id) as { payload_enc: string };
     store.close();
 
     const rotation = rotateMattersKey(dbPath, backupPath, oldProvider.key(), newProvider.key());
-    assert.ok(rotation.records >= 4);
+    assert.ok(rotation.records >= 5);
     const after = new MattersStore(dbPath, newProvider);
     const rotated = after.db.prepare("SELECT payload_enc FROM matters WHERE id=?").get(matter.id) as { payload_enc: string };
     assert.notEqual(rotated.payload_enc, before.payload_enc);
     assert.equal(after.getMatter(matter.id)?.title, "مسألة تدوير المفتاح");
     assert.equal(after.getContract(contract.id)?.text.includes("1000"), true);
     assert.equal(after.evidence.listFacts(matter.id)[0]?.text.includes("1000"), true);
+    assert.equal(after.work.get(work.id)?.notes, "إحضار الأصل");
     after.close();
     const old = new MattersStore(dbPath, oldProvider);
     assert.throws(() => old.getMatter(matter.id));

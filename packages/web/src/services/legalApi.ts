@@ -56,6 +56,18 @@ export interface Matter {
   court?: { name: string; circuit?: string; caseNumber?: string; hearingDate?: string };
   parties: MatterParty[]; createdAt: string; updatedAt: string; retainUntil: string | null;
 }
+export type MatterWorkKind = 'task' | 'deadline' | 'hearing' | 'filing';
+export type MatterWorkStatus = 'pending' | 'in_progress' | 'done' | 'cancelled';
+export interface MatterWorkItem {
+  id: string; matterId: string; kind: MatterWorkKind; title: string; status: MatterWorkStatus;
+  dueAt: string | null; assignee: string | null; notes: string | null;
+  createdAt: string; updatedAt: string; completedAt: string | null;
+}
+export type NewMatterWorkItem = Omit<MatterWorkItem, 'id' | 'matterId' | 'createdAt' | 'updatedAt' | 'completedAt'>;
+export type MatterWorkPatch = Partial<NewMatterWorkItem>;
+export interface MatterWorkReport {
+  total: number; pending: number; inProgress: number; done: number; cancelled: number; overdue: number; nextDueAt: string | null;
+}
 export interface ReviewParagraph { index: number; start: number; end: number; quote: string }
 export interface ReviewComment { id: string; anchor: Omit<ReviewParagraph, 'index'>; body: string; author: { name: string; licenseNo: string }; createdAt: string }
 export interface ReviewDecision { id: string; action: 'comment' | 'accept_warning' | 'approve' | 'reject'; actor: { name: string; licenseNo: string }; subject: string; reason?: string; at: string }
@@ -184,6 +196,11 @@ export const legalApi = {
   createMatter: (input: { title: string; kind: Matter['kind']; confidentiality?: Confidentiality; asOf?: string; parties?: MatterParty[]; court?: Matter['court'] }) =>
     request<{ matter: Matter }>('/api/legal/matters', jsonInit('POST', input)),
   getMatter: (id: string) => request<{ matter: Matter; contracts: Array<{ id: string; fileName: string; sha256: string; language: string }>; reviews: ReviewRecord[] }>(`/api/legal/matters/${enc(id)}`),
+  listWorkItems: (matterId: string) => request<{ items: MatterWorkItem[] }>(`/api/legal/matters/${enc(matterId)}/work-items`),
+  addWorkItem: (matterId: string, input: NewMatterWorkItem) => request<{ item: MatterWorkItem }>(`/api/legal/matters/${enc(matterId)}/work-items`, jsonInit('POST', input)),
+  updateWorkItem: (matterId: string, workId: string, patch: MatterWorkPatch) => request<{ item: MatterWorkItem }>(`/api/legal/matters/${enc(matterId)}/work-items/${enc(workId)}`, jsonInit('PATCH', patch)),
+  deleteWorkItem: (matterId: string, workId: string) => request<{ deleted: boolean }>(`/api/legal/matters/${enc(matterId)}/work-items/${enc(workId)}`, { method: 'DELETE' }),
+  getMatterReport: (matterId: string) => request<{ report: MatterWorkReport }>(`/api/legal/matters/${enc(matterId)}/report`),
   getMatterDocuments: (id: string) => request<EvidenceWorkspace>(`/api/legal/matters/${enc(id)}/documents`),
   uploadMatterDocument: (matterId: string, fileName: string, dataBase64: string) =>
     request<{ document: EvidenceDocument; facts: FactAssertion[]; timeline: TimelineEvent[]; contradictions: Contradiction[]; vaultId: string }>(`/api/legal/matters/${enc(matterId)}/documents`, jsonInit('POST', { fileName, dataBase64 })),

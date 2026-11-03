@@ -12,6 +12,8 @@ export function LegalHome() {
   const [title, setTitle] = useState('');
   const [kind, setKind] = useState<Matter['kind']>('defense_memo');
   const [asOf, setAsOf] = useState('');
+  const [client, setClient] = useState('');
+  const [counterparty, setCounterparty] = useState('');
   const [error, setError] = useState<string | null>(null);
   const refresh = () => Promise.all([legalApi.listMatters(), legalApi.status()]).then(([list, current]) => { setMatters(list.matters); setStatus(current); }).catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
   useEffect(() => { void refresh(); }, []);
@@ -19,8 +21,12 @@ export function LegalHome() {
     if (!title.trim()) return;
     setError(null);
     try {
-      await legalApi.createMatter({ title, kind, ...(asOf ? { asOf } : {}) });
-      setTitle('');
+      const parties = [
+        ...(client.trim() ? [{ role: 'client' as const, name: client.trim(), identifiers: [] }] : []),
+        ...(counterparty.trim() ? [{ role: 'counterparty' as const, name: counterparty.trim(), identifiers: [] }] : []),
+      ];
+      await legalApi.createMatter({ title, kind, parties, ...(asOf ? { asOf } : {}) });
+      setTitle(''); setClient(''); setCounterparty('');
       await refresh();
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   };
@@ -33,6 +39,8 @@ export function LegalHome() {
       {error && <p role="alert" className="text-red-700 dark:text-red-300">{error}</p>}
       <form className="flex flex-wrap gap-2 rounded-md border p-3" onSubmit={(e) => { e.preventDefault(); void create(); }}>
         <input dir="auto" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t('Matter title')} className="min-w-0 flex-1 rounded border px-2 py-1" />
+        <input dir="auto" aria-label={t('Client')} value={client} onChange={(e) => setClient(e.target.value)} placeholder={t('Client')} className="min-w-0 flex-1 rounded border px-2 py-1" />
+        <input dir="auto" aria-label={t('Counterparty')} value={counterparty} onChange={(e) => setCounterparty(e.target.value)} placeholder={t('Counterparty')} className="min-w-0 flex-1 rounded border px-2 py-1" />
         <input type="date" aria-label={t('Applicable law date')} value={asOf} onChange={(e) => setAsOf(e.target.value)} className="rounded border px-2 py-1" />
         <select value={kind} onChange={(e) => setKind(e.target.value as Matter['kind'])} className="rounded border px-2 py-1">
           <option value="defense_memo">{t('Defense memorandum')}</option><option value="contract_review">{t('Contract review')}</option><option value="opinion">{t('Legal opinion')}</option><option value="research">{t('Document analysis')}</option>

@@ -15,6 +15,7 @@ import { migrateLegalDatabase } from "./db/migrations.js";
 import { EvidenceStore, EVIDENCE_SCHEMA } from "./db/evidenceStore.js";
 import { PipelineStore, PIPELINE_SCHEMA } from "./db/pipelineStore.js";
 import { ApprovalArtifactStore, APPROVAL_ARTIFACT_SCHEMA } from "./review/approvalArtifact.js";
+import { WorkStore, WORK_SCHEMA } from "./work/store.js";
 import type { Clause, ClauseCategory, Confidentiality, ContractDoc, EgressPolicy, Matter, MatterParty, ReviewRecord } from "./types.js";
 
 export interface NewMatter {
@@ -42,18 +43,20 @@ export class MattersStore {
   readonly evidence: EvidenceStore;
   readonly pipeline: PipelineStore;
   readonly approvals: ApprovalArtifactStore;
+  readonly work: WorkStore;
   private readonly cipher: FieldCipher;
 
   constructor(dbPath: string, keys: KeyProvider, private readonly now: () => Date = () => new Date()) {
     if (dbPath !== ":memory:") fs.mkdirSync(path.dirname(dbPath), { recursive: true });
     this.db = new DatabaseSync(dbPath);
     this.db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON;");
-    migrateLegalDatabase(this.db, { schema: MATTERS_SCHEMA, version: MATTERS_SCHEMA_VERSION, migrations: [{ version: 2, sql: EVIDENCE_SCHEMA }, { version: 3, sql: PIPELINE_SCHEMA }, { version: 4, sql: APPROVAL_ARTIFACT_SCHEMA }] });
+    migrateLegalDatabase(this.db, { schema: MATTERS_SCHEMA, version: MATTERS_SCHEMA_VERSION, migrations: [{ version: 2, sql: EVIDENCE_SCHEMA }, { version: 3, sql: PIPELINE_SCHEMA }, { version: 4, sql: APPROVAL_ARTIFACT_SCHEMA }, { version: 5, sql: WORK_SCHEMA }] });
     this.cipher = new FieldCipher(keys);
     this.audit = new AuditLog(this.db, now);
     this.evidence = new EvidenceStore(this.db, keys);
     this.pipeline = new PipelineStore(this.db, keys);
     this.approvals = new ApprovalArtifactStore(this.db, keys);
+    this.work = new WorkStore(this.db, keys, this.audit, now);
   }
 
   close(): void { this.db.close(); }

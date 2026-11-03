@@ -11,8 +11,9 @@ import { DocumentAnalysisView } from './DocumentAnalysisView';
 import { DocumentViewer } from './DocumentViewer';
 import { PrivacyBadge } from './PrivacyBadge';
 import { LegalRunControls } from './LegalRunControls';
+import { LegalWorkItems } from './LegalWorkItems';
 
-type Tab = 'analysis' | 'evidence' | 'contract' | 'defense' | 'response' | 'document';
+type Tab = 'analysis' | 'evidence' | 'work' | 'contract' | 'defense' | 'response' | 'document';
 
 async function fileBase64(file: File): Promise<string> {
   const bytes = new Uint8Array(await file.arrayBuffer());
@@ -59,13 +60,14 @@ export function LegalWorkspace({ matterId }: { matterId: string }) {
       </div>
       {error && <p role="alert" className="text-red-700 dark:text-red-300">{error}</p>}
       <nav role="tablist" className="flex flex-wrap gap-1 border-b">
-        {(['analysis', 'evidence', 'contract', 'defense', 'response', 'document'] as const).map((id) => <button key={id} role="tab" aria-selected={tab === id} type="button" onClick={() => setTab(id)} className={`px-3 py-1 ${tab === id ? 'border-b-2 border-teal-600 font-semibold' : ''}`}>{t(id)}</button>)}
+        {(['analysis', 'evidence', 'work', 'contract', 'defense', 'response', 'document'] as const).map((id) => <button key={id} role="tab" aria-selected={tab === id} type="button" onClick={() => setTab(id)} className={`px-3 py-1 ${tab === id ? 'border-b-2 border-teal-600 font-semibold' : ''}`}>{t(id)}</button>)}
       </nav>
       <div className="grid gap-3 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)_minmax(0,1fr)]">
         <aside aria-label={t('Source document')}><DocumentViewer document={workspace?.documents[0]} /></aside>
         <section>
           {tab === 'analysis' && (analysis ? <DocumentAnalysisView report={analysis} /> : <p className="opacity-70">{t('Run document analysis to see the report.')}</p>)}
           {tab === 'evidence' && workspace && <EvidenceBoard workspace={workspace} />}
+          {tab === 'work' && <LegalWorkItems matterId={matterId} />}
           {tab === 'contract' && <ContractReview matterId={matterId} />}
           {tab === 'defense' && (defense ? <DefenseStrategy result={defense} /> : <p className="opacity-70">{t('Build a defense to see the strategy.')}</p>)}
           {tab === 'response' && (

@@ -208,3 +208,27 @@ test("DOCX artifact verification, lawyer approval and exact-byte export are fail
     await srv.close();
   }
 });
+
+test("matter work API encrypts items, reports deadlines and rejects cross-matter writes", async () => {
+  const srv = await startMockServer(0, "t", () => new Date("2092-01-10T08:00:00Z"));
+  try {
+    const matter = (await call(srv, "POST", "/api/legal/matters", { title: "إدارة القضية", kind: "defense_memo" })).json.matter as { id: string };
+    const other = (await call(srv, "POST", "/api/legal/matters", { title: "قضية مستقلة", kind: "research" })).json.matter as { id: string };
+    const added = await call(srv, "POST", `/api/legal/matters/${matter.id}/work-items`, { kind: "filing", title: "إيداع مذكرة سرية", status: "pending", dueAt: "2092-01-09", assignee: "المحامي المختبر", notes: "موعد سري" });
+    assert.equal(added.status, 201);
+    const item = added.json.item as { id: string };
+    const row = srv.ctx.matters.db.prepare("SELECT payload_enc FROM work_items WHERE id=?").get(item.id) as { payload_enc: string };
+    assert.equal(row.payload_enc.includes("إيداع مذكرة سرية"), false);
+    assert.equal((await call(srv, "PATCH", `/api/legal/matters/${other.id}/work-items/${item.id}`, { status: "done" })).status, 404);
+    assert.equal((await call(srv, "DELETE", `/api/legal/matters/${other.id}/work-items/${item.id}`)).status, 404);
+    assert.equal((await call(srv, "PATCH", `/api/legal/matters/${matter.id}/work-items/${item.id}`, { status: "in_progress" })).status, 200);
+    const report = await call(srv, "GET", `/api/legal/matters/${matter.id}/report`);
+    assert.deepEqual(report.json.report, { total: 1, pending: 0, inProgress: 1, done: 0, cancelled: 0, overdue: 1, nextDueAt: "2092-01-09" });
+    const list = await call(srv, "GET", `/api/legal/matters/${matter.id}/work-items`);
+    assert.equal((list.json.items as Array<{ status: string }>)[0]?.status, "in_progress");
+    assert.equal((await call(srv, "DELETE", `/api/legal/matters/${matter.id}`)).status, 200);
+    assert.equal(srv.ctx.matters.db.prepare("SELECT COUNT(*) AS count FROM work_items").get()!.count, 0);
+  } finally {
+    await srv.close();
+  }
+});
