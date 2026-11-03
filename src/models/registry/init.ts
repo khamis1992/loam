@@ -131,3 +131,8 @@ export function reloadRegistry(): ModelRegistry | null {
 export function clearRegistryCache(): void {
   cachedRegistry = null;
 }
+
+/** Tests install a registry object without reading the user's data directory. */
+export function setRegistryForTests(next: ModelRegistry | null): void {
+  cachedRegistry = next;
+}

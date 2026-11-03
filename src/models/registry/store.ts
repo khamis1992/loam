@@ -14,8 +14,14 @@ import { DATA_DIR } from "../../config.js";
 import { RegistryZ } from "./schema.js";
 import type { ModelRegistry } from "./types.js";
 
-const REGISTRY_FILE = path.join(DATA_DIR, "model-registry.json");
-const BACKUP_FILE = path.join(DATA_DIR, "model-registry.json.bak");
+let registryFile = path.join(DATA_DIR, "model-registry.json");
+let backupFile = path.join(DATA_DIR, "model-registry.json.bak");
+
+/** Tests point the registry at a temp file so the user's data/model-registry.json stays untouched. */
+export function setRegistryFileForTests(file: string | null): void {
+  registryFile = file ?? path.join(DATA_DIR, "model-registry.json");
+  backupFile = `${registryFile}.bak`;
+}
 
 /**
  * Load the registry from disk.
@@ -24,17 +30,16 @@ const BACKUP_FILE = path.join(DATA_DIR, "model-registry.json.bak");
  * @throws Error if file exists but is invalid JSON or fails validation
  */
 export function loadRegistry(): ModelRegistry | null {
-  if (!fs.existsSync(REGISTRY_FILE)) return null;
+  if (!fs.existsSync(registryFile)) return null;
 
   try {
-    const raw = fs.readFileSync(REGISTRY_FILE, "utf8");
+    const raw = fs.readFileSync(registryFile, "utf8");
     const json = JSON.parse(raw);
     const registry = RegistryZ.parse(json);
     return registry;
   } catch (error) {
-    // Preserve original error for debugging
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Failed to load model registry from ${REGISTRY_FILE}: ${message}`);
+    throw new Error(`Failed to load model registry from ${registryFile}: ${message}`);
   }
 }
 
@@ -60,17 +65,17 @@ export function saveRegistry(registry: ModelRegistry): void {
   const json = JSON.stringify(registry, null, 2);
 
   // Atomic write: tmp file + rename
-  const tmpFile = `${REGISTRY_FILE}.${process.pid}.tmp`;
+  const tmpFile = `${registryFile}.${process.pid}.tmp`;
   try {
     fs.writeFileSync(tmpFile, json, "utf8");
     
     // Backup existing file before overwriting
-    if (fs.existsSync(REGISTRY_FILE)) {
-      fs.copyFileSync(REGISTRY_FILE, BACKUP_FILE);
+    if (fs.existsSync(registryFile)) {
+      fs.copyFileSync(registryFile, backupFile);
     }
     
     // Atomic rename (POSIX guarantee; Windows best-effort)
-    fs.renameSync(tmpFile, REGISTRY_FILE);
+    fs.renameSync(tmpFile, registryFile);
   } catch (error) {
     // Clean up temp file on failure
     try {
@@ -79,7 +84,7 @@ export function saveRegistry(registry: ModelRegistry): void {
       // Ignore cleanup errors
     }
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Failed to save model registry to ${REGISTRY_FILE}: ${message}`);
+    throw new Error(`Failed to save model registry to ${registryFile}: ${message}`);
   }
 }
 
@@ -89,19 +94,19 @@ export function saveRegistry(registry: ModelRegistry): void {
  * Used by migration logic to determine whether to run.
  */
 export function registryExists(): boolean {
-  return fs.existsSync(REGISTRY_FILE);
+  return fs.existsSync(registryFile);
 }
 
 /**
  * Get the registry file path (for display/debugging).
  */
 export function getRegistryPath(): string {
-  return REGISTRY_FILE;
+  return registryFile;
 }
 
 /**
  * Get the backup file path (for display/debugging).
  */
 export function getBackupPath(): string {
-  return BACKUP_FILE;
+  return backupFile;
 }
