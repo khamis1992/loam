@@ -12,6 +12,7 @@ import type { LegalPipeline } from "./engine.js";
 import type { LegalPipelineKind, LegalPipelineRun } from "./types.js";
 
 export type ManagedPipelineKind = LegalPipelineKind;
+export const LEGAL_DRAFT_PROMPT_VERSION = "2";
 
 export class LegalRunManager {
   private readonly controllers = new Map<string, AbortController>();
@@ -23,7 +24,7 @@ export class LegalRunManager {
     const matter = this.store.getMatter(matterId);
     if (!matter) throw new Error(`matter ${matterId} not found`);
     const pipeline = this.createPipeline(kind);
-    const run = await pipeline.start({ kind, matterId, state, corpusSnapshotId: this.corpus.snapshot({ persist: true }).id, model: this.model.config.localModel, promptVersion: "1" });
+    const run = await pipeline.start({ kind, matterId, state, corpusSnapshotId: this.corpus.snapshot({ persist: true }).id, model: this.model.config.localModel, promptVersion: LEGAL_DRAFT_PROMPT_VERSION });
     this.store.audit.append("user", "run.start", matterId, run.id, { kind });
     this.drive(run.id);
     return run;

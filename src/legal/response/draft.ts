@@ -27,7 +27,7 @@ export async function draftLegalResponse(
       schema: DEFENSE_DRAFT_SCHEMA,
       repairAttempts: 2,
       messages: [
-        { role: "system", content: "Draft a precise Arabic legal response as an expert defense lawyer. Address every allegation in the matrix with its disposition and evidence. Avoid unintended admissions or waiver. Use ## بيانات الدعوى, ## الوقائع, ## الدفوع الشكلية والإجرائية when applicable, ## الدفاع الموضوعي, ## الطلبات. Copy exact short quotes verbatim in «…» followed by ⟦cite:QL-xxxxxxxxxx⟧ from supplied sources only; never paraphrase a quote. Do not invent facts or authorities or internal notes. Follow each burden of proof exactly as the supplied source states it; never shift a burden to the opponent unless the cited text expressly does so. Do not add procedural defenses or requests outside the approved matrix. Treat the matter title as the client's objective, never as an opponent's admission. When revision feedback or validationErrors are supplied, fix every reported defect without adding facts: do not deny and reduce the same obligation, do not request relief with missing proof, and keep every request consistent with the matrix and proven record." },
+        { role: "system", content: "Draft a precise Arabic legal response as an expert defense lawyer. Address every allegation in the matrix with its disposition and evidence. Avoid unintended admissions or waiver. Use ## بيانات الدعوى, ## الوقائع, ## الدفوع الشكلية والإجرائية when applicable, ## الدفاع الموضوعي, ## الطلبات. Copy exact short quotes verbatim in «…» followed by ⟦cite:QL-xxxxxxxxxx⟧ from supplied sources only, including Arabic spelling and Unicode hamza forms; never paraphrase a quote. Citation tokens are only for quotations copied from sources: never attach them to quotations from case evidence or facts. Do not invent facts or authorities or internal notes. Follow each burden of proof exactly as the supplied source states it; never shift a burden to the opponent unless the cited text expressly does so. Do not add procedural defenses or requests outside the approved matrix. Treat the matter title as the client's objective, never as an opponent's admission. When revision feedback or validationErrors are supplied, fix every reported defect without adding facts: do not deny and reduce the same obligation, do not request relief with missing proof, and keep every request consistent with the matrix and proven record." },
         { role: "user", content: JSON.stringify({ matter: input.matter, matrix: input.matrix, research: input.research, sources, revision }) },
       ],
     });
@@ -37,14 +37,20 @@ export async function draftLegalResponse(
     const outside = used.filter((avid) => !consulted.has(avid));
     const verification = verifyDocument(corpus, draft, { asOf: input.matter.asOf, ledger: consulted, matterKind: "defense_memo" });
     const structure = [...checkStructure("defense_memo", draft), ...(verification.renderedDocument ? internalLeaks(verification.renderedDocument) : [])];
+    const failedChecks = verification.checks.filter((check) => !["OK", "VERIFIED", "VERIFIED_NORMALIZED"].includes(check.status));
     const errors = [
       ...(outside.length ? [`unretrieved authorities: ${outside.join(",")}`] : []),
-      ...verification.checks.filter((check) => !["OK", "VERIFIED", "VERIFIED_NORMALIZED"].includes(check.status)).map((check) => `${check.status}: ${check.messageAr}`),
+      ...failedChecks.map((check) => `${check.status}: ${check.messageAr}`),
       ...structure.filter((issue) => issue.level === "error").map((issue) => `structure ${issue.code}: ${issue.messageAr}`),
     ];
     if (errors.length === 0) return { draft, verification, structure };
     if (attempt === 2) throw new Error(`legal response draft validation failed after repair: ${errors.join("; ")}`);
-    revision = { draft, findings: input.revision?.findings ?? [], validationErrors: errors };
+    const validationErrors = [
+      ...(outside.length ? [`unretrieved authorities: ${outside.join(",")}`] : []),
+      ...failedChecks.map((check) => `${check.status}${check.avid ? ` ${check.avid}` : ""}: ${check.messageAr}${check.quote ? ` | quote: ${check.quote}` : ""}`),
+      ...structure.filter((issue) => issue.level === "error").map((issue) => `structure ${issue.code}: ${issue.messageAr}`),
+    ];
+    revision = { draft, findings: input.revision?.findings ?? [], validationErrors };
   }
   throw new Error("unreachable legal response draft validation");
 }

@@ -133,7 +133,9 @@ test("defense draft retries a mismatched quote once and then verifies the exact 
     corpus.db.prepare("UPDATE legislations SET source_json=json_set(source_json,'$.verifiedAt','2092-01-01')").run();
     corpus.setCoverageManifest([{ legKey: "law/2090/1", titleAr: "القانون المدني الاختباري", requiredFor: ["defense_memo"] }]);
     let attempts = 0;
+    let repairRequest = "";
     const retryModel: LegalModelPort = async (req) => {
+      if ((req as LegalModelRequest & { contract?: string }).contract === "defense-memo-draft" && attempts === 1) repairRequest = req.messages.map((message) => message.content).join("\n");
       if ((req as LegalModelRequest & { contract?: string }).contract === "defense-memo-draft" && ++attempts === 1) {
         return { content: JSON.stringify({ markdown: "## بيانات الدعوى\nالدائرة\n## الوقائع\nواقعة.\n## الدفاع الموضوعي\n«نص غير مطابق للمصدر» ⟦cite:QL-3bacb8d64e⟧\n## الطلبات\nتخفيض التعويض." }), model: req.model, toolCalls: [], usage: { promptTokens: 1, completionTokens: 1, durationMs: 1 } };
       }
@@ -147,6 +149,10 @@ test("defense draft retries a mismatched quote once and then verifies the exact 
     });
     assert.equal(attempts, 2);
     assert.equal(result.verification.verdict, "pass");
+    assert.match(repairRequest, /validationErrors/);
+    assert.match(repairRequest, /QL-3bacb8d64e/);
+    assert.match(repairRequest, /quote: نص غير مطابق للمصدر/);
+    assert.match(repairRequest, /never attach them to quotations from case evidence or facts/);
   } finally {
     store.close();
     corpus.close();
