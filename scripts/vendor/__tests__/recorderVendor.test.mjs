@@ -5,12 +5,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { after, describe, it } from 'node:test';
 
 import { auditSeverities, parseArgs, pruneLock, rewritePackageJson } from '../recorder/build-recorder.mjs';
 import { forbiddenDeps, forbiddenLockEntries, runGates } from '../recorder/gates.mjs';
 
-const here = path.dirname(new URL(import.meta.url).pathname);
+const here = path.dirname(fileURLToPath(import.meta.url));
 const manifest = JSON.parse(fs.readFileSync(path.join(here, '../recorder/manifest.json'), 'utf8'));
 const removals = JSON.parse(fs.readFileSync(path.join(here, '../recorder/removals.json'), 'utf8'));
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'recorder-vendor-'));

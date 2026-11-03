@@ -2,13 +2,14 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
+import { extractFile } from '@electron/asar';
 const root=path.resolve(import.meta.dirname,'..');
 const version=JSON.parse(await fs.readFile(path.join(root,'package.json'),'utf8')).version;
 const profile=process.env.LOAM_USER_DATA_DIR||path.join(process.env.APPDATA||path.join(os.homedir(),'AppData','Roaming'),'manus-local');
 const destination=path.join(profile,'updates');await fs.mkdir(destination,{recursive:true});
 const file=`Loam-Setup-${version}.exe`,source=path.join(root,'release',file);
 const data=await fs.readFile(source),sha512=crypto.createHash('sha512').update(data).digest('base64');
-const packagedVersion=JSON.parse(await fs.readFile(path.join(root,'release/win-unpacked/resources/app/package.json'),'utf8')).version;
+const packagedVersion=JSON.parse(extractFile(path.join(root,'release/win-unpacked/resources/app.asar'),'package.json').toString('utf8')).version;
 if(packagedVersion!==version)throw new Error('Packaged version does not match package.json. Build the installer before publishing.');
 let previous='';try{previous=await fs.readFile(path.join(destination,'latest.yml'),'utf8');}catch(error){if(error.code!=='ENOENT')throw error;}
 const previousVersion=previous.match(/^version:\s*(\S+)/m)?.[1];

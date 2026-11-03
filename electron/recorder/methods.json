@@ -1,0 +1,17 @@
+{
+  "methods": [
+    "status",
+    "sources.list",
+    "record.start",
+    "record.pause",
+    "record.resume",
+    "record.stop",
+    "record.cancel",
+    "project.open",
+    "project.inspect",
+    "edit.apply",
+    "captions.generate",
+    "export",
+    "handoff.video"
+  ]
+}
