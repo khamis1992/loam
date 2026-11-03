@@ -131,6 +131,11 @@ export interface Runtime {
   dispose: () => Promise<void>;
 }
 
+export function registerLongTermMemoryTools(registry: ToolRegistry, memory: MemoryStore | null, loamRecallEnabled: boolean, gate: typeof writeGate): void {
+  if (memory) registry.registerAll(createMemoryTools(memory, { gate }).filter((tool) => !loamRecallEnabled || tool.name !== "memory_store"));
+  if (loamRecallEnabled) registry.registerAll(createLoamMemoryTools());
+}
+
 export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): Promise<Runtime> {
   const ollama = cfg.failover?.providers?.length ? new FailoverClient(cfg.failover.providers) : new OllamaClient(cfg.ollamaUrl, cfg.cloudModel);
   await initPty();
@@ -242,8 +247,7 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   });
   // Always hand tools a WriteGate object; per-write gateActive() decides staging vs. direct apply.
   const gate = writeGate;
-  if (memory) registry.registerAll(createMemoryTools(memory, { gate }));
-  if (loamRecall) registry.registerAll(createLoamMemoryTools());
+  registerLongTermMemoryTools(registry, memory, loamRecall !== null, gate);
   // N16 cross-run recall: the shelf shares the memory embedder, and without it
   // the shelf still answers lexically, so the tools are always registered and a
   // node is vectorized exactly when memory embeddings are on. Reachability is
