@@ -32,6 +32,7 @@ export interface RecallService {
     rollback(historyId: string): Promise<void>;
   };
   gardener: { tick(kind: "light" | "deep" | "sleep", opts?: { force?: boolean; now?: number }): Promise<GardenerReport> };
+  startReembed(): { total: number; done: number; error?: string };
   stats(): Promise<RecallStats>;
   repo: RecallRepo;
   config: RecallConfig;
@@ -60,6 +61,32 @@ export function createRecallService(db: DatabaseSync, opts: {
     if (!vec) return undefined;
     return toUnit(vec);
   };
+
+  const reembed: { total: number; done: number; error?: string } = { total: 0, done: 0 };
+  let reembedRunning = false;
+  async function reembedMismatch(): Promise<void> {
+    if (reembedRunning || !opts.embedder) return;
+    reembedRunning = true;
+    const modelName = liveConfig().models.embedder;
+    const rows = repo.latest(undefined, ["active", "dormant", "archived", "superseded"])
+      .filter((memory) => !memory.embeddingModel?.startsWith(`${modelName}@`));
+    reembed.total = rows.length;
+    reembed.done = 0;
+    delete reembed.error;
+    try {
+      for (const memory of rows) {
+        const [vec] = await opts.embedder.embed([memory.content]);
+        if (!vec || vec.length === 0) continue;
+        const embedding = toUnit(vec);
+        repo.update({ ...memory, embedding, embeddingModel: `${modelName}@${embedding.length}`, updatedAt: Date.now() });
+        reembed.done += 1;
+      }
+    } catch (error) {
+      reembed.error = error instanceof Error ? error.message : String(error);
+    } finally {
+      reembedRunning = false;
+    }
+  }
 
   const service: RecallService = {
     repo,
@@ -133,6 +160,10 @@ export function createRecallService(db: DatabaseSync, opts: {
     gardener: {
       tick(kind, tickOpts) { return runGardenerTick(repo, config, kind, opts.model, tickOpts); },
     },
+    startReembed() {
+      void reembedMismatch();
+      return { ...reembed };
+    },
     async stats() {
       const counts = repo.stats();
       const byState = { active: 0, dormant: 0, archived: 0, superseded: 0, trashed: 0, ...counts.byState };
@@ -144,6 +175,7 @@ export function createRecallService(db: DatabaseSync, opts: {
         ...(repo.lastSleepAt() !== undefined ? { lastSleepAt: repo.lastSleepAt() } : {}),
         ...(rerankBreaker().p50() !== undefined ? { rerankP50Ms: rerankBreaker().p50() } : {}),
         fts: repo.schema.fts,
+        ...(reembed.total > 0 ? { reembed: { ...reembed } } : {}),
       };
     },
   };

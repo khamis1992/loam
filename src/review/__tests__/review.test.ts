@@ -141,4 +141,53 @@ describe("review.probe", () => {
     assert.equal(result.timedOut, true);
     fs.rmSync(root, { recursive: true, force: true });
   });
+
+  it("blocks a node probe from opening a network connection", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "loam-probe-net-"));
+    const result = await runProbe({
+      cwd: root,
+      runtime: "node",
+      source: "try { await fetch('http://127.0.0.1:9/'); console.log('open') } catch { console.log('blocked') }",
+      timeoutMs: 5000,
+    });
+    assert.match(`${result.stdout}\n${result.stderr}`, /blocked|permission|denied/i);
+    assert.equal(result.stdout.includes("open"), false);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+});
+
+describe("review.runMode", () => {
+  it("ignores a verdict until a run probe has executed", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "loam-run-mode-"));
+    fs.writeFileSync(path.join(root, "a.ts"), "export function price() { return 10 }\n");
+    const replies = [
+      "VERDICT: LGTM",
+      '{"tool":"run","runtime":"node","source":"console.log(\'ran-probe\')"}',
+      "1. price always returns 10\nVERDICT: FINDINGS",
+    ];
+    let calls = 0;
+    const model: TextModel = {
+      async complete() {
+        const text = replies[Math.min(calls, replies.length - 1)] ?? "";
+        calls += 1;
+        return { text, promptTokens: 1, completionTokens: 1 };
+      },
+    };
+    const result = await secondLook({
+      runId: "run",
+      mode: "build",
+      workspace: root,
+      requests: ["price(0) must be 0"],
+      reply: "done",
+      turnStartedAt: Date.now() - 1000,
+      touched: ["a.ts"],
+      toolCalls: 1,
+      depth: 0,
+      aborted: false,
+      alreadyReviewed: false,
+    }, model, { ...DEFAULT_REVIEW_POLICY, modes: { ...DEFAULT_REVIEW_POLICY.modes, build: "run" } });
+    assert.equal(calls, 3);
+    assert.equal(result.status, "findings");
+    fs.rmSync(root, { recursive: true, force: true });
+  });
 });

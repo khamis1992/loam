@@ -131,18 +131,23 @@ async function runReview(input: ReviewInput, files: ChangedFile[], model: TextMo
   let last = "";
   try {
     let transcript = reviewerUserPrompt(input.requests, input.reply, files.map((file) => ({ path: file.relPath, body: file.binary ? `(binary ${file.relPath})` : file.content })));
+    let ranProbe = false;
     for (let round = 1; round <= policy.maxRounds; round++) {
       if (Date.now() - started > policy.runTimeoutMs) break;
       const force = round === policy.maxRounds;
       const result = await model.complete(
-        `${reviewerSystemPrompt()}\nYou may request a probe as JSON {"tool":"read_file"|"run","path"?:string,"runtime"?:${runtimes.map((item) => `"${item}"`).join("|")},"source"?:string}. On the last round, give only the verdict. Reproduce defects; do not only re-run the project's tests. Network is unavailable.`,
+        `${reviewerSystemPrompt()}\nRequest one probe as JSON {"tool":"run","runtime":${runtimes.map((item) => `"${item}"`).join("|")},"source":string}. Run the changed code and reproduce the defect before any verdict. On the last round, give only the verdict. Network is unavailable.`,
         force ? `${transcript}\n\nFinal round. Reply with the verdict only.` : transcript,
         { temperature: 0.2, timeoutMs: Math.min(policy.readTimeoutMs, policy.runTimeoutMs - (Date.now() - started)), numCtx: policy.numCtx },
       );
       promptTokens += result.promptTokens;
       completionTokens += result.completionTokens;
       last = result.text;
-      if (force || /VERDICT:/i.test(result.text)) break;
+      if (force || (ranProbe && /VERDICT:/i.test(result.text))) break;
+      if (!ranProbe && /VERDICT:/i.test(result.text)) {
+        transcript += "\nA verdict before a run probe is ignored. Reply with one JSON probe that executes the changed code.";
+        continue;
+      }
       const tool = result.text.match(/\{[\s\S]*\}/);
       if (!tool) break;
       let parsed: { tool?: string; path?: string; runtime?: string; source?: string };
@@ -152,6 +157,7 @@ async function runReview(input: ReviewInput, files: ChangedFile[], model: TextMo
         transcript += `\nProbe read ${parsed.path}:\n${(file?.content ?? "(missing)").slice(0, 20_000)}`;
       } else if (parsed.tool === "run" && parsed.source && runtimes.includes(parsed.runtime as ProbeRuntime)) {
         const probe = await runProbe({ cwd: copied.dir, runtime: parsed.runtime as ProbeRuntime, source: parsed.source, timeoutMs: policy.probeTimeoutMs });
+        ranProbe = true;
         transcript += `\nProbe ${parsed.runtime} timedOut=${probe.timedOut} code=${probe.code}:\n${probe.stdout}\n${probe.stderr}`;
       }
     }

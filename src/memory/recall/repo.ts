@@ -1,7 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { ensureRecallSchema, type SchemaStatus } from "./schema.js";
 import type { MemoryKind, MemoryOrigin, MemoryRecord, MemoryRelation, MemoryState, RelationOrigin, RelationType } from "./types.js";
-import { normalizeForIndex } from "./normalize.js";
+import { normalizeForIndex, tokenize } from "./normalize.js";
 import { bufferToFloat32, float32ToBuffer } from "./vectors.js";
 
 type Row = Record<string, unknown>;
@@ -97,6 +97,51 @@ export class RecallRepo {
     return (this.db.prepare(
       `SELECT * FROM recall_memories WHERE is_latest = 1 AND state IN (${stateSql}) AND scope IN (${scopeSql})`,
     ).all(...wanted, ...scopes) as Row[]).map((row) => this.map(row));
+  }
+
+  ftsRanks(query: string, scopes: string[] | undefined, states: MemoryState[], limit: number): Array<{ id: string; rank: number }> | null {
+    if (!this.schema.fts) return null;
+    const match = tokenize(query).slice(0, 12).map((token) => `"${token.replaceAll('"', "")}"`).join(" OR ");
+    if (!match) return [];
+    const wanted = states.length > 0 ? states : (["active", "dormant"] as MemoryState[]);
+    const stateSql = wanted.map(() => "?").join(",");
+    const scopeSql = scopes && scopes.length > 0 ? ` AND m.scope IN (${scopes.map(() => "?").join(",")})` : "";
+    try {
+      const rows = this.db.prepare(`
+        SELECT m.id AS id
+        FROM recall_fts
+        JOIN recall_memories m ON m.rowid = recall_fts.rowid
+        WHERE recall_fts MATCH ?
+          AND m.is_latest = 1
+          AND m.state IN (${stateSql})${scopeSql}
+        ORDER BY bm25(recall_fts)
+        LIMIT ?
+      `).all(match, ...wanted, ...(scopes ?? []), limit) as Row[];
+      return rows.map((row, rank) => ({ id: text(row.id), rank }));
+    } catch {
+      return null;
+    }
+  }
+
+  vectorScan(scopes: string[] | undefined, states: MemoryState[]): Array<{ id: string; documentAt: number; pinned: boolean; embedding?: Float32Array; embeddingModel?: string }> {
+    const wanted = states.length > 0 ? states : (["active", "dormant"] as MemoryState[]);
+    const stateSql = wanted.map(() => "?").join(",");
+    const scopeSql = scopes && scopes.length > 0 ? ` AND scope IN (${scopes.map(() => "?").join(",")})` : "";
+    const rows = this.db.prepare(`
+      SELECT id, document_at, pinned, embedding, embedding_model
+      FROM recall_memories
+      WHERE is_latest = 1 AND state IN (${stateSql})${scopeSql}
+    `).all(...wanted, ...(scopes ?? [])) as Row[];
+    return rows.map((row) => {
+      const embedding = bufferToFloat32(row.embedding);
+      return {
+        id: text(row.id),
+        documentAt: Number(row.document_at),
+        pinned: Number(row.pinned) === 1,
+        ...(embedding ? { embedding } : {}),
+        ...(typeof row.embedding_model === "string" ? { embeddingModel: row.embedding_model } : {}),
+      };
+    });
   }
 
   countLatest(): number {

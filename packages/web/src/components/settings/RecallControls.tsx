@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
 import { t } from '@/i18n/t';
 import { Section, Row } from './SettingsDialog';
@@ -18,6 +18,7 @@ export function RecallControls() {
   const [rerank, setRerank] = useState(true);
   const [embedder, setEmbedder] = useState('nomic-embed-text:latest');
   const [message, setMessage] = useState('');
+  const [progress, setProgress] = useState('');
 
   async function search() {
     const headers = await getApiHeaders();
@@ -36,6 +37,24 @@ export function RecallControls() {
     await search();
   }
 
+  useEffect(() => {
+    if (!progress) return undefined;
+    const timer = window.setInterval(() => { void refreshProgress(); }, 1000);
+    return () => window.clearInterval(timer);
+  }, [progress]);
+
+  async function refreshProgress() {
+    const headers = await getApiHeaders();
+    const res = await fetch(`${getApiBase()}/api/recall/stats`, { headers });
+    const data = (await res.json()) as { reembed?: { total: number; done: number; error?: string } };
+    const job = data.reembed;
+    if (!job || (job.done >= job.total && !job.error)) {
+      setProgress('');
+      return;
+    }
+    setProgress(job.error ?? `${job.done}/${job.total}`);
+  }
+
   async function save() {
     const headers = await getApiHeaders();
     await fetch(`${getApiBase()}/api/recall/settings`, {
@@ -44,6 +63,8 @@ export function RecallControls() {
       body: JSON.stringify({ rerank, embedder }),
     });
     setMessage(t('Saved'));
+    setProgress('0/0');
+    await refreshProgress();
   }
 
   return (
@@ -82,6 +103,7 @@ export function RecallControls() {
         </label>
         <button type="button" onClick={() => void save()} className="self-start rounded-control bg-fill-tsp px-3 py-1 text-sm">{t('Save')}</button>
         {message ? <p className="text-xs text-text-tertiary">{message}</p> : null}
+        {progress ? <p className="text-xs text-text-tertiary">{t('Re-embedding')} {progress}</p> : null}
       </div>
     </Section>
   );

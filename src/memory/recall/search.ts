@@ -23,29 +23,50 @@ export async function searchMemories(
   now = Date.now(),
 ): Promise<SearchHit[]> {
   const scopes = (query.scope ?? []).filter((scope) => query.allowLegal || scope !== LEGAL_SCOPE);
-  const rows = repo.latest(scopes.length > 0 ? scopes : undefined, ["active", "dormant"])
-    .filter((memory) => query.allowLegal || memory.scope !== LEGAL_SCOPE)
+  const scopeArg = scopes.length > 0 ? scopes : undefined;
+  const states = ["active", "dormant"] as const;
+  if (query.text.trim().length === 0) return [];
+  const ftsRanks = repo.ftsRanks(query.text, scopeArg, [...states], 50);
+  const queryVec = await embed(query.text);
+  const population = repo.countLatest();
+  const useBrute = population < config.lsh.bruteForceBelow || !queryVec;
+  const rankOf = new Map<string, number>();
+  const cosineIds = new Set<string>();
+  if (ftsRanks) {
+    for (const hit of ftsRanks) rankOf.set(hit.id, hit.rank);
+    const vectors = useBrute ? repo.vectorScan(scopeArg, [...states]) : [];
+    if (queryVec && !useBrute && scopes[0]) {
+      const index = new LshIndex(queryVec.length, config.lsh);
+      for (const id of repo.lshCandidates(config.models.embedder, scopes[0], index.probes(queryVec))) rankOf.set(id, rankOf.get(id) ?? 49);
+    }
+    const semantic: Array<{ id: string; cosine: number }> = [];
+    for (const row of vectors) {
+      const sameModel = !row.embeddingModel || row.embeddingModel.startsWith(`${config.models.embedder}@`);
+      const cos = queryVec && row.embedding && sameModel ? Math.max(0, cosine(queryVec, row.embedding)) : 0;
+      if (cos > 0) semantic.push({ id: row.id, cosine: cos });
+    }
+    semantic.sort((a, b) => b.cosine - a.cosine);
+    for (const hit of semantic.slice(0, 50)) cosineIds.add(hit.id);
+  }
+  const ids = ftsRanks ? [...new Set([...rankOf.keys(), ...cosineIds])] : [];
+  const rows = ftsRanks
+    ? ids.flatMap((id) => {
+        const memory = repo.get(id);
+        return memory && (query.allowLegal || memory.scope !== LEGAL_SCOPE) ? [memory] : [];
+      })
+    : repo.latest(scopeArg, [...states])
+      .filter((memory) => query.allowLegal || memory.scope !== LEGAL_SCOPE);
+  const filtered = rows
     .filter((memory) => !query.kinds || query.kinds.includes(memory.kind))
     .filter((memory) => query.since === undefined || (memory.eventAt ?? memory.documentAt) >= query.since)
     .filter((memory) => query.until === undefined || (memory.eventAt ?? memory.documentAt) <= query.until);
-  if (rows.length === 0 || query.text.trim().length === 0) return [];
-
-  const lexical = bm25Rank(rows.map((memory) => ({ id: memory.id, content: memory.content })), query.text);
-  const rankOf = new Map(lexical.map((hit) => [hit.id, hit.rank]));
-  const queryVec = await embed(query.text);
-  const useBrute = rows.length < config.lsh.bruteForceBelow || !queryVec;
-  const candidateIds = new Set<string>(lexical.map((hit) => hit.id));
-  if (queryVec && !useBrute) {
-    const index = new LshIndex(queryVec.length, config.lsh);
-    const probes = index.probes(queryVec);
-    for (const id of repo.lshCandidates(config.models.embedder, scopes[0], probes)) candidateIds.add(id);
-  } else {
-    for (const memory of rows) candidateIds.add(memory.id);
+  if (filtered.length === 0) return [];
+  if (!ftsRanks) {
+    for (const hit of bm25Rank(filtered.map((memory) => ({ id: memory.id, content: memory.content })), query.text)) rankOf.set(hit.id, hit.rank);
   }
 
   const fused: SearchHit[] = [];
-  for (const memory of rows) {
-    if (!candidateIds.has(memory.id)) continue;
+  for (const memory of filtered) {
     const bm25RankValue = rankOf.get(memory.id);
     const sameModel = !memory.embeddingModel || memory.embeddingModel.startsWith(`${config.models.embedder}@`);
     const cos = queryVec && memory.embedding && sameModel ? Math.max(0, cosine(queryVec, memory.embedding)) : undefined;
@@ -64,7 +85,7 @@ export async function searchMemories(
       score,
       parts: {
         ...(bm25RankValue !== undefined ? { bm25Rank: bm25RankValue } : {}),
-        ...(cos !== undefined ? { cosine: cos } : {}),
+        ...(cos !== undefined && cos > 0 ? { cosine: cos } : {}),
         recency,
       },
       match,

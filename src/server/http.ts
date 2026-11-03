@@ -1453,7 +1453,10 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           const body = (await readBody(req)) as { rerank?: unknown; embedder?: unknown; reviewModes?: unknown };
           if (!service) return sendJson(res, 200, { ok: false });
           if (typeof body.rerank === "boolean") service.repo.setSetting("rerank", body.rerank ? "1" : "0");
-          if (typeof body.embedder === "string") service.repo.setSetting("embedder", body.embedder.slice(0, 120));
+          if (typeof body.embedder === "string") {
+            service.repo.setSetting("embedder", body.embedder.slice(0, 120));
+            service.startReembed();
+          }
           if (body.reviewModes && typeof body.reviewModes === "object") service.repo.setSetting("reviewModes", JSON.stringify(body.reviewModes));
           sendJson(res, 200, { ok: true });
           return;

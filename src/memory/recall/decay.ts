@@ -27,6 +27,7 @@ export function recomputeProminence(memory: MemoryRecord, config: RecallConfig, 
 export function applyDecay(repo: RecallRepo, config: RecallConfig, now: number): { updated: number } {
   const rows = repo.latest(undefined, ["active", "dormant", "archived", "superseded"]);
   let updated = 0;
+  return repo.transaction(() => {
   for (const memory of rows) {
     const prominence = recomputeProminence(memory, config, now, false);
     let state = memory.state;
@@ -41,6 +42,7 @@ export function applyDecay(repo: RecallRepo, config: RecallConfig, now: number):
     }
   }
   return { updated };
+  });
 }
 
 export function applyForgetting(repo: RecallRepo, config: RecallConfig, now: number): { archived: number; trashed: number; deleted: number } {

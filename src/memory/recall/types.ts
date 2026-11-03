@@ -129,6 +129,7 @@ export interface RecallStats {
   lastSleepAt?: number;
   rerankP50Ms?: number;
   fts: boolean;
+  reembed?: { total: number; done: number; error?: string };
 }
 
 export interface RememberInput {

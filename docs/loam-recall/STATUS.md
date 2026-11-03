@@ -13,7 +13,9 @@ Branch: `feat/loam-recall-second-look` from `origin/main` (`cab46c2`).
 | P6 | Legacy migration, store mirror, runtime wiring |
 | P7 | Second Look read and run modes |
 | P8 | Settings Memory controls and Second Look pane, stream chip |
-| P9 | 21 unit tests passed (`npm run test:recall`) plus the existing memory store suites. Live e2e and LOAD numbers were not measured: no model was downloaded and no GPU run was started. |
-| P10 | Merged into local `main`. Not pushed. |
+| P9 | 23 unit tests passed (`node --import tsx --test` on the recall, review, and MCP suites) and `tsc --noEmit` is clean. Live timings are in LOAD.md. |
+| P10 | Merged into local `main`. Not pushed. No backup branch was created, so there was no archive to delete. |
+
+Follow-up on the same branch: keyword search uses FTS5, decay writes in one transaction, run mode waits for a probe, node probes run under `--permission`, and changing the embedder starts a re-embed whose progress is on the Memory settings pane. That pane was not opened in a browser. A larger sleep was not timed because no generator was loaded.
 
 Clean room: implementation follows the behaviour spec only.

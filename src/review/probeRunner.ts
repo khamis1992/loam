@@ -27,7 +27,7 @@ export function detectRuntimes(env: NodeJS.ProcessEnv = process.env): ProbeRunti
 /** Run one probe inside the review copy. Network access is not granted: no proxy env is forwarded. */
 export function runProbe(request: ProbeRequest): Promise<ProbeResult> {
   const command = request.runtime === "node"
-    ? { file: process.execPath, args: ["-e", request.source] }
+    ? { file: process.execPath, args: ["--permission", `--allow-fs-read=${request.cwd}`, "-e", request.source] }
     : { file: "powershell.exe", args: ["-NoProfile", "-NonInteractive", "-Command", request.source] };
   return new Promise((resolve) => {
     const child = spawn(command.file, command.args, {
