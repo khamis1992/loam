@@ -2312,7 +2312,7 @@ loadAgents();
         // D14: event-trigger deliveries (HMAC-verified webhook / GitHub events).
         if (await handleAutomationsRoutes(req, res, p)) return;
         // Cap G §4.15.2: /api/app-projects/* (Agent Studio App Builder).
-        if (await handleAppBuilderRoutes(req, res, p, url)) return;
+        if (await handleAppBuilderRoutes(req, res, p, url, { cfg, ollama, runTask })) return;
         // UX-W3: shared board kanban (/api/board/*) — the Board page's backend.
         if (await handleBoardRoutes(req, res, p)) return;
         if (await handleAutoVideoRoutes(req, res, p)) return;

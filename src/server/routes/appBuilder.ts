@@ -27,6 +27,8 @@ import { appUsage } from "../../appbuilder/metering.js";
 import { aiUsage, defaultProvider, setDefaultProvider, setProjectAi, projectAiConfig, testAiKey, stripeStatus, setAppStripe } from "../../appbuilder/localCloud.js";
 import { listRuntimeErrors, clearRuntimeErrors, fixPromptFor } from "../../appbuilder/runtimeErrors.js";
 import { THEMES, applyTheme } from "../../appbuilder/themes.js";
+import { handleCompanyRoutes } from "./company.js";
+import type { CompanyRuntimeDeps } from "../../appbuilder/company/runtime.js";
 import { applyTextEdit, textEditPrompt } from "../../appbuilder/textEdit.js";
 import { approvePlanDraft, declinePlanDraft, editPlanDraft, resolveQuestionsCard } from "../../appbuilder/lead.js";
 import { appRuntime } from "../../appbuilder/runtime.js";
@@ -116,7 +118,7 @@ function publicVersion(v: AppVersion & { dbSnapshot?: string | null; cover?: str
 }
 
 /** Returns true when the request was handled. */
-export async function handleAppBuilderRoutes(req: http.IncomingMessage, res: http.ServerResponse, p: string, url: URL): Promise<boolean> {
+export async function handleAppBuilderRoutes(req: http.IncomingMessage, res: http.ServerResponse, p: string, url: URL, deps?: CompanyRuntimeDeps): Promise<boolean> {
   if (!p.startsWith("/api/app-projects")) return false;
   ensureAppBuilderSchema();
   const segments = p.slice("/api/app-projects".length).split("/").filter(Boolean);
@@ -664,6 +666,8 @@ export async function handleAppBuilderRoutes(req: http.IncomingMessage, res: htt
     }
     return sendJson(res, 200, { hits }), true;
   }
+
+  if (await handleCompanyRoutes(req, res, project, sub, (maxBytes) => readBody(req, maxBytes), deps)) return true;
 
   // ---- later-wave surfaces (§4.7.7/§4.7.8, §4.9, §4.10): not run-engine contracts ----
   if (["db", "app-users", "export"].includes(area)) {
