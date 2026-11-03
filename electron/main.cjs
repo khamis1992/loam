@@ -223,20 +223,38 @@ function prepareUserData() {
   }
 }
 
+function requestLocal(pathname, timeoutMs) {
+  return new Promise((resolve) => {
+    const req = http.get(BASE + pathname, { headers: authHeader(localAuthToken) }, (res) => {
+      let body = "";
+      res.on("data", chunk => { body += chunk; });
+      res.on("end", () => resolve({ kind: "response", status: res.statusCode || 0, body }));
+    });
+    req.on("error", () => resolve({ kind: "down" }));
+    req.setTimeout(timeoutMs, () => { req.destroy(); resolve({ kind: "timeout" }); });
+  });
+}
+
 function ping() {
   const dataPath = path.resolve(process.env.LOAM_DATA_DIR || process.env.MANUS_LOCAL_DATA_DIR || path.join(ROOT, "data"));
   const profileId = createHash("sha256").update(process.platform === "win32" ? dataPath.toLowerCase() : dataPath).digest("hex");
-  return new Promise((resolve) => {
-    const req = http.get(BASE + "/api/identity", { headers: authHeader(localAuthToken) }, (res) => {
-      let body = "";
-      res.on("data", chunk => { body += chunk; });
-      res.on("end", () => {
-        try { const data = JSON.parse(body); resolve(res.statusCode === 200 && data.application === "Loam" && data.version === EXPECTED_VERSION && data.apiVersion === 1 && data.profileId === profileId); }
-        catch { resolve(false); }
-      });
-    });
-    req.on("error", () => resolve(false));
-    req.setTimeout(4000, () => { req.destroy(); resolve(false); });
+  return requestLocal("/api/identity", 4000).then((result) => {
+    if (result.kind !== "response" || result.status !== 200) return false;
+    try {
+      const data = JSON.parse(result.body);
+      return data.application === "Loam" && data.version === EXPECTED_VERSION && data.apiVersion === 1 && data.profileId === profileId;
+    } catch {
+      return false;
+    }
+  });
+}
+
+/** up: health answered. busy: the socket was accepted but the loop is in a model call. down: nothing is listening. */
+function serverLiveness() {
+  return requestLocal("/api/health", 8000).then((result) => {
+    if (result.kind === "timeout") return "busy";
+    if (result.kind === "response" && result.status === 200) return "up";
+    return "down";
   });
 }
 
@@ -290,11 +308,14 @@ async function ensureServer() {
     const startupDeadline = Date.now() + 120_000;
     while (Date.now() < startupDeadline) {
       if (await ping()) return attempt === 1 ? "spawned" : "spawned-retry" + attempt;
+      const live = await serverLiveness();
+      if (live === "up" || live === "busy") return attempt === 1 ? "spawned" : "spawned-retry" + attempt;
       if (exited) break;
       await new Promise((r) => setTimeout(r, 500));
     }
     if (!exited) {
-      // Keep ownership of this live child; never overwrite it with another attempt.
+      const live = await serverLiveness();
+      if (live === "up" || live === "busy") return "spawned";
       try { serverChild.kill(); } catch {}
       throw new Error("انتهت مهلة بدء خادم Loam. راجع اتصال خدمات MCP ثم أعد التشغيل.");
     }
@@ -1187,19 +1208,19 @@ let watchdogRestarting = false;
 function startServerWatchdog() {
   setInterval(async () => {
     if (watchdogRestarting || quitting) return;
-    const ok = await ping();
-    if (ok) {
+    const live = await serverLiveness();
+    if (live === "up" || live === "busy") {
       watchdogFailures = 0;
       return;
     }
     watchdogFailures += 1;
-    if (watchdogFailures < 12) return;
+    if (watchdogFailures < 6) return;
     watchdogFailures = 0;
     if (!serverChild) {
-      console.error("[electron] watchdog: external server unresponsive (not ours to restart)");
+      console.error("[electron] watchdog: external server unreachable (not ours to restart)");
       return;
     }
-    console.error("[electron] watchdog: server unresponsive 3x — killing and respawning server child");
+    console.error("[electron] watchdog: server unreachable — restarting server child");
     try { serverChild.kill(); } catch (e) {}
     serverChild = null;
     watchdogRestarting = true;

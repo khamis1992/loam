@@ -14,9 +14,12 @@ import { createAdapter } from "../../models/adapters/index.js";
 import { getRegistry, reloadRegistry } from "../../models/registry/init.js";
 import { resolveProviderApiKey } from "../../models/registry/registryClient.js";
 import { saveRegistry } from "../../models/registry/store.js";
+import { applyModelPatch, applyProviderPatch, deleteModel, deleteProviderCascade, reorderChain, setModelDefaults } from "../../models/registry/mutate.js";
 import { redactSecretsFromObject } from "../../models/registry/redact.js";
 import { ProviderZ, ModelZ } from "../../models/registry/schema.js";
 import { getVault } from "../../models/secrets/vault.js";
+import { migrateFromConfig } from "../../models/registry/migrate.js";
+import { loadConfig } from "../../config.js";
 import { log } from "../../log.js";
 import type { AuthScheme, ModelCapabilities, ModelRecord, ProviderKind, ProviderRecord } from "../../models/registry/types.js";
 
@@ -49,6 +52,8 @@ export interface ProviderDraftInput {
   apiKey?: string;
   enabled?: boolean;
   extraHeaders?: Record<string, string>;
+  timeoutMs?: number;
+  envVar?: string;
 }
 
 /** Build a schema-valid provider. The raw key is handed to `putSecret` and never copied onto the record. */
@@ -64,9 +69,16 @@ export async function buildProviderDraft(
   if (label.length > 60) throw new Error("Label too long (max 60 characters)");
   const now = new Date().toISOString();
   const key = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
+  const envVar = typeof body.envVar === "string" ? body.envVar.trim() : "";
+  if (envVar && !/^[A-Z_][A-Z0-9_]{0,63}$/.test(envVar)) throw new Error("Environment variable must be uppercase");
   const auth: AuthScheme = key
     ? authForKind(kind, (await putSecret(key, label)).credentialId)
-    : { type: "none" };
+    : envVar
+      ? { type: "env", envVar }
+      : { type: "none" };
+  const timeoutMs = typeof body.timeoutMs === "number" && Number.isInteger(body.timeoutMs) && body.timeoutMs >= 5_000 && body.timeoutMs <= 1_800_000
+    ? body.timeoutMs
+    : 30_000;
   return ProviderZ.parse({
     id: uniqueProviderId(label, takenIds),
     kind,
@@ -76,7 +88,7 @@ export async function buildProviderDraft(
     enabled: body.enabled ?? true,
     auth,
     extraHeaders: body.extraHeaders ?? {},
-    timeoutMs: 30_000,
+    timeoutMs,
     createdAt: now,
     updatedAt: now,
   });
@@ -84,7 +96,7 @@ export async function buildProviderDraft(
 
 export function buildModelDraft(
   provider: ProviderRecord,
-  modelData: { remoteId?: string; label?: string; capabilities?: Partial<ModelCapabilities>; contextWindow?: number },
+  modelData: { remoteId?: string; label?: string; capabilities?: Partial<ModelCapabilities>; contextWindow?: number; defaults?: { temperature?: number } },
 ): ModelRecord {
   const remoteId = (modelData.remoteId ?? "").trim();
   if (!remoteId) throw new Error("remoteId is required");
@@ -107,7 +119,9 @@ export function buildModelDraft(
       maxOutputTokens: given.maxOutputTokens ?? null,
       source: given.source ?? "provider-list",
     },
-    defaults: {},
+    defaults: typeof modelData.defaults?.temperature === "number" && modelData.defaults.temperature >= 0 && modelData.defaults.temperature <= 2
+      ? { temperature: modelData.defaults.temperature }
+      : {},
     tags: [],
   });
 }
@@ -126,8 +140,90 @@ function adapterKind(kind: string): ProviderKind | null {
  * @param res - HTTP response
  * @returns true if handled, false otherwise
  */
+function readBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk) => chunks.push(chunk));
+    req.on("end", () => {
+      try { resolve(JSON.parse(Buffer.concat(chunks).toString() || "{}") as Record<string, unknown>); }
+      catch (error) { reject(error); }
+    });
+    req.on("error", reject);
+  });
+}
+
+function modelIdFrom(pathname: string): string {
+  return decodeURIComponent(pathname.slice("/api/model-registry/models/".length));
+}
+
+function capabilityPatch(value: unknown): Partial<ModelCapabilities> | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const source = value as Record<string, unknown>;
+  const patch: Partial<ModelCapabilities> = {};
+  if (source.tools === true || source.tools === false || source.tools === "unknown") patch.tools = source.tools;
+  if (source.vision === true || source.vision === false || source.vision === "unknown") patch.vision = source.vision;
+  if (source.thinking === "none" || source.thinking === "toggle" || source.thinking === "always" || source.thinking === "unknown") patch.thinking = source.thinking;
+  if (source.contextWindow === null) patch.contextWindow = null;
+  else if (typeof source.contextWindow === "number" && Number.isInteger(source.contextWindow) && source.contextWindow > 0) patch.contextWindow = source.contextWindow;
+  if (source.maxOutputTokens === null) patch.maxOutputTokens = null;
+  else if (typeof source.maxOutputTokens === "number" && Number.isInteger(source.maxOutputTokens) && source.maxOutputTokens > 0) patch.maxOutputTokens = source.maxOutputTokens;
+  if (source.source === "user" || source.source === "probe") patch.source = source.source;
+  return Object.keys(patch).length > 0 ? patch : undefined;
+}
+
+function defaultsPatch(value: unknown): ModelRecord["defaults"] | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const source = value as Record<string, unknown>;
+  if (typeof source.temperature !== "number" || source.temperature < 0 || source.temperature > 2) return undefined;
+  return { temperature: source.temperature };
+}
+
+function rememberTest(providerId: string | undefined, result: { ok: boolean; modelsFound?: number; error?: { code: "auth" | "unreachable" | "unknown"; message: string } }): void {
+  if (!providerId) return;
+  const registry = getRegistry();
+  const provider = registry?.providers.find((item) => item.id === providerId);
+  if (!registry || !provider) return;
+  provider.lastTest = {
+    at: new Date().toISOString(),
+    ok: result.ok,
+    ...(typeof result.modelsFound === "number" ? { modelsFound: result.modelsFound } : {}),
+    ...(result.error ? { error: result.error } : {}),
+  };
+  provider.updatedAt = new Date().toISOString();
+  saveRegistry(registry);
+}
+
+function limitPatch(value: unknown): ModelRecord["limits"] | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const source = value as Record<string, unknown>;
+  const limits: NonNullable<ModelRecord["limits"]> = {};
+  for (const key of ["rpm", "rpd", "tpm", "tpd"] as const) {
+    const number = source[key];
+    if (typeof number === "number" && Number.isInteger(number) && number > 0) limits[key] = number;
+  }
+  return limits;
+}
+
+async function probeTools(provider: ProviderRecord, remoteId: string): Promise<boolean> {
+  const apiKey = await resolveProviderApiKey(provider);
+  const authHeader = provider.auth.type === "header" ? provider.auth.header : undefined;
+  const adapter = createAdapter(provider.kind, {
+    baseUrl: provider.baseUrl,
+    ...(apiKey ? { apiKey } : {}),
+    ...(authHeader ? { authHeader } : {}),
+    ...(Object.keys(provider.extraHeaders).length > 0 ? { extraHeaders: provider.extraHeaders } : {}),
+    timeoutMs: Math.min(provider.timeoutMs || 30_000, 20_000),
+  });
+  const result = await adapter.chat({
+    model: remoteId,
+    messages: [{ role: "user", content: "Call the ping tool." }],
+    tools: [{ type: "function", function: { name: "ping", description: "ping", parameters: { type: "object", properties: {} } } }],
+  });
+  return result.toolCalls.length > 0;
+}
+
 export function handleModelRegistryRoutes(req: http.IncomingMessage, res: http.ServerResponse): boolean {
-  const url = req.url ?? "";
+  const url = (req.url ?? "").split("?")[0] ?? "";
 
   // GET /api/model-registry - List everything
   if (url === "/api/model-registry" && req.method === "GET") {
@@ -259,6 +355,7 @@ export function handleModelRegistryRoutes(req: http.IncomingMessage, res: http.S
 
   // POST /api/model-registry/test - Test provider connection
   if (url === "/api/model-registry/test" && req.method === "POST") {
+    let testedProviderId: string | undefined;
     (async () => {
       try {
         const chunks: Buffer[] = [];
@@ -283,10 +380,11 @@ export function handleModelRegistryRoutes(req: http.IncomingMessage, res: http.S
           return;
         }
 
+        testedProviderId = typeof body.providerId === "string" ? body.providerId : undefined;
         let apiKey = typeof body.apiKey === "string" && body.apiKey.trim() ? body.apiKey.trim() : undefined;
         let authHeader = typeof body.authHeader === "string" ? body.authHeader : undefined;
-        if (!apiKey && typeof body.providerId === "string") {
-          const provider = getRegistry()?.providers.find((p) => p.id === body.providerId);
+        if (!apiKey && testedProviderId) {
+          const provider = getRegistry()?.providers.find((p) => p.id === testedProviderId);
           if (provider) {
             apiKey = await resolveProviderApiKey(provider);
             if (provider.auth.type === "header") authHeader = provider.auth.header;
@@ -304,18 +402,28 @@ export function handleModelRegistryRoutes(req: http.IncomingMessage, res: http.S
         if (!listModels) throw new Error("هذا البروتوكول لا يسرد النماذج");
         const models = await listModels.call(adapter);
         
+        rememberTest(testedProviderId, { ok: true, modelsFound: models.length });
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ 
           success: true, 
-          message: `Connected successfully. Found ${models.length} model(s).`,
+          code: "connected",
+          message: "متصل",
           modelCount: models.length,
         }));
       } catch (error) {
-        log.error(`[registry] Connection test failed: ${error}`);
+        const message = (error instanceof Error ? error.message : String(error)).slice(0, 500);
+        const code = /401|403|unauthorized|invalid api key|authentication/i.test(message)
+          ? "auth"
+          : /ECONNREFUSED|ENOTFOUND|fetch failed|timeout|aborted|unreachable/i.test(message)
+            ? "unreachable"
+            : "unknown";
+        rememberTest(testedProviderId, { ok: false, error: { code, message } });
+        log.error(`[registry] Connection test failed: ${code}`);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ 
-          success: false, 
-          error: error instanceof Error ? error.message : String(error),
+          success: false,
+          code,
+          error: code === "auth" ? "المفتاح مرفوض" : code === "unreachable" ? "غير متاح" : message,
         }));
       }
     })();
@@ -400,6 +508,11 @@ export function handleModelRegistryRoutes(req: http.IncomingMessage, res: http.S
       }
 
       const providerId = match[1];
+      if (!providerId) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Invalid URL format" }));
+        return true;
+      }
       const providerIndex = registry.providers.findIndex((p) => p.id === providerId);
       
       if (providerIndex === -1) {
@@ -408,22 +521,10 @@ export function handleModelRegistryRoutes(req: http.IncomingMessage, res: http.S
         return true;
       }
 
-      const provider = registry.providers[providerIndex];
-
-      // TODO: Delete vault key if auth.type === "header" && credentialId exists
-      // For now, just remove from registry
-
-      // Remove provider
-      registry.providers.splice(providerIndex, 1);
-
-      // Remove associated models
-      const removedModels = registry.models.filter((m) => m.providerId === providerId);
-      registry.models = registry.models.filter((m) => m.providerId !== providerId);
-
-      // Save registry
+      const removedModels = deleteProviderCascade(registry, providerId);
       saveRegistry(registry);
 
-      log.info(`[registry] Deleted provider ${provider?.label ?? providerId} and ${removedModels.length} associated models`);
+      log.info(`[registry] Deleted provider ${providerId} and ${removedModels.length} associated models`);
 
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, removedModels: removedModels.length }));
@@ -501,6 +602,230 @@ export function handleModelRegistryRoutes(req: http.IncomingMessage, res: http.S
       }
     })();
     
+    return true;
+  }
+
+  if (url.startsWith("/api/model-registry/providers/") && req.method === "PUT" && !url.includes("/discover")) {
+    const registry = getRegistry();
+    if (!registry) {
+      res.writeHead(503, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Registry not initialized" }));
+      return true;
+    }
+    const providerId = url.slice("/api/model-registry/providers/".length);
+    const provider = registry.providers.find((item) => item.id === providerId);
+    if (!provider) {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Provider not found" }));
+      return true;
+    }
+    void readBody(req).then(async (body) => {
+      if (typeof body.label === "string" || typeof body.baseUrl === "string" || typeof body.enabled === "boolean" || typeof body.timeoutMs === "number") {
+        applyProviderPatch(provider, {
+          label: typeof body.label === "string" ? body.label : undefined,
+          baseUrl: typeof body.baseUrl === "string" ? body.baseUrl : undefined,
+          enabled: typeof body.enabled === "boolean" ? body.enabled : undefined,
+          timeoutMs: typeof body.timeoutMs === "number" ? body.timeoutMs : undefined,
+          extraHeaders: body.extraHeaders && typeof body.extraHeaders === "object" && !Array.isArray(body.extraHeaders)
+            ? body.extraHeaders as Record<string, string>
+            : undefined,
+        });
+      }
+      if (body.removeKey === true) provider.auth = { type: "none" };
+      if (typeof body.apiKey === "string" && body.apiKey.trim()) {
+        const stored = await getVault().put(body.apiKey.trim(), provider.label);
+        provider.auth = authForKind(provider.kind, stored.credentialId);
+      }
+      saveRegistry(registry);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(redactSecretsFromObject(provider)));
+    }).catch((error) => {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
+    });
+    return true;
+  }
+
+  if (req.method === "POST" && url.startsWith("/api/model-registry/providers/") && url.endsWith("/probe")) {
+    const registry = getRegistry();
+    if (!registry) {
+      res.writeHead(503, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Registry not initialized" }));
+      return true;
+    }
+    const providerId = url.slice("/api/model-registry/providers/".length, -"/probe".length);
+    const provider = registry.providers.find((item) => item.id === providerId);
+    if (!provider) {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Provider not found" }));
+      return true;
+    }
+    void readBody(req).then(async (body) => {
+      const remoteId = typeof body.remoteId === "string" ? body.remoteId.trim() : "";
+      if (!remoteId) throw new Error("remoteId is required");
+      const tools = await probeTools(provider, remoteId);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ tools }));
+    }).catch((error) => {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ tools: "unknown", error: error instanceof Error ? error.message : String(error) }));
+    });
+    return true;
+  }
+
+  if (req.method === "POST" && url.startsWith("/api/model-registry/models/") && url.endsWith("/probe")) {
+    const registry = getRegistry();
+    if (!registry) {
+      res.writeHead(503, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Registry not initialized" }));
+      return true;
+    }
+    const modelId = decodeURIComponent(url.slice("/api/model-registry/models/".length, -"/probe".length));
+    const model = registry.models.find((item) => item.id === modelId);
+    const provider = model ? registry.providers.find((item) => item.id === model.providerId) : undefined;
+    if (!model || !provider) {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Model not found" }));
+      return true;
+    }
+    void (async () => {
+      const tools = await probeTools(provider, model.remoteId);
+      applyModelPatch(model, { capabilities: { tools, source: "probe" } });
+      saveRegistry(registry);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ tools }));
+    })().catch((error) => {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ tools: "unknown", error: error instanceof Error ? error.message : String(error) }));
+    });
+    return true;
+  }
+
+  if (url.startsWith("/api/model-registry/models/") && (req.method === "PUT" || req.method === "DELETE")) {
+    const registry = getRegistry();
+    if (!registry) {
+      res.writeHead(503, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Registry not initialized" }));
+      return true;
+    }
+    const modelId = modelIdFrom(url);
+    const model = registry.models.find((item) => item.id === modelId);
+    if (!model) {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Model not found" }));
+      return true;
+    }
+    if (req.method === "DELETE") {
+      void readBody(req).then((body) => {
+        const replacement = typeof body.replacementId === "string" ? body.replacementId : null;
+        deleteModel(registry, modelId, replacement);
+        saveRegistry(registry);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+      }).catch((error) => {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
+      });
+      return true;
+    }
+    void readBody(req).then((body) => {
+      applyModelPatch(model, {
+        label: typeof body.label === "string" ? body.label : undefined,
+        enabled: typeof body.enabled === "boolean" ? body.enabled : undefined,
+        tags: Array.isArray(body.tags) ? body.tags.filter((tag): tag is string => typeof tag === "string") : undefined,
+        capabilities: capabilityPatch(body.capabilities),
+        defaults: defaultsPatch(body.defaults),
+        limits: limitPatch(body.limits),
+      });
+      saveRegistry(registry);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(model));
+    }).catch((error) => {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
+    });
+    return true;
+  }
+
+  if (url.startsWith("/api/model-registry/chains/") && req.method === "PUT") {
+    const registry = getRegistry();
+    if (!registry) {
+      res.writeHead(503, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Registry not initialized" }));
+      return true;
+    }
+    const chainId = decodeURIComponent(url.slice("/api/model-registry/chains/".length));
+    void readBody(req).then((body) => {
+      const modelIds = Array.isArray(body.modelIds) ? body.modelIds.filter((id): id is string => typeof id === "string") : [];
+      reorderChain(registry, chainId, modelIds);
+      saveRegistry(registry);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, modelIds }));
+    }).catch((error) => {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
+    });
+    return true;
+  }
+
+  if (url === "/api/model-registry/defaults" && req.method === "PUT") {
+    const registry = getRegistry();
+    if (!registry) {
+      res.writeHead(503, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Registry not initialized" }));
+      return true;
+    }
+    void readBody(req).then((body) => {
+      setModelDefaults(
+        registry,
+        typeof body.defaultModelId === "string" ? body.defaultModelId : null,
+        typeof body.fallbackModelId === "string" ? body.fallbackModelId : null,
+      );
+      saveRegistry(registry);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+    }).catch((error) => {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
+    });
+    return true;
+  }
+
+  if (url === "/api/model-registry/reimport" && req.method === "POST") {
+    const registry = getRegistry();
+    if (!registry) {
+      res.writeHead(503, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Registry not initialized" }));
+      return true;
+    }
+    void (async () => {
+      const imported = await migrateFromConfig({
+        config: loadConfig(),
+        vault: getVault(),
+        fetchOllamaTags: async () => [],
+        mode: "desktop",
+        mergeMode: true,
+        existingRegistry: registry,
+      });
+      for (const provider of registry.providers) {
+        if (!imported.providers.some((item) => item.id === provider.id)) imported.providers.push(provider);
+      }
+      for (const model of registry.models) {
+        if (!imported.models.some((item) => item.id === model.id)) imported.models.push(model);
+      }
+      registry.providers = imported.providers;
+      registry.models = imported.models;
+      registry.chains = imported.chains.length > 0 ? imported.chains : registry.chains;
+      registry.defaultModelId = imported.defaultModelId ?? registry.defaultModelId;
+      registry.fallbackModelId = imported.fallbackModelId ?? registry.fallbackModelId;
+      registry.migratedFrom = imported.migratedFrom;
+      saveRegistry(registry);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, providers: registry.providers.length, models: registry.models.length }));
+    })().catch((error) => {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
+    });
     return true;
   }
 

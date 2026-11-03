@@ -213,6 +213,8 @@
   z-index: 1000;
 }
 
+.wizard-step { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; }
+.wizard-step[hidden] { display: none; }
 .modal-dialog {
   background: white;
   border-radius: 12px;
