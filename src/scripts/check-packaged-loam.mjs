@@ -14,7 +14,7 @@ await fs.writeFile(path.join(profile,'config.json'),JSON.stringify({workspace:pa
  filesystem:{sandbox:true,command:'node',args:['${ROOT}/node_modules/@modelcontextprotocol/server-filesystem/dist/index.js','${WORKSPACE}']},
  memory:{command:'node',args:['${ROOT}/node_modules/@modelcontextprotocol/server-memory/dist/index.js'],env:{MEMORY_FILE_PATH:path.join(profile,'data','mcp-memory.json')}},
  'sequential-thinking':{command:'node',args:['${ROOT}/node_modules/@modelcontextprotocol/server-sequential-thinking/dist/index.js']},
- 'memory-skills':{command:'node',args:['${ROOT}/addons/memory-skills-mcp/dist/server.cjs'],env:{MEMSKILLS_OLLAMA_URL:'http://127.0.0.1:11434',MEMSKILLS_EMBED_MODEL:'nomic-embed-text:latest',MEMSKILLS_DATA_DIR:path.join(profile,'data','memory-skills'),MEMSKILLS_SKILLS_DIR:path.join(profile,'skills')}}, 
+ 'memory-skills':{command:'node',args:['${ROOT}/addons/memory-skills-mcp/dist/server.cjs'],env:{MEMSKILLS_OLLAMA_URL:'http://127.0.0.1:11434',MEMSKILLS_EMBED_MODEL:'nomic-embed-text:latest',MEMSKILLS_DATA_DIR:path.join(profile,'data','memory-skills'),MEMSKILLS_SKILLS_DIR:path.join(profile,'skills')}},
 }}));
 const env={...process.env,LOAM_USER_DATA_DIR:profile,LOAM_PORT:'13939',AS_PROTOCOL_PORT:'13940',LOAM_MCP_BRIDGE_PORT:'13003',LOAM_AUTH_DISABLED:'true',AGENT_STUDIO_LEGACY_UI:'1',LOAM_ACCEPTANCE_DEBUG_PORT:'19222'};
 delete env.ELECTRON_RUN_AS_NODE;delete env.LOAM_CONFIG;delete env.MANUS_LOCAL_CONFIG;delete env.LOAM_DATA_DIR;delete env.MANUS_LOCAL_DATA_DIR;
