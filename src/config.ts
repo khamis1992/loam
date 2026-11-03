@@ -475,11 +475,9 @@ export const DEFAULTS: Config = {
   failover: {
     providers: [
       { id: "ollama", kind: "ollama", baseUrl: "http://127.0.0.1:11434", model: "glm-5.3:cloud", apiKeyEnv: "", enabled: true },
-      // OpenCode Go: the official OpenAI-compatible endpoint is
-      // https://opencode.ai/inference/go/openai/v1/chat/completions (OpenCode "Go" docs,
-      // Endpoints table). The old `https://api.opencode.ai/v1` host does not serve this API
-      // (GET /v1/models there returns 404).
-      { id: "opencode-go", kind: "openai-compatible", baseUrl: "https://opencode.ai/inference/go/openai/v1", model: "opencode-go", apiKeyEnv: "OPENCODE_API_KEY", enabled: true },
+      // OpenCode Go: GET /models on /inference/go/openai/v1 returns 404.
+      // https://opencode.ai/zen/go/v1/models answers with the model list.
+      { id: "opencode-go", kind: "openai-compatible", baseUrl: "https://opencode.ai/zen/go/v1", model: "opencode-go", apiKeyEnv: "OPENCODE_API_KEY", enabled: true },
       // freellmapi is a SELF-HOSTED OpenAI-compatible router, not a public host, and no
       // public endpoint is documented. The repo's own evidence is a local router:
       // docs/agents-state.json records `freellmapi/auto unreachable: localhost:31415 down`.
