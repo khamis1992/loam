@@ -38,6 +38,7 @@ const directory = {
 
 describe('ModelMenu (fictional tiers removed — real picker only)', () => {
   afterEach(() => {
+    sessionStorage.clear();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
