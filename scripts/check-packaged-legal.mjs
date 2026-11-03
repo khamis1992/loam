@@ -51,6 +51,12 @@ try {
   await win.getByPlaceholder('Matter title').fill('Packaged OCR synthetic matter');
   await win.getByRole('button', { name: 'New matter' }).click();
   await win.getByRole('link', { name: /Packaged OCR synthetic matter/ }).click();
+  await win.getByRole('tab', { name: 'work', exact: true }).click();
+  await win.getByLabel('Work item title').fill('Packaged hearing');
+  await win.getByLabel('Work item type').selectOption('hearing');
+  await win.getByLabel('Due date').fill('2092-02-01');
+  await win.getByRole('button', { name: 'Add work item' }).click();
+  await win.getByRole('heading', { name: 'Packaged hearing' }).waitFor({ timeout: 30000 });
   const uploadResponse = win.waitForResponse((response) => response.request().method() === 'POST' && response.url().includes('/documents'));
   await win.locator('input[type=file]').first().setInputFiles({ name: 'arabic-contract.png', mimeType: 'image/png', buffer: image });
   assert.equal((await uploadResponse).status(), 201);

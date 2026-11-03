@@ -76,6 +76,17 @@ test('matter, evidence, document analysis, redline and exact approved download',
   await page.getByRole('link', { name: /مسألة E2E اصطناعية/ }).click();
   await expect(page).toHaveURL(/\/legal\/matter\?id=mt-/);
 
+  await page.getByRole('tab', { name: 'work', exact: true }).click();
+  await page.getByLabel('Work item title').fill('جلسة E2E');
+  await page.getByLabel('Work item type').selectOption('hearing');
+  await page.getByLabel('Due date').fill('2092-02-01');
+  await page.getByLabel('Assignee').fill('المحامي المختبر');
+  await page.getByRole('button', { name: 'Add work item' }).click();
+  await expect(page.getByRole('heading', { name: 'جلسة E2E' })).toBeVisible();
+  await page.getByLabel('Status: جلسة E2E').selectOption('in_progress');
+  await expect(page.getByLabel('Status: جلسة E2E')).toHaveValue('in_progress');
+  await expect(page.getByRole('status')).toContainText('2092-02-01');
+
   await page.locator('input[type=file]').first().setInputFiles({
     name: 'evidence.txt', mimeType: 'text/plain', buffer: Buffer.from('المبلغ 1000 ريال بتاريخ 2024/01/15.', 'utf8'),
   });
