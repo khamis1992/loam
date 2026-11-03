@@ -16,7 +16,7 @@ await fs.writeFile(configPath, JSON.stringify({
   computerUse: { screenshotDir: path.join(profile, 'workspace', '.screenshots') },
 }));
 const port = 13949;
-const env = { ...process.env, LOAM_USER_DATA_DIR: profile, LOAM_CONFIG: configPath, LOAM_PORT: String(port), LOAM_MCP_BRIDGE_PORT: '13013' };
+const env = { ...process.env, LOAM_USER_DATA_DIR: profile, LOAM_CONFIG: configPath, LOAM_PORT: String(port), AS_PROTOCOL_PORT: '13950', LOAM_MCP_BRIDGE_PORT: '13013' };
 delete env.ELECTRON_RUN_AS_NODE;
 delete env.MANUS_LOCAL_CONFIG;
 delete env.LOAM_DATA_DIR;

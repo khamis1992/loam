@@ -9,8 +9,15 @@ import { extractFile } from '@electron/asar';
 const expectedVersion=JSON.parse(await fs.readFile('package.json','utf8')).version;
 const executable=path.resolve(process.argv[2]||'release/win-unpacked/Loam.exe');
 const profile=process.env.LOAM_PACKAGED_PROFILE||await fs.mkdtemp(path.join(os.tmpdir(),'loam-packaged-'));
-const env={...process.env,LOAM_USER_DATA_DIR:profile,LOAM_PORT:'13939',LOAM_MCP_BRIDGE_PORT:'13003',LOAM_AUTH_DISABLED:'true',AGENT_STUDIO_LEGACY_UI:'1',LOAM_ACCEPTANCE_DEBUG_PORT:'19222'};
-delete env.ELECTRON_RUN_AS_NODE;delete env.LOAM_CONFIG;delete env.MANUS_LOCAL_CONFIG;delete env.LOAM_DATA_DIR;delete env.MANUS_LOCAL_DATA_DIR;delete env.AS_PROTOCOL_PORT;
+await fs.mkdir(profile,{recursive:true});
+await fs.writeFile(path.join(profile,'config.json'),JSON.stringify({workspace:path.join(profile,'workspace'),memory:{file:path.join(profile,'data','memory.json')},computerUse:{screenshotDir:path.join(profile,'workspace','.screenshots')},mcpServers:{
+ filesystem:{sandbox:true,command:'node',args:['${ROOT}/node_modules/@modelcontextprotocol/server-filesystem/dist/index.js','${WORKSPACE}']},
+ memory:{command:'node',args:['${ROOT}/node_modules/@modelcontextprotocol/server-memory/dist/index.js'],env:{MEMORY_FILE_PATH:path.join(profile,'data','mcp-memory.json')}},
+ 'sequential-thinking':{command:'node',args:['${ROOT}/node_modules/@modelcontextprotocol/server-sequential-thinking/dist/index.js']},
+ 'memory-skills':{command:'node',args:['${ROOT}/addons/memory-skills-mcp/dist/server.cjs'],env:{MEMSKILLS_OLLAMA_URL:'http://127.0.0.1:11434',MEMSKILLS_EMBED_MODEL:'nomic-embed-text:latest',MEMSKILLS_DATA_DIR:path.join(profile,'data','memory-skills'),MEMSKILLS_SKILLS_DIR:path.join(profile,'skills')}}, 
+}}));
+const env={...process.env,LOAM_USER_DATA_DIR:profile,LOAM_PORT:'13939',AS_PROTOCOL_PORT:'13940',LOAM_MCP_BRIDGE_PORT:'13003',LOAM_AUTH_DISABLED:'true',AGENT_STUDIO_LEGACY_UI:'1',LOAM_ACCEPTANCE_DEBUG_PORT:'19222'};
+delete env.ELECTRON_RUN_AS_NODE;delete env.LOAM_CONFIG;delete env.MANUS_LOCAL_CONFIG;delete env.LOAM_DATA_DIR;delete env.MANUS_LOCAL_DATA_DIR;
 let child;let browser;let diagnostics='';
 try {
  child=spawn(executable,{env,windowsHide:true,stdio:['ignore','pipe','pipe']});
