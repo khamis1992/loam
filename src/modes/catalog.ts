@@ -1,4 +1,9 @@
 /** Loam's first-party modes. Tool access is enforced by ToolRegistry.forMode. */
+import { reverseEngineerMode } from "./reverseEngineer.js";
+import { CUA_DRIVER_TOOL_ALLOWLIST } from "../tools/cuaDriverAllowlist.js";
+import { getSettings } from "../server/settings.js";
+import { KNOWLEDGE_TOOL_NAMES } from "../server/knowledgeTools.js";
+
 export interface LoamMode {
   id: string; label: string; labelAr: string; icon: string; hue: number; hue2: number;
   tagline: string; description: string; outputHint: string; readOnly: boolean;
@@ -18,28 +23,43 @@ const PREVIEW = ["preview_serve", "preview_status", "preview_stop", "preview_scr
  *  escape hatch from the read-only plan permission mode (C13) and `suggest_plan`
  *  (D4) presents a plan for approval without changing the permission mode, so
  *  both are exposed in every mode the way `finish` is. */
-const CONTROL = ["think", "finish", "plan", "phase_set", "message", "plan_exit", "suggest_plan", "ask_user", "context_recall",
+const RE = ["re_analyze", "re_decompile", "re_rebuild_verify", "fuzz_run", "aixcc_patch_propose"];
+const CONTROL = ["think", "finish", "plan", "phase_set", "message", "plan_exit", "suggest_plan", "ask_user", "context_recall", "budget_status", "budget_pause", "budget_resume", "threat_model_get", "mcp_list_servers", "mcp_search_tools", "mcp_tool_schema", "mcp_call_tool",
   "wiki_search", "wiki_read", "wiki_list", "wiki_write", "handoff_create", "handoff_list", "handoff_resolve",
   "app_list", "app_describe"];
 /** Tools added to modes that can edit files. */
 const EDIT_EXTRA = ["file_multi_edit"];
 /** Build-only tools: secrets vault and the OpenCode coding sessions. */
 const BUILD_EXTRA = ["vault_ref", "code_session", "code_session_status", "code_session_collect"];
+/** App Builder agent tools (MISSING §4.1.4): Build mode is Build mode with an
+ *  App project attached — no new top-level mode, the seven app_* tools join the
+ *  build tool list. Unregistered names surface as unavailable in the modes UI. */
+const APP_BUILDER = ["app_task_create", "app_task_finish", "app_context_write", "app_verify", "app_version_note", "app_db_query", "app_add_dependency"];
+/** Site generators belong to Build only. They used to be always-on, which let a slides task build a website. */
+const BUILD_SITE = ["web_scaffold", "scaffold_backend", "deploy_app", "export_build", "design_create", "loam_design"];
+/** Video and photo/layout editors belong to the media studio. */
+const MEDIA_STUDIO = ["video_studio", "video_edit", "loam_recorder", "loam_design", "office_craft"];
 /** Documentation lookup for read/research/build modes. */
 const DOCS_LOOKUP = ["docs_lookup"];
+
+/** Code map (graphify). Registered only when codeGraph.enabled; absent tools are listed as unavailable by getLoamModesUi. */
+const CODEGRAPH = ["codegraph_status", "codegraph_index", "codegraph_query", "codegraph_node", "codegraph_neighbors", "codegraph_path", "codegraph_affected", "codegraph_hubs", "codegraph_community"];
 /** N12 generator tools for the media (Studio) mode. */
 const GEN_MEDIA = ["gen_3d_from_image", "gen_music", "generate_storyboard", "search_images"];
 /** N12 research-facing generator tools. */
 const GEN_RESEARCH = ["search_images", "search_x", "solve_logic"];
+/** Desktop-driver MCP tools (CUA_INTO_LOAM §7.6, OD-8a): the 14 contract tools,
+ *  first-class inside `automate` when the pinned cua-driver server is configured. */
+const CUA_DRIVER = CUA_DRIVER_TOOL_ALLOWLIST.map((tool) => `mcp__cua-driver__${tool}`);
 /** Legal mode (Qatar): verified-corpus research, cite-check, contract review. */
-const LEGAL = ["legal_search", "legal_article", "legal_cite_check", "legal_memo_check", "contract_import", "contract_clauses", "contract_review", "contract_redline"];
+const LEGAL = ["legal_search", "legal_article", "legal_cite_check", "legal_memo_check", "contract_import", "contract_clauses", "contract_review", "contract_redline", "qatar_library_search", "qatar_library_doc"];
 /** Control tools minus the project wiki writer: client facts must not land in the plaintext wiki. */
 const LEGAL_CONTROL = CONTROL.filter((name) => name !== "wiki_write" && name !== "context_recall");
 
 export const LOAM_MODES: LoamMode[] = [
   { id: "ask", label: "Loam Explore", labelAr: "استكشف", icon: "◌", hue: 155, hue2: 135,
     tagline: "وضوح قبل التنفيذ", description: "افهم أفكارك وملفات هذه المهمة واسأل دون تعديل الملفات أو تشغيل أوامر.", outputHint: "إجابة واضحة وخطوات مقترحة", readOnly: true,
-    tools: [...READ, "code_symbols", "code_outline", "semantic_search", ...DOCS_LOOKUP, ...CONTROL, "ask_codebase"], panels: ["files"],
+    tools: [...READ, "code_symbols", "code_outline", "semantic_search", ...CODEGRAPH, ...DOCS_LOOKUP, ...CONTROL, "ask_codebase"], panels: ["files"],
     fields: [{ id: "question", label: "ما الذي تريد فهمه؟", placeholder: "اشرح الفكرة أو أرفق ملفًا", multiline: true }, { id: "audience", label: "مستوى التفاصيل", placeholder: "مختصر، تفصيلي، أو مناسب للمبتدئين" }],
     starters: [{ label: "اشرح مستندًا", prompt: "اقرأ المستند المرفق واشرح أهم النقاط والمصطلحات." }, { label: "قارن فكرتين", prompt: "ساعدني في مقارنة خيارين وتحديد أسئلة القرار." }] },
   { id: "research", label: "Loam Research", labelAr: "ابحث", icon: "⌕", hue: 195, hue2: 170,
@@ -49,45 +69,55 @@ export const LOAM_MODES: LoamMode[] = [
     starters: [{ label: "قارن مصادر", prompt: "قارن المصادر التي سأرفقها، وافصل الحقائق عن الاستنتاجات مع روابط الأدلة." }, { label: "راجع موضوعًا", prompt: "أعد تقرير بحث حول الموضوع التالي، مع توضيح الثغرات وحدود المصادر المتاحة." }] },
   { id: "build", label: "Loam Build", labelAr: "ابنِ", icon: "⌘", hue: 100, hue2: 140,
     tagline: "من الفكرة إلى تجربة تعمل", description: "طوّر ملفات التطبيق وشغّل الاختبارات ومعاينة المشروع في مساحة المهمة.", outputHint: "ملفات مشروع ومعاينة ونتائج اختبارات", readOnly: false,
-    tools: ["integration_list", "integration_call", ...READ, ...WRITE, ...EDIT_EXTRA, "memory_add", "artifact_publish", ...DOCS_LOOKUP, ...BUILD_EXTRA, ...GIT, "loam_mobile", "code_symbols", "code_outline", "semantic_search", "wiki_generate", "ask_codebase", "shell_run", "app_run", "web_fetch", ...BROWSER, ...PREVIEW, ...CONTROL, ...MANAGED_SESSIONS], panels: ["files", "browser", "preview"],
+    tools: ["integration_list", "integration_call", ...READ, ...WRITE, ...EDIT_EXTRA, "memory_add", "artifact_publish", ...DOCS_LOOKUP, ...BUILD_EXTRA, ...APP_BUILDER, ...BUILD_SITE, ...GIT, "loam_mobile", "code_symbols", "code_outline", "semantic_search", ...CODEGRAPH, "wiki_generate", "ask_codebase", "shell_run", "app_run", "web_fetch", ...RE, ...BROWSER, ...PREVIEW, ...CONTROL, ...MANAGED_SESSIONS], panels: ["files", "browser", "preview"],
     fields: [{ id: "brief", label: "ماذا سنبني؟", placeholder: "المستخدمون والوظائف المطلوبة", multiline: true }, { id: "acceptance", label: "معايير الإنجاز", placeholder: "ما السلوك الذي يجب اختباره قبل التسليم؟", multiline: true }],
     starters: [{ label: "صفحة تعريفية", prompt: "ابنِ صفحة تعريفية عربية متجاوبة مع معاينة محلية واختبر عرض الهاتف." }, { label: "أصلح مشروعًا", prompt: "افحص ملفات المشروع المرفقة، حدد العطل وأصلحه ثم شغّل الاختبارات المناسبة." }] },
   { id: "write", label: "Loam Write", labelAr: "اكتب", icon: "✎", hue: 55, hue2: 75,
-    tagline: "أفكار تجد صياغتها", description: "اكتب المستندات وأنشئ العروض شريحة بشريحة في محرر حي قابل للتعديل مباشرة.", outputHint: "مستند منسق قابل للتنزيل. An attached .docx/.xlsx/.pptx opens in the live Craft editors (office_craft); otherwise use loam_studio (or loam_document) for the content, then office_export for the file, and office_import first for an uploaded file; do not generate office files via shell/python unless a tool is missing.", readOnly: false,
-    tools: ["integration_list", "integration_call", ...READ, "file_write", "file_edit", "find_and_edit", "file_mkdir", ...EDIT_EXTRA, "artifact_publish", "loam_document", "loam_studio", "office_import", "office_export", "office_status", "office_craft", "office_edit", ...CONTROL], panels: ["studio", "files"],
+    tagline: "أفكار تجد صياغتها", description: "اكتب المستندات في Loam Docs وأنشئ العروض في Loam Slides داخل المحرر الحي.", outputHint: "A presentation, slides, pptx, or برزنتيشن opens Loam Slides (office_craft app slides). One page (صفحة واحدة) is exactly one slide. A document or docx opens Loam Docs (office_craft app docs). A new file needs no attachment, and the result must be downloadable. An attached .docx/.xlsx/.pptx opens in the matching Craft editor. Use loam_studio then office_export only when that editor is unavailable, and loam_document only for explicit Markdown or HTML. Do not build an HTML page for a normal presentation. presentation_build is not available unless it is in the tool list, and it is never the path for a pptx or slides deck. Do not generate office files via shell/python.", readOnly: false,
+    tools: ["integration_list", "integration_call", ...READ, "file_write", "file_edit", "find_and_edit", "file_mkdir", ...EDIT_EXTRA, "artifact_publish", "loam_document", "loam_studio", "office_import", "office_export", "office_status", "office_craft", "office_edit", "office_workflow_run", "office_intelligence_run", "image_ocr", "device_preview", ...CONTROL], panels: ["studio", "files"],
     fields: [{ id: "brief", label: "نوع المستند ومحتواه", placeholder: "تقرير، رسالة، مقترح أو قصة", multiline: true }, { id: "tone", label: "الجمهور والنبرة", placeholder: "لمن نكتب؟ وما الطول والأسلوب المطلوبان؟" }],
     starters: [{ label: "مقترح عمل", prompt: "صغ مقترح عمل منظمًا بالأهداف والنطاق والجدول والمخرجات، واحفظه مستندًا." }, { label: "حرر مسودة", prompt: "راجع المسودة المرفقة وحسّن وضوحها مع المحافظة على المعنى." }] },
   { id: "data", label: "Loam Data", labelAr: "حلّل", icon: "▥", hue: 175, hue2: 150,
-    tagline: "أرقام تشرح ما يحدث", description: "أنشئ الجداول وحرّر الخلايا مباشرة، وافحص بياناتك في مساحة عمل خاصة بالمهمة.", outputHint: "ملخص بيانات ونتائج قابلة للتدقيق. An attached .xlsx opens in the live Craft spreadsheet editor (office_craft); otherwise use loam_dataset/loam_studio for spreadsheets and charts, then office_export for the file; do not generate office files via shell/python unless a tool is missing.", readOnly: false,
-    tools: ["integration_list", "integration_call", ...READ, "file_write", "file_edit", "find_and_edit", "file_mkdir", ...EDIT_EXTRA, "artifact_publish", "loam_dataset", "loam_studio", "office_import", "office_export", "office_status", "office_craft", "office_edit", ...CONTROL], panels: ["studio", "files"],
+    tagline: "أرقام تشرح ما يحدث", description: "أنشئ الجداول في Loam Sheets وحرّر الخلايا مباشرة داخل المهمة.", outputHint: "ملخص بيانات ونتائج قابلة للتدقيق. A spreadsheet, xlsx, or csv workbook opens Loam Sheets through office_craft (app sheets), including a new workbook with no file attached. Use loam_dataset for statistics. Use loam_studio then office_export only when Loam Sheets is unavailable. Do not generate office files via shell/python.", readOnly: false,
+    tools: ["integration_list", "integration_call", ...READ, "file_write", "file_edit", "find_and_edit", "file_mkdir", ...EDIT_EXTRA, "artifact_publish", "loam_dataset", "loam_studio", "office_import", "office_export", "office_status", "office_craft", "office_edit", "office_workflow_run", "office_intelligence_run", "image_ocr", "device_preview", ...CONTROL], panels: ["studio", "files"],
     fields: [{ id: "question", label: "سؤال التحليل", placeholder: "ما القرار الذي تريد أن تدعمه البيانات؟", multiline: true }, { id: "columns", label: "المقاييس والأعمدة", placeholder: "حدّد الأعمدة أو الفترة أو قواعد جودة البيانات" }],
     starters: [{ label: "افحص جودة البيانات", prompt: "افحص ملف CSV المرفق ولخص عدد الصفوف والقيم المفقودة والأعمدة الرقمية دون اختلاق بيانات." }, { label: "استخرج مؤشرات", prompt: "استخرج المؤشرات الرئيسية من البيانات المرفقة واحفظ تقريرًا يشرح الحسابات وحدودها." }] },
   { id: "media", label: "Loam Studio", labelAr: "صمّم", icon: "◇", hue: 25, hue2: 45,
-    tagline: "من الفكرة إلى مشهد حي", description: "حرّر المجسّمات والخامات والإضاءة والحركة، واستورد ملفات GLB وصدّر المشهد والصور من مساحة المهمة.", outputHint: "مشهد ثلاثي الأبعاد وصور وملفات GLB. Use loam_creative/loam_canvas for video/image/design work.", readOnly: false,
-    tools: ["integration_list", "integration_call", ...READ, "file_write", "file_edit", "find_and_edit", "file_mkdir", ...EDIT_EXTRA, "artifact_publish", "loam_canvas", "loam_creative", ...PREVIEW, ...GEN_MEDIA, ...CONTROL], panels: ["creative", "files", "preview"],
+    tagline: "من الفكرة إلى مشهد حي", description: "حرّر المجسّمات والخامات والإضاءة والحركة، واستورد ملفات GLB وصدّر المشهد والصور من مساحة المهمة.", outputHint: "مشهد ثلاثي الأبعاد وصور وملفات GLB. 3D scenes use loam_creative. Vector artwork uses loam_canvas. Video editing uses video_studio (Loam Video), not loam_creative. Screen recording uses loam_recorder and waits for the user consent window; do not retry a consent refusal. Subtitles use creative_subtitles. A photo or psd opens Loam Photo (office_craft app photo). A layout, idml, or designed pdf opens Loam Design (office_craft app design).", readOnly: false,
+    tools: ["integration_list", "integration_call", ...READ, "file_write", "file_edit", "find_and_edit", "file_mkdir", ...EDIT_EXTRA, "artifact_publish", "loam_canvas", "loam_creative", "creative_subtitles", ...MEDIA_STUDIO, ...PREVIEW, ...GEN_MEDIA, ...CONTROL], panels: ["creative", "files", "preview"],
     fields: [{ id: "brief", label: "الفكرة البصرية", placeholder: "صف المشهد والمجسّمات التي تريد إنشاءها", multiline: true }, { id: "style", label: "الخامات والإخراج", placeholder: "الألوان والإضاءة وزاوية الكاميرا والحركة" }],
-    starters: [{ label: "مشهد منتج", prompt: "أنشئ مشهد منتج من المجسّمات الأساسية مع قاعدة وخامات معدنية وإضاءة مناسبة باستخدام loam_creative." }, { label: "تكوين متحرك", prompt: "أنشئ تكوينًا من حلقات وكرات متناسقة الألوان مع حركة دوران باستخدام loam_creative." }] },
+    starters: [{ label: "مشهد منتج", prompt: "أنشئ مشهد منتج من المجسّمات الأساسية مع قاعدة وخامات معدنية وإضاءة مناسبة باستخدام loam_creative." }, { label: "تكوين متحرك", prompt: "أنشئ تكوينًا من حلقات وكرات متناسقة الألوان مع حركة دوران باستخدام loam_creative." }, { label: "ترجمات تلقائية", prompt: "فرّغ صوت الفيديو المرفق وأنشئ ترجمات SRT وVTT بأسطر قصيرة بطوابع زمنية بجوار الملف نفسه باستخدام creative_subtitles." }] },
   { id: "security", label: "Loam Security", labelAr: "افحص", icon: "🛡", hue: 0, hue2: 30,
     tagline: "تقييم أمني موجّه", description: "شغّل فحوصات أمنية محدودة وقراءة فقط ضد أهداف مصرّح بها، واجمع النتائج في تقرير Security/SARIF داخل المهمة.", outputHint: "تقرير ثغرات وتوصيات تصحيح. Use pentest_*/security_* tools; do not use generic shell scripts for security scans unless a dedicated tool is missing.", readOnly: false,
-    tools: ["pentest_check", "pentest_routes", "pentest_report", "security_assess", "security_status", "shell_run", ...READ, ...CONTROL], panels: ["files"],
+    tools: ["pentest_check", "pentest_routes", "pentest_report", "security_assess", "security_status", "security_audit_start", "security_audit_status", "security_audit_report", "remediation_start", "remediation_status", "remediation_report", "remediation_cancel", "skill_list", "skill_view", "secrets_scan", "sca_scan", "sbom_generate", "sast_scan", "sast_diff", "config_scan", "supplychain_scan", "recon_scan", "llm_scan", "mcp_scan", "shell_run", "threat_model_save", "threat_model_amend", "coverage_record", "coverage_update", "coverage_list", "coverage_report", "coverage_delete", "proxy_start", "proxy_status", "proxy_list_requests", "proxy_view_request", "proxy_repeat_request", "proxy_scope", "proxy_stop", ...READ, ...CONTROL], panels: ["files"],
     fields: [{ id: "target", label: "الهدف المصرّح به", placeholder: "رابط أو مسار يمكن فحصه (مثلاً http://127.0.0.1:3000)", multiline: false }, { id: "checks", label: "نطاق الفحص", placeholder: "all، headers، tls، exposed_files، أو قائمة محددة" }],
-    starters: [{ label: "فحص ترويسات", prompt: "افحص ترويسات الأمان لـ http://127.0.0.1:3000 باستخدام pentest_check واحفظ النتائج." }, { label: "تقرير ثغرات", prompt: "شغّل فحص pentest_check شامل ثم أنشئ تقرير pentest_report داخل مساحة المهمة." }] },
+    starters: [{ label: "فحص ترويسات", prompt: "افحص ترويسات الأمان لـ http://127.0.0.1:3000 باستخدام pentest_check واحفظ النتائج." }, { label: "تقرير ثغرات", prompt: "شغّل فحص pentest_check شامل ثم أنشئ تقرير pentest_report داخل مساحة المهمة." }, { label: "أصلح ثغرة Node", prompt: "ابدأ remediation_start لجرد ثغرات Node في مساحة العمل الحالية، ثم اعرض جدول الجرد وانتظر موافقتي على النطاق في لوحة الأمان قبل أي تعديل — البوابات قرارها للمستخدم فقط." }] },
+  { id: "redteam", label: "Loam Red Team", labelAr: "الفريق الأحمر", icon: "🔴", hue: 350, hue2: 15,
+    tagline: "اختبار اختراق مُصرَّح به لأنظمتنا", description: "حملة هجوم أحمر مقيَّدة ببوابة تفويض: اكتشف، أثبت بالدليل (EV)، وأصدر تقريرًا مع PoC قابل للإعادة — لأنظمة نملكها فقط.", outputHint: "نتائج مثبتة بالأدلة مع SARIF و PoC. Use red_campaign against an authorized target (default localhost); red_report re-opens a stored campaign report.", readOnly: false,
+    tools: ["pentest_check", "pentest_routes", "pentest_report", "red_campaign", "red_report", "red_kill_switch", "shell_run", "threat_model_save", "threat_model_amend", "coverage_record", "coverage_update", "coverage_list", "coverage_report", "coverage_delete", "proxy_start", "proxy_status", "proxy_list_requests", "proxy_view_request", "proxy_repeat_request", "proxy_scope", "proxy_stop", ...READ, ...CONTROL], panels: ["files"],
+    fields: [{ id: "target", label: "الهدف المُصرَّح به", placeholder: "مثال: http://127.0.0.1:3000", multiline: false }, { id: "authzId", label: "معرّف التفويض (اختياري)", placeholder: "AUTHZ-0001 — يلزم للأهداف غير المحلية" }],
+    starters: [{ label: "حملة على هدف مخبري", prompt: "شغّل red_campaign على http://127.0.0.1:3000 واعرض النتائج المثبتة مع الأدلة والتقرير." }, { label: "تقرير حملة سابقة", prompt: "افتح أحدث تقرير حملة حمراء محفوظ في مجلد red/ داخل مساحة العمل." }] },
+  { id: "devflow", label: "Loam Dev Flow", labelAr: "دورة تطوير", icon: "⑂", hue: 265, hue2: 235,
+    tagline: "من المشكلة إلى Pull Request مُراجَع", description: "دورة تطوير GitHub كاملة: خُذ المشكلة، أنشئ فرعًا، نفّذ بسرب نتريو، ثم افتح PR بمراجعة ومراقبة CI — مع مسار «ربع أمنية» يبدأ بجرد الإصلاحات وينتهي بـ PR بالتصحيحات.", outputHint: "فرع وسرب وPR مع مراجعة وCI. Follow the dev-flow skill: github_list_issues for the issue, git_branch/git_commit on a branch (never on protected branches), swarm_run (سرب نتريو) then swarm_status, pr_create/pr_view/pr_comments/ci_watch/pr_review, verify_and_record before claiming done; the security quadrant starts at remediation_start. Push يبقى خلف بوابة موافقة صريحة ولا force-push أبدًا.", readOnly: false,
+    tools: ["integration_list", "integration_call", "github_list_repos", "github_list_issues", "github_create_issue", ...READ, "file_write", "file_edit", "find_and_edit", "file_mkdir", ...EDIT_EXTRA, "artifact_publish", "skill_list", "skill_view", ...GIT, "swarm_run", "swarm_status", "remediation_start", "remediation_status", "remediation_report", "remediation_cancel", ...CONTROL], panels: ["files"],
+    fields: [{ id: "repo", label: "المستودع (اختياري)", placeholder: "owner/repo — يُشتق من المشروع الحالي إن تُرك فارغًا", multiline: false }, { id: "issue", label: "المشكلة أو المطلوب (اختياري)", placeholder: "رقم المشكلة (#42) أو وصف موجز للمطلوب", multiline: false }],
+    starters: [{ label: "issue ← فرع ← سرب ← PR", prompt: "خُذ المشكلة المذكورة (أو استخرجها بـ github_list_issues)، أنشئ فرعًا بـ git_branch، شغّل سرب نتريو بـ swarm_run وراقبه بـ swarm_status، ثم افتح PR بـ pr_create وراجعه بـ pr_review وراقب CI بـ ci_watch." }, { label: "ربع أمنية", prompt: "شغّل remediation_start لجرد ثغرات مساحة العمل، وبعد موافقتي على النطاق في لوحة الأمان طبّق الإصلاحات وافتح PR بها عبر pr_create ثم راجعه بـ pr_review — البوابات قرارها للمستخدم فقط." }] },
   { id: "legal", label: "Loam Legal", labelAr: "قانوني", icon: "§", hue: 35, hue2: 15,
     tagline: "نصوص موثقة قبل الرأي", description: "ابحث في التشريعات القطرية الموثقة، وصغ المذكرات والآراء، وراجع العقود باستشهادات مُتحقق منها حرفياً. المخرجات مسودات حتى يعتمدها محامٍ مرخّص.", outputHint: "مسودة قانونية باستشهادات موثقة. Use legal_search/legal_article for every legal statement and legal_cite_check (or legal_memo_check) before presenting a draft; never cite from memory.", readOnly: false,
     tools: [...READ, "file_write", "file_edit", "find_and_edit", "file_mkdir", ...EDIT_EXTRA, "artifact_publish", ...LEGAL, ...LEGAL_CONTROL], panels: ["files", "legal"],
     fields: [{ id: "matter", label: "المسألة", placeholder: "وقائع الدعوى أو العقد المطلوب مراجعته", multiline: true }, { id: "asOf", label: "تاريخ تطبيق النصوص", placeholder: "تاريخ الوقائع أو العقد (YYYY-MM-DD)" }],
     starters: [{ label: "مذكرة دفاع", prompt: "صغ مذكرة دفاع في الدعوى المرفقة وفق مهارة qatar-defense-memo، بنصوص موثقة في تاريخ الوقائع." }, { label: "مراجعة عقد", prompt: "راجع العقد المرفق وفق القانون القطري ومهارة qatar-contract-review، وأعد تقرير المراجعة." }] },
-  { id: "automate", label: "Loam Flow", labelAr: "أنجز", icon: "↗", hue: 220, hue2: 195,
-    tagline: "خطوات متكررة، عمل أوضح", description: "نفّذ خطوات تفاعل المتصفح وسجّل الأدلة. راجع تفاصيل الإجراءات الخارجية قبل طلبها.", outputHint: "سجل إجراءات ولقطات توثيق", readOnly: false,
-    tools: ["integration_list", "integration_call", ...READ, "file_write", "file_mkdir", "artifact_publish", ...BROWSER, "task_create", "task_list", "task_get", "task_cancel", "schedule_create", "schedule_list", "schedule_delete", ...CONTROL, ...MANAGED_SESSIONS], panels: ["files", "browser"],
+  reverseEngineerMode,  { id: "automate", label: "Loam Flow", labelAr: "أنجز", icon: "↗", hue: 220, hue2: 195,
+    tagline: "خطوات متكررة، عمل أوضح", description: "نفّذ خطوات تفاعل المتصفح وسجّل الأدلة، وعند تفعيل سائق سطح المكتب قُد تطبيقاتك في الخلفية دون سرقة التركيز. راجع تفاصيل الإجراءات الخارجية قبل طلبها.", outputHint: "سجل إجراءات ولقطات توثيق. Browser flows use browser_* (Playwright); background desktop driving uses the mcp__cua-driver__* tools per the desktop-driver skill (fresh element tokens, verify_state checkpoints).", readOnly: false,
+    tools: ["integration_list", "integration_call", ...READ, "file_write", "file_mkdir", "artifact_publish", ...BROWSER, ...CUA_DRIVER, "task_create", "task_list", "task_get", "task_cancel", "schedule_create", "schedule_list", "schedule_delete", ...CONTROL, ...MANAGED_SESSIONS], panels: ["files", "browser"],
     fields: [{ id: "workflow", label: "خطوات العمل", placeholder: "الرابط والخطوات المطلوبة والنتيجة المتوقعة", multiline: true }, { id: "limits", label: "حدود التنفيذ", placeholder: "الإجراءات المسموحة وما يتطلب الرجوع إليك" }],
-    starters: [{ label: "تحقق من صفحة", prompt: "افتح الرابط الذي سأقدمه وافحص العناصر المرئية وسجّل لقطة ودليلًا على النتيجة." }, { label: "نفّذ إجراء متكرر", prompt: "ساعدني في تنفيذ خطوات المتصفح التالية، وتحقق من نتيجة كل خطوة قبل المتابعة." }] },
+    starters: [{ label: "تحقق من صفحة", prompt: "افتح الرابط الذي سأقدمه وافحص العناصر المرئية وسجّل لقطة ودليلًا على النتيجة." }, { label: "نفّذ إجراء متكرر", prompt: "ساعدني في تنفيذ خطوات المتصفح التالية، وتحقق من نتيجة كل خطوة قبل المتابعة." }, { label: "شغّل في الخلفية", prompt: "شغّل الآلة الحاسبة واحسب 6×7 عبر أدوات mcp__cua-driver__ بالخلفية دون سرقة تركيزي، وتحقق من النتيجة بـ verify_state." }] },
 ];
 
 const aliases: Record<string, string> = {
   full: "build", general: "build", discuss: "ask", plan: "ask", agent: "build",
   "app-build": "build", "mobile-dev": "build", "game-dev": "build", "testing-qa": "build",
-  "security-pentest": "build", "reverse-engineer": "build", "devops-cloud": "build",
+  "security-pentest": "build", "devops-cloud": "build",
   "ecommerce-fintech": "build", "i18n-localization": "write", "performance-load": "build",
   "iot-embedded": "build", "web3-blockchain": "build", "ai-rag-studio": "research",
   "document-editor": "write", presentation: "write", "presentation-editor": "write",
@@ -99,15 +129,33 @@ export function normalizeModeId(value?: string): string {
   const id = (value ?? "").trim() || "build";
   return aliases[id] ?? id;
 }
+
+/**
+ * «تحدث مع ملفاتك» (Phase-2 W2): the Knowledge Garden (kb_* + task_files_ingest)
+ * is a core capability of the ask and build modes, so every resolver that reads
+ * a mode — registry.forMode, the companion gateway, the modes UI — sees the
+ * names without each caller appending them. The single gate is the settings
+ * flag `knowledgeRag` (default ON): `false` removes the names from both modes
+ * everywhere at once, and no other mode is ever touched (they keep the explicit
+ * per-run garden toggle).
+ */
+const KNOWLEDGE_CORE_MODES = new Set(["ask", "build"]);
+
+function withKnowledgeTools(mode: LoamMode): LoamMode {
+  if (!KNOWLEDGE_CORE_MODES.has(mode.id) || getSettings().knowledgeRag === false) return mode;
+  const extra = KNOWLEDGE_TOOL_NAMES.filter((name) => !mode.tools.includes(name));
+  return extra.length > 0 ? { ...mode, tools: [...mode.tools, ...extra] } : mode;
+}
+
 export function getLoamMode(value?: string): LoamMode {
   const id = normalizeModeId(value);
   const mode = LOAM_MODES.find((m) => m.id === id);
   if (!mode) throw new Error(`Unknown Loam mode: ${id}`);
-  return mode;
+  return withKnowledgeTools(mode);
 }
 export function getLoamModesUi(registeredNames: string[] = []): { available: boolean; activeMode: string; modes: Array<LoamMode & { availableTools: string[]; unavailableTools: string[]; activeToolCount: number }> } {
   const registered = new Set(registeredNames);
-  return { available: true, activeMode: "build", modes: LOAM_MODES.map((mode) => {
+  return { available: true, activeMode: "build", modes: LOAM_MODES.map((mode) => withKnowledgeTools(mode)).map((mode) => {
     const availableTools = mode.tools.filter((name) => registered.has(name));
     return { ...mode, availableTools, unavailableTools: mode.tools.filter((name) => !registered.has(name)), activeToolCount: availableTools.length };
   }) };

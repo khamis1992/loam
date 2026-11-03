@@ -64,7 +64,13 @@
 
       <div class="row">
         <input id="text" type="text" placeholder="أضف ملاحظة/معرفة للذاكرة..." />
-        <input id="kind" type="text" placeholder="kind" value="note" style="max-width:120px" />
+        <select id="kind" style="max-width:140px" aria-label="النوع">
+          <option value="note">ملاحظة</option>
+          <option value="fact">حقيقة</option>
+          <option value="preference">تفضيل</option>
+          <option value="event">حدث</option>
+          <option value="skill">مهارة</option>
+        </select>
         <button id="add">حفظ</button>
       </div>
 

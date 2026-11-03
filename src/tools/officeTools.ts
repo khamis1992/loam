@@ -64,7 +64,7 @@ export function createOfficeTools(): Tool[] {
       parameters: { type: "object", properties: {} },
       async run(args, ctx): Promise<ToolResult> {
         const artifact = readStudio(ctx.workspace);
-        if (!artifact) return { ok: true, content: "لا يوجد استوديو نشط" };
+        if (!artifact) return { ok: true, content: "لا يوجد استوديو نشط. أنشئ المحتوى بـ loam_studio (action replace و expectedRevision 0) ثم صدّره بـ office_export. لا تُعد القراءة قبل الكتابة." };
         const kindMap: Record<string, number> = { document: (artifact.content as { blocks?: unknown[] }).blocks?.length ?? 0, presentation: (artifact.content as { slides?: unknown[] }).slides?.length ?? 0, spreadsheet: (artifact.content as { sheets?: unknown[] }).sheets?.length ?? 0 };
         const count = kindMap[artifact.kind] ?? 0;
         return { ok: true, content: `النوع: ${artifact.kind === "document" ? "مستند" : artifact.kind === "presentation" ? "عرض" : "جدول"} • العنوان: ${artifact.title} • ${count} عنصر • مراجعة ${artifact.revision}` };

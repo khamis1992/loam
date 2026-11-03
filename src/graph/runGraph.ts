@@ -7,6 +7,8 @@
  * event log rebuilds the same graph byte for byte.
  */
 import type { AgentEvent } from "../agent/events.js";
+import type { OrchestrationEvent } from "../orchestration/events.js";
+import type { AppBuilderRunEvent } from "../agent/events.js";
 import {
   RUN_NODE_ENTITY,
   RUN_NODE_STATUSES,
@@ -846,6 +848,7 @@ export class RunGraph {
       case "step":
       case "workmode":
       case "assistant_token":
+      case "thinking":
       case "assistant_message":
       case "verification_progress":
       case "permission_mode_changed":
@@ -865,6 +868,7 @@ export class RunGraph {
       case "video_studio_export":
       case "workspace_open_request":
       case "simulation_progress":
+      case "review":
         // Live-only signals with no canvas node of their own.
         return [];
       case "fanout_branch":
@@ -952,8 +956,18 @@ export class RunGraph {
           parent: state.lastId,
         }).id];
       }
+      case "budget_paused":
+      case "budget_resumed":
+        // The pause is a task state, not a canvas node: the run keeps its
+        // transcript and the next step simply does not start while parked.
+        return [];
       default: {
-        const _exhaustive: never = event;
+        // Orchestration Core events (§4.0.4) are additive union members with no
+        // run-graph node; fall through to the exhaustive check for the rest.
+        if (String((event as { type?: string }).type).length > 0 && !("round" in event || "scheduleId" in event)) {
+          // fall through to the exhaustive check below
+        }
+        const _exhaustive: never = event as Exclude<typeof event, OrchestrationEvent | AppBuilderRunEvent>;
         return _exhaustive;
       }
     }

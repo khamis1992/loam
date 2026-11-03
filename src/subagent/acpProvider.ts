@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { scrubEnv } from "./env.js";
+import * as acp from "./acpClient.js";
+import { createInterrupt, waitForInterrupt, RESPONSE_SCHEMAS } from "../orchestration/durable/interrupts.js";
 import type {
   SubagentEvent,
   SubagentProvider,
@@ -37,12 +39,6 @@ interface PendingRequest {
   reject: (err: Error) => void;
 }
 
-interface PermissionOption {
-  optionId: string;
-  name?: string;
-  kind?: string;
-}
-
 /** Stateless ACP provider: one registered instance whose `start` reads the
  *  executable (command/args) from the per-call options. */
 export function createAcpProvider(): SubagentProvider {
@@ -65,6 +61,16 @@ async function startAcp(opts: SubagentStartOptions): Promise<SubagentRunHandle> 
   const events = new EventQueue<SubagentEvent>();
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const graceMs = opts.graceMs ?? DEFAULT_GRACE_MS;
+  // C4: real client capabilities from the orchestration config; the child can
+  // only ask for what we actually implement.
+  const settings: acp.AcpClientSettings = {
+    advertiseFs: opts.cfg?.orchestration?.acp.advertiseFs ?? true,
+    advertiseTerminal: opts.cfg?.orchestration?.acp.advertiseTerminal ?? false,
+    passMcpServers: opts.cfg?.orchestration?.acp.passMcpServers ?? true,
+    clientVersion: process.env.npm_package_version ?? "0.0.0",
+  };
+  let acpSessionId: string | undefined;
+  let cancelSent = false;
 
   let text = "";
   let settled = false;
@@ -75,7 +81,9 @@ async function startAcp(opts: SubagentStartOptions): Promise<SubagentRunHandle> 
 
   const child = spawn(opts.command, opts.args ?? [], {
     cwd: opts.cwd,
-    env: scrubEnv(process.env, opts.env ?? {}),
+    // C5: a traceparent lets the child join the run's trace when its caller
+    // (the orchestrator or the C11 host) provides one.
+    env: { ...scrubEnv(process.env, opts.env ?? {}), ...(opts.traceparent ? { TRACEPARENT: opts.traceparent } : {}) },
     stdio: ["pipe", "pipe", "pipe"],
   });
 
@@ -88,6 +96,7 @@ async function startAcp(opts: SubagentStartOptions): Promise<SubagentRunHandle> 
 
   if (opts.signal) {
     if (opts.signal.aborted) {
+      cancelSent = true;
       dispose();
       finish("cancelled", text);
     } else {
@@ -95,6 +104,7 @@ async function startAcp(opts: SubagentStartOptions): Promise<SubagentRunHandle> 
         "abort",
         () => {
           if (settled) return;
+          cancelSent = true;
           dispose();
           finish("cancelled", text);
         },
@@ -169,27 +179,48 @@ async function startAcp(opts: SubagentStartOptions): Promise<SubagentRunHandle> 
     else entry.resolve(msg.result);
   }
 
-  function permissionOutcome(options: PermissionOption[]): Record<string, unknown> {
-    if (opts.permissionPolicy !== "allow") return { outcome: "cancelled" };
-    const allow = options.find((o) => (o.kind ?? "").startsWith("allow")) ?? options[0];
-    if (!allow) return { outcome: "cancelled" };
-    return { outcome: "selected", optionId: allow.optionId };
-  }
-
-  function handleServerRequest(msg: JsonRpcRequest): void {
-    if (msg.method === "session/request_permission") {
-      const params = (msg.params ?? {}) as { sessionId?: string; options?: PermissionOption[] };
-      const options = Array.isArray(params.options) ? params.options : [];
-      events.push({
-        type: "request_permission",
-        id: String(msg.id),
-        sessionId: String(params.sessionId ?? ""),
-        options,
-      });
-      write({ jsonrpc: "2.0", id: msg.id, result: { outcome: permissionOutcome(options) } });
-      return;
-    }
-    write({ jsonrpc: "2.0", id: msg.id, error: { code: -32601, message: `unsupported method: ${msg.method}` } });
+  /**
+   * C4: every server-initiated request goes through the ACP client — scoped
+   * fs, permission brokering through Loam's `acp_permission` interrupt (or
+   * the fixed policy), and JSON-RPC errors for anything not advertised.
+   */
+  async function handleServerRequest(msg: JsonRpcRequest): Promise<void> {
+    const reply = await acp.handleServerRequest(msg.method, msg.params, {
+      settings,
+      fs: { roots: [opts.cwd], maxReadBytes: 2_000_000, maxWriteBytes: 5_000_000 },
+      ...(opts.permissionPolicy === "allow" || opts.permissionPolicy === "reject" ? { fixedPolicy: opts.permissionPolicy } : {}),
+      cancelled: () => cancelSent,
+      onWrite: (p) => events.push({ type: "tool_call", name: `acp:write ${p}` }),
+      broker: async (req, risk) => {
+        const mode = opts.cfg?.orchestration?.acp.permissionDefault ?? "ask";
+        if (mode === "reject") {
+          const id = acp.pickOption(req.options, "reject");
+          return id ? { optionId: id } : "cancelled";
+        }
+        if (mode === "allow_once" && risk === "low") {
+          const id = acp.pickOption(req.options, "allow");
+          return id ? { optionId: id } : "cancelled";
+        }
+        const rec = createInterrupt({
+          taskId: opts.sessionId ?? "acp",
+          kind: "acp_permission",
+          payload: {
+            title: req.toolCall.title ?? req.toolCall.kind ?? "ACP tool call",
+            kind: req.toolCall.kind ?? "other",
+            risk,
+            // Never offer a *_always option to the user either.
+            options: req.options.filter((o) => !String(o.kind).endsWith("_always")),
+          },
+          responseSchema: RESPONSE_SCHEMAS.acp_permission,
+          ttlMs: 15 * 60_000,
+          maxPendingPerTask: 20,
+        });
+        events.push({ type: "request_permission", id: rec.interruptId, sessionId: req.sessionId, options: rec.payload.options });
+        const done = await waitForInterrupt<{ optionId: string }>(rec.interruptId, opts.signal);
+        return done?.status === "resolved" && done.response ? { optionId: done.response.optionId } : "cancelled";
+      },
+    });
+    write({ jsonrpc: "2.0", id: msg.id, ...reply });
   }
 
   function handleUpdate(params: unknown): void {
@@ -206,8 +237,11 @@ async function startAcp(opts: SubagentStartOptions): Promise<SubagentRunHandle> 
       return;
     }
     if (kind === "tool_call" || kind === "tool_call_update") {
-      const title = update["title"];
-      events.push({ type: "tool_call", name: typeof title === "string" ? title : "tool" });
+      // C4: map the call onto a run-graph tool node payload when the agent
+      // followed the canonical shape; the title stays the human label.
+      const node = acp.toolCallNode(update);
+      const title = typeof update["title"] === "string" ? update["title"] : "tool";
+      events.push({ type: "tool_call", name: node?.title || title, ...(node ? { node } : {}) });
       return;
     }
     events.push({ type: "update", data: update });
@@ -231,7 +265,9 @@ async function startAcp(opts: SubagentStartOptions): Promise<SubagentRunHandle> 
       return;
     }
     if (typeof (msg as JsonRpcRequest).method === "string") {
-      if (typeof (msg as JsonRpcRequest).id !== "undefined") handleServerRequest(msg as JsonRpcRequest);
+      if (typeof (msg as JsonRpcRequest).id !== "undefined") void handleServerRequest(msg as JsonRpcRequest).catch((err: unknown) => {
+        events.push({ type: "error", message: `ACP server request failed: ${err instanceof Error ? err.message : String(err)}` });
+      });
       else handleNotification(msg as JsonRpcNotification);
     }
   }
@@ -276,16 +312,27 @@ async function startAcp(opts: SubagentStartOptions): Promise<SubagentRunHandle> 
     result: () => resultPromise,
     cancel() {
       if (settled) return;
+      // C4: tell the agent first (session/cancel notification), then close
+      // stdin and reserve SIGKILL for after the grace period.
+      cancelSent = true;
+      if (acpSessionId && !stdinClosed) write({ jsonrpc: "2.0", ...acp.cancelNotification(acpSessionId) });
       dispose();
       finish("cancelled", text);
     },
   };
 
   try {
-    await request("initialize", { protocolVersion: 1, clientCapabilities: {} });
-    const created = (await request("session/new", { cwd: opts.cwd, mcpServers: [] })) as { sessionId?: string };
+    await request("initialize", acp.initializeParams(settings));
+    const created = (await request("session/new", acp.sessionNewParams(opts.cwd, opts.mcpServers ?? [], settings))) as { sessionId?: string };
     const sessionId = created?.sessionId;
     if (!sessionId) throw new Error("ACP session/new did not return a sessionId");
+    acpSessionId = sessionId;
+    // C4: model discovery and switching (opts.model was ignored before). A
+    // failed switch keeps the agent's default model.
+    const models = acp.extractModels(created);
+    events.push({ type: "acp_models", agent: opts.command ?? "acp", current: models.current, available: models.available.map((m) => m.id) });
+    const sw = opts.model && (opts.cfg?.orchestration?.acp.modelSelection ?? true) ? acp.modelSwitchRequest(sessionId, models, opts.model) : undefined;
+    if (sw) await request(sw.method, sw.params).catch(() => undefined);
     const promptId = nextId++;
     pending.set(promptId, {
       resolve: (value) => {

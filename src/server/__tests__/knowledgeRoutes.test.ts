@@ -296,8 +296,11 @@ describe("knowledge routes", () => {
 describe("knowledge tool policy", () => {
   it("keeps the kb_* tool set in one place", async () => {
     const mod = await import("../knowledgeTools.js");
-    assert.deepEqual(mod.KNOWLEDGE_TOOL_NAMES, ["kb_search", "kb_ingest", "kb_manage"]);
+    // Phase-2 W2 «تحدث مع ملفاتك»: task_files_ingest writes into the same
+    // garden through the same pipeline, so it rides every kb_* gate.
+    assert.deepEqual(mod.KNOWLEDGE_TOOL_NAMES, ["kb_search", "kb_ingest", "kb_manage", "task_files_ingest"]);
     assert.equal(mod.isKnowledgeTool("kb_search"), true);
+    assert.equal(mod.isKnowledgeTool("task_files_ingest"), true);
     assert.equal(mod.isKnowledgeTool("read_file"), false);
     assert.deepEqual(
       mod.excludeKnowledgeTools(["kb_search", "read_file", "kb_manage"]),

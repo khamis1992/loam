@@ -31,13 +31,15 @@ class MockRelay implements VideoStudioRelayLike {
   failWith: { code: string; message: string } | null = null;
   /** When set, every `inspect` returns this payload (defaults to an empty timeline). */
   project: unknown = EMPTY_PROJECT;
+  /** Payload returned by importFiles. Defaults to a bin import with no item ids. */
+  importResult: unknown = { imported: 1 };
 
   async enqueue(taskId: string, target: "film" | "effects", method: string, params: Record<string, unknown> = {}): Promise<unknown> {
     this.dispatched.push({ taskId, target, method, params });
     if (this.failWith) throw Object.assign(new Error(this.failWith.message), { code: this.failWith.code });
     if (method === "commands") return this.commands;
     if (method === "inspect") return this.project;
-    if (method === "importFiles") return { imported: 1 };
+    if (method === "importFiles") return this.importResult;
     if (method === "importUrl") return { imported: 1 };
     return { ok: true };
   }
@@ -258,6 +260,18 @@ describe("video_studio actions produce the expected command sequence", () => {
     ]);
   });
 
+  it("import places the editor item ids on the timeline", async () => {
+    relay = new MockRelay();
+    relay.importResult = { errors: [], items: [49], paths: ["/files/clip.mp4"] };
+    fs.writeFileSync(path.join(ws, "clip.mp4"), "video");
+    await tool().run({ action: "import", path: "clip.mp4" }, ctx());
+    assert.deepEqual(commandsDispatched(), [
+      { method: "importFiles", params: { files: [path.join(ws, "clip.mp4")] } },
+      { method: "execute", params: { command: "playhead.set", params: { seconds: 0 } } },
+      { method: "execute", params: { command: "file.newSequence", params: { fromItems: [49] } } },
+    ]);
+  });
+
   it("import refuses a missing task file", async () => {
     relay = new MockRelay();
     const res = await tool().run({ action: "import", path: "nope.mp4" }, ctx());
@@ -272,6 +286,14 @@ describe("video_studio actions produce the expected command sequence", () => {
     await tool().run({ action: "cut", atSec: "0:30" }, ctx());
     assert.deepEqual(commandsDispatched(), [
       { method: "execute", params: { command: "timeline.razor", params: { atSec: 30 } } },
+    ]);
+
+    relay = new MockRelay();
+    relay.commands = [...CATALOG, "playhead.set"];
+    await tool().run({ action: "cut", atSec: 2 }, ctx());
+    assert.deepEqual(commandsDispatched(), [
+      { method: "execute", params: { command: "playhead.set", params: { seconds: 2 } } },
+      { method: "execute", params: { command: "timeline.razor", params: { atSec: 2 } } },
     ]);
 
     relay = new MockRelay();
@@ -487,7 +509,7 @@ describe("video_studio actions produce the expected command sequence", () => {
     assert.equal(res.ok, false);
     const parsed = JSON.parse(res.content) as { retry: boolean; reason: string; fallback?: string };
     assert.equal(parsed.reason, "panel_not_open");
-    assert.equal(parsed.retry, true);
+    assert.equal(parsed.retry, false);
     assert.equal(parsed.fallback, undefined);
   });
 
@@ -722,7 +744,7 @@ describe("video_studio export action", () => {
     assert.equal(executed.length > 0, true);
     assert.deepEqual(executed[0]!.params, {
       command: "file.exportMedia",
-      params: { path: "/exports/loam-cut.mp4", range: "", wait: true, targetKbps: 12_000 },
+      params: { path: "/exports/loam-cut.mp4", range: "entire", wait: true, targetKbps: 12_000 },
     });
   });
 

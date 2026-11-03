@@ -3,12 +3,27 @@
  * companion gateway so companions can use the app's real services. */
 import type { Tool, ToolResult } from "./registry.js";
 import { str, num } from "./registry.js";
+import { PENTEST_CHECKS } from "./pentest.js";
+
+let serviceBaseUrl = "";
+
+/** The URL the running server bound, set when it starts listening. */
+export function setServiceBaseUrl(url: string): void {
+  serviceBaseUrl = url.replace(/\/$/, "");
+}
+
+export function serviceBase(): string {
+  if (serviceBaseUrl) return serviceBaseUrl;
+  const port = (process.env.LOAM_PORT || process.env.MANUS_LOCAL_PORT || "").trim();
+  return port ? `http://127.0.0.1:${port}` : "";
+}
 
 async function api(method: string, path: string, body?: unknown): Promise<Record<string, unknown> | { error: string }> {
-  const port = Number(process.env.MANUS_LOCAL_PORT ?? 3939);
+  const base = serviceBase();
+  if (!base) return { error: "Service port is not configured" };
   const token = process.env.LOAM_LOCAL_TOKEN ?? "";
   try {
-    const res = await fetch(`http://127.0.0.1:${port}${path}`, {
+    const res = await fetch(`${base}${path}`, {
       method,
       headers: { "content-type": "application/json", ...(token ? { "x-loam-local-token": token } : {}) },
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
@@ -31,11 +46,15 @@ export function createSwarmTools(): Tool[] {
         properties: {
           brief: { type: "string", description: "وصف المشروع المطلوب (المستخدمون والوظائف)" },
           concurrency: { type: "integer", minimum: 1, maximum: 4, description: "عدد المسارات المتوازية" },
+          effort: { type: "string", enum: ["auto", "solo", "lite", "full"], description: "حجم الفريق: auto يختار تلقائيًا (الطلب الصغير يذهب لوكيل واحد)" },
         },
         required: ["brief"],
       },
       async run(args): Promise<ToolResult> {
-        const res = await api("POST", "/api/swarm/runs", { brief: str(args, "brief"), concurrency: num(args, "concurrency", 2) });
+        // BUILD_SPEC §4: the agent tool sends the recommended lifecycle profile; approval stays
+        // "auto" here because a tool call has no approval card (the swarm UI asks for approval).
+        const effort = typeof args.effort === "string" && ["auto", "solo", "lite", "full"].includes(args.effort) ? args.effort : "auto";
+        const res = await api("POST", "/api/swarm/runs", { brief: str(args, "brief"), concurrency: num(args, "concurrency", 2), effort, intake: "off", approval: "auto", review: "two-stage", taskGraph: true, spec: "ears", projectGuide: true, webResearch: true, visualGate: "advisory" });
         if ("error" in res) return { ok: false, content: String(res.error) };
         const run = (res as { run?: { id: string } }).run;
         return { ok: true, content: `بدأ السرب (${run?.id ?? "?"}) — شركة برمجيات كاملة تعمل. تابعه بـ swarm_status ثم اجلب النتائج.` };
@@ -43,10 +62,18 @@ export function createSwarmTools(): Tool[] {
     },
     {
       name: "swarm_status",
-      description: "تابع حالة مشروع السرب: المرحلة الحالية، التقدم، المخرجات.",
-      parameters: { type: "object", properties: { runId: { type: "string" } }, required: ["runId"] },
+      description: "تابع حالة مشروع السرب: المرحلة الحالية، التقدم، المخرجات. بدون runId تُقرأ أحدث عملية.",
+      parameters: { type: "object", properties: { runId: { type: "string", description: "معرف العملية. فارغ يعني أحدث عملية." } } },
       async run(args): Promise<ToolResult> {
-        const res = await api("GET", `/api/swarm/runs/${encodeURIComponent(str(args, "runId"))}`);
+        let runId = str(args, "runId");
+        if (!runId) {
+          const listed = await api("GET", "/api/swarm/runs");
+          if ("error" in listed) return { ok: false, content: String(listed.error) };
+          const runs = (listed as { runs?: Array<{ id?: string }> }).runs ?? [];
+          runId = runs.find((run) => typeof run.id === "string" && run.id)?.id ?? "";
+          if (!runId) return { ok: false, content: "no swarm run to status" };
+        }
+        const res = await api("GET", `/api/swarm/runs/${encodeURIComponent(runId)}`);
         if ("error" in res) return { ok: false, content: String(res.error) };
         const runData = res as { run?: { status?: string; stage?: string; nodes?: Array<{ id: string; status: string }> } };
         const nodes = runData.run?.nodes ?? [];
@@ -69,11 +96,21 @@ export function createSecurityTools(): Tool[] {
         },
         required: ["target"],
       },
-      async run(args): Promise<ToolResult> {
-        const res = await api("POST", "/api/security/assessments", { target: str(args, "target"), checks: args.checks ?? "all" });
+      async run(args, ctx): Promise<ToolResult> {
+        const requested = args.checks;
+        const checks = Array.isArray(requested)
+          ? requested.filter((item): item is string => typeof item === "string")
+          : PENTEST_CHECKS.map((item) => item.name);
+        const taskId = ctx.taskId ? `?taskId=${encodeURIComponent(ctx.taskId)}` : "";
+        const res = await api("POST", `/api/security/assessments${taskId}`, {
+          target: str(args, "target"),
+          checks,
+          authorized: true,
+        });
         if ("error" in res) return { ok: false, content: String(res.error) };
-        const assessment = (res as { assessment?: { id: string } }).assessment;
-        return { ok: true, content: `بدأ التقييم (${assessment?.id ?? "?"}) — تابعه بـ security_status ثم اجلب التقرير.` };
+        const run = (res as { run?: { id?: string }; assessment?: { id?: string } }).run
+          ?? (res as { assessment?: { id?: string } }).assessment;
+        return { ok: true, content: `بدأ التقييم (${run?.id ?? "?"}) — تابعه بـ security_status ثم اجلب التقرير.` };
       },
     },
     {

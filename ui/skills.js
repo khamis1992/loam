@@ -309,3 +309,228 @@ document.addEventListener("keydown", (e) => {
 
 void loadInstalled();
 void loadCategories();
+
+/* ========================================================================
+ * السوق — unified install grid (bridges + connectors + skills).
+ * Phase-2 W6: additive section. Every action reuses the endpoint its own
+ * surface already uses: /api/bridges* (integrations page bridges API),
+ * /api/connectors* (connectors routes), /api/skills/catalog + install.
+ * No new server endpoints.
+ * ====================================================================== */
+const MARKET_KINDS = [
+  { id: "", label: "الكل" },
+  { id: "skills", label: "مهارات" },
+  { id: "bridges", label: "جسور" },
+  { id: "connectors", label: "موصلات" },
+];
+const BRIDGE_STATUS_AR = {
+  ready: "جاهز",
+  disabled: "معطّل",
+  missing: "غير مثبّت",
+  error: "خطأ",
+};
+let marketItems = []; // {kind, id, name, desc, ...raw}
+let marketKind = "";
+let marketLoaded = false;
+
+function marketChips() {
+  const box = $("marketCats");
+  box.innerHTML = MARKET_KINDS.map(
+    (k) =>
+      `<button class="cat${k.id === marketKind ? " active" : ""}" data-kind="${k.id}">${k.label}<span>${
+        k.id ? marketItems.filter((i) => i.kind === k.id).length : marketItems.length
+      }</span></button>`,
+  ).join("");
+  box.querySelectorAll(".cat").forEach(
+    (b) =>
+      (b.onclick = () => {
+        marketKind = b.dataset.kind;
+        renderMarket();
+      }),
+  );
+}
+
+function marketCard(item) {
+  if (item.kind === "skills") {
+    return `
+      <article class="sk-card" data-kind="skills">
+        <div class="sk-head">
+          <div class="avatar"><loam-icon name="skills"></loam-icon></div>
+          <div style="min-width:0">
+            <div class="sk-name">${esc(item.name)}</div>
+            <div class="sk-id">${esc(item.id)}</div>
+          </div>
+          <span class="badge" style="margin-inline-start:auto">مهارة</span>
+        </div>
+        <div class="sk-desc">${esc(item.desc || "")}</div>
+        <div class="sk-actions"><button class="primary" data-mkt-skill="${esc(item.id)}">تثبيت</button></div>
+      </article>`;
+  }
+  if (item.kind === "bridges") {
+    const on = item.enabled;
+    return `
+      <article class="sk-card" data-kind="bridges">
+        <div class="sk-head">
+          <div class="avatar"><loam-icon name="terminal"></loam-icon></div>
+          <div style="min-width:0">
+            <div class="sk-name">${esc(item.name)}</div>
+            <div class="sk-id">bridge/${esc(item.id)}</div>
+          </div>
+          <span class="badge" style="margin-inline-start:auto">${esc(BRIDGE_STATUS_AR[item.status] || item.status)}</span>
+        </div>
+        <div class="sk-desc">${esc(item.desc || "")}${item.version ? ` — <span dir="ltr">${esc(item.version)}</span>` : ""}</div>
+        <div class="sk-actions">
+          <button class="${on ? "ghost" : "primary"}" data-mkt-bridge="${esc(item.id)}" data-on="${on ? "1" : ""}">${on ? "إيقاف" : "تفعيل"}</button>
+          <button class="ghost" data-mkt-bridge-skill="${esc(item.id)}">توليد مهارة</button>
+        </div>
+      </article>`;
+  }
+  /* connectors */
+  const connected = item.connected;
+  const hint = item.configured
+    ? connected
+      ? `متصل بحساب ${esc(item.account || "")}`
+      : "مهيأ — اضغط ربط لبدء تسجيل الدخول"
+    : `يحتاج متغيرات البيئة: ${esc((item.envVars || []).join("، "))}`;
+  return `
+      <article class="sk-card" data-kind="connectors">
+        <div class="sk-head">
+          <div class="avatar"><loam-icon name="integrations"></loam-icon></div>
+          <div style="min-width:0">
+            <div class="sk-name">${esc(item.name)}</div>
+            <div class="sk-id">connector/${esc(item.id)}</div>
+          </div>
+          <span class="badge" style="margin-inline-start:auto">${connected ? "متصل" : item.configured ? "غير متصل" : "غير مهيأ"}</span>
+        </div>
+        <div class="sk-desc">${hint}</div>
+        <div class="sk-actions">
+          ${connected
+            ? `<button class="ghost" data-mkt-conn-off="${esc(item.id)}">فصل</button>`
+            : `<button class="primary" data-mkt-conn="${esc(item.id)}"${item.configured ? "" : " disabled"}>ربط</button>`}
+        </div>
+      </article>`;
+}
+
+function renderMarket() {
+  marketChips();
+  const box = $("marketGrid");
+  const list = marketKind ? marketItems.filter((i) => i.kind === marketKind) : marketItems;
+  if (list.length === 0) {
+    box.innerHTML = emptyState("لا عناصر في السوق", "تحقق من تشغيل الخدمة أو أعد التحديث", "");
+    return;
+  }
+  box.innerHTML = list.map(marketCard).join("");
+  box.querySelectorAll("[data-mkt-skill]").forEach((b) => (b.onclick = () => void installSkill(b.dataset.mktSkill, b)));
+  box.querySelectorAll("[data-mkt-bridge]").forEach(
+    (b) =>
+      (b.onclick = () =>
+        void toggleBridge(b.dataset.mktBridge, b.dataset.on !== "1")),
+  );
+  box.querySelectorAll("[data-mkt-bridge-skill]").forEach((b) => (b.onclick = () => void bridgeSkill(b.dataset.mktBridgeSkill)));
+  box.querySelectorAll("[data-mkt-conn]").forEach((b) => (b.onclick = () => void connectConnector(b.dataset.mktConn)));
+  box.querySelectorAll("[data-mkt-conn-off]").forEach((b) => (b.onclick = () => void disconnectConnector(b.dataset.mktConnOff)));
+}
+
+async function loadMarket() {
+  const box = $("marketGrid");
+  skeletons(box, 6);
+  /* Skills: same catalog source the catalog tab reads (top of the index). */
+  const [skillsRes, bridgesRes, connectorsRes] = await Promise.allSettled([
+    fetch("/api/skills/catalog?" + new URLSearchParams({ limit: "24", describe: "6" })).then((r) => r.json()),
+    fetch("/api/bridges").then((r) => r.json()),
+    fetch("/api/connectors").then((r) => r.json()),
+  ]);
+  const items = [];
+  if (bridgesRes.status === "fulfilled" && Array.isArray(bridgesRes.value.bridges)) {
+    for (const b of bridgesRes.value.bridges)
+      items.push({ kind: "bridges", id: b.id, name: b.name, desc: b.description, enabled: b.enabled, status: b.status, version: b.version });
+  } else {
+    toast("تعذّر تحميل الجسور", "err");
+  }
+  if (connectorsRes.status === "fulfilled" && Array.isArray(connectorsRes.value.connectors)) {
+    for (const c of connectorsRes.value.connectors)
+      items.push({ kind: "connectors", id: c.id, name: c.name, connected: c.connected, configured: c.configured, account: c.account, envVars: c.envVars });
+  } else {
+    toast("تعذّر تحميل الموصلات", "err");
+  }
+  if (skillsRes.status === "fulfilled" && Array.isArray(skillsRes.value.skills)) {
+    for (const s of skillsRes.value.skills)
+      items.push({ kind: "skills", id: s.id, name: s.id.split("/").pop() || s.id, desc: s.description });
+  } else {
+    toast("تعذّر تحميل مهارات السوق", "err");
+  }
+  marketItems = items;
+  marketLoaded = true;
+  $("stMarket").textContent = String(items.length);
+  renderMarket();
+}
+
+/* Bridges: same /api/bridges surface the integrations bridges API serves. */
+async function toggleBridge(id, on) {
+  toast(on ? "جارٍ تفعيل الجسر " + id + " …" : "جارٍ إيقاف الجسر " + id + " …");
+  try {
+    const data = await (
+      await fetch("/api/bridges/" + encodeURIComponent(id), {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ enabled: on }),
+      })
+    ).json();
+    if (data.error) return toast("خطأ: " + data.error, "err");
+    const info = data.bridge;
+    const idx = marketItems.findIndex((i) => i.kind === "bridges" && i.id === id);
+    if (idx >= 0 && info) marketItems[idx] = { kind: "bridges", id: info.id, name: info.name, desc: info.description, enabled: info.enabled, status: info.status, version: info.version };
+    toast(on ? "فُعّل الجسر " + id : "أُوقف الجسر " + id, "ok");
+    renderMarket();
+  } catch (err) {
+    toast("تعذّر الاتصال: " + err.message, "err");
+  }
+}
+
+async function bridgeSkill(id) {
+  toast("جارٍ توليد مهارة الجسر " + id + " …");
+  try {
+    const data = await (
+      await fetch("/api/bridges/" + encodeURIComponent(id) + "/skill", { method: "POST" })
+    ).json();
+    if (data.error) return toast("خطأ: " + data.error, "err");
+    toast("أُنشئت مهارة الجسر: " + (data.file || id), "ok");
+    await loadInstalled();
+  } catch (err) {
+    toast("تعذّر الاتصال: " + err.message, "err");
+  }
+}
+
+/* Connectors: same /api/connectors connect/disconnect routes the services page uses. */
+async function connectConnector(id) {
+  toast("جارٍ بدء ربط " + id + " …");
+  try {
+    const data = await (
+      await fetch("/api/connectors/" + encodeURIComponent(id) + "/connect", { method: "POST" })
+    ).json();
+    if (data.error) return toast("خطأ: " + data.error, "err");
+    if (data.authUrl) window.open(data.authUrl, "_blank");
+    toast("أكمل تسجيل الدخول في النافذة الجديدة ثم حدّث السوق", "ok");
+  } catch (err) {
+    toast("تعذّر الاتصال: " + err.message, "err");
+  }
+}
+
+async function disconnectConnector(id) {
+  toast("جارٍ فصل " + id + " …");
+  try {
+    const data = await (
+      await fetch("/api/connectors/" + encodeURIComponent(id) + "/disconnect", { method: "POST" })
+    ).json();
+    if (data.error || !data.ok) return toast("خطأ: " + (data.error || "فشل الفصل"), "err");
+    toast("فُصل " + id, "ok");
+    await loadMarket();
+  } catch (err) {
+    toast("تعذّر الاتصال: " + err.message, "err");
+  }
+}
+
+document.querySelector('.sk-tab[data-tab="market"]').addEventListener("click", () => {
+  if (!marketLoaded) void loadMarket();
+});
+$("marketRefresh").onclick = () => void loadMarket();

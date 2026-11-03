@@ -1,0 +1,41 @@
+{
+  "id": "node-2026-10-21",
+  "product": "nodejs",
+  "title": "Node.js October 21, 2026 security release",
+  "published": "2026-10-21",
+  "sourceUrls": [
+    "https://nodejs.org/en/blog/vulnerability/october-2026-security-releases",
+    "https://nodejs.org/en/blog/release/v22.23.4",
+    "https://nodejs.org/en/blog/release/v24.22.1",
+    "https://nodejs.org/en/blog/release/v26.12.1"
+  ],
+  "cves": [
+    { "id": "CVE-2026-111497", "severity": "high", "summary": "Brotli decoder out-of-bounds write permits RCE" },
+    { "id": "CVE-2026-105482", "severity": "high", "summary": "dns: validate resolve inputs for null bytes" },
+    { "id": "CVE-2026-105483", "severity": "high", "summary": "tls: fix ip normalization regression" },
+    { "id": "CVE-2026-106069", "severity": "high", "summary": "tls: reject non-canonical IP addresses" },
+    { "id": "CVE-2026-106072", "severity": "high", "summary": "tls: reject non-canonical IP addresses (companion)" },
+    { "id": "CVE-2026-105481", "severity": "medium", "summary": "http: ensure agent data guard works without I/O" },
+    { "id": "CVE-2026-106074", "severity": "medium", "summary": "crypto: reset random caches across snapshots" },
+    { "id": "CVE-2026-106073", "severity": "low", "summary": "permission: check permission model in realpathSync" }
+  ],
+  "lines": [
+    { "line": "22", "status": "supported", "fixed": "22.23.4", "variant": "Jod LTS" },
+    { "line": "24", "status": "supported", "fixed": "24.22.1", "variant": "Krypton LTS" },
+    { "line": "26", "status": "supported", "fixed": "26.12.1", "variant": "Current" },
+    { "line": "20", "status": "eol", "fixed": null, "upgradePath": ["22.23.4", "24.22.1"] },
+    { "line": "18", "status": "eol", "fixed": null, "upgradePath": ["22.23.4"] }
+  ],
+  "bundledUpdates": ["c-ares", "OpenSSL (22/24)", "SQLite (22)", "Undici", "CA certs (eMudhra Intermediate CA removal)"],
+  "priorities": [
+    "Internet-facing services that decompress Brotli (HTTP clients/servers, proxies, zlib.createBrotliDecompress)",
+    "TLS clients that connect to user-supplied hosts"
+  ],
+  "forbidden": [
+    "Do not guess image tags, digests, or package versions",
+    "Do not do a major Node upgrade without explicit approval",
+    "Do not change base distribution or image flavor without saying so"
+  ],
+  "mitigations": [],
+  "notes": "Electron apps, vendor images and appliances bundle their own Node — flag for vendor updates; do not patch the host Node and claim the app is fixed."
+}

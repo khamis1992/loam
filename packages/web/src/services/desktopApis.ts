@@ -1,6 +1,6 @@
 import { useRouter } from 'next/navigation';
 import { logout, closeSettings, type AppDispatch } from '@/store';
-import { PROTOCOL_API_BASE } from './rpc';
+import { getApiBase } from './rpc';
 import type { UserInfoResponse } from '@shared/proto';
 
 export interface DesktopSyncInfo {
@@ -98,7 +98,7 @@ export async function validateSessionToken(
   let invalid = false;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      const res = await fetch(`${PROTOCOL_API_BASE}/user.v1.UserService/UserInfo`, {
+      const res = await fetch(`${getApiBase()}/user.v1.UserService/UserInfo`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

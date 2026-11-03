@@ -112,7 +112,7 @@ export function StepTimeline({ events, selectedActionId, onSelect }: StepTimelin
                 onClick={() => select(step)}
                 className={[
                   'flex h-7 items-center gap-1 rounded-control px-2 text-xs',
-                  isSelected ? 'bg-icon-blue/15 text-text-primary ring-1 ring-icon-blue/40' : 'bg-fill-tsp text-text-secondary hover:bg-fill-hover',
+                  isSelected ? 'bg-status-active/15 text-text-primary ring-1 ring-status-active/40' : 'bg-fill-tsp text-text-secondary hover:bg-fill-hover',
                   isFuture ? 'opacity-40' : '',
                 ].filter(Boolean).join(' ')}
               >

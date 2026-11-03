@@ -19,7 +19,7 @@
         {
           "name": "completion",
           "score": 100,
-          "detail": "5/5 assertions passed; score 100"
+          "detail": "6/6 assertions passed; score 100"
         },
         {
           "name": "citation",
@@ -29,7 +29,7 @@
         {
           "name": "flatness",
           "score": 100,
-          "detail": "first step 15817 prompt tokens, last 16268, peak 16268; growth 1.03x (limit 3x); flat up to 1.1x; score 100"
+          "detail": "first step 17565 prompt tokens, last 18016, peak 18016; growth 1.03x (limit 3x); flat up to 1.1x; score 100"
         }
       ]
     },
@@ -52,7 +52,7 @@
         {
           "name": "flatness",
           "score": 100,
-          "detail": "first step 15783 prompt tokens, last 15949, peak 15949; growth 1.01x (limit 3x); flat up to 1.1x; score 100"
+          "detail": "first step 17531 prompt tokens, last 17697, peak 17697; growth 1.01x (limit 3x); flat up to 1.1x; score 100"
         },
         {
           "name": "recovery",
@@ -108,7 +108,7 @@
         {
           "name": "flatness",
           "score": 100,
-          "detail": "first step 15810 prompt tokens, last 16113, peak 16113; growth 1.02x (limit 3x); flat up to 1.1x; score 100"
+          "detail": "first step 17559 prompt tokens, last 17862, peak 17862; growth 1.02x (limit 3x); flat up to 1.1x; score 100"
         }
       ]
     },
@@ -126,12 +126,12 @@
         {
           "name": "completion",
           "score": 100,
-          "detail": "3/3 assertions passed; score 100"
+          "detail": "4/4 assertions passed; score 100"
         },
         {
           "name": "flatness",
           "score": 100,
-          "detail": "first step 15811 prompt tokens, last 15918, peak 15918; growth 1.01x (limit 3x); flat up to 1.1x; score 100"
+          "detail": "first step 17559 prompt tokens, last 17666, peak 17666; growth 1.01x (limit 3x); flat up to 1.1x; score 100"
         },
         {
           "name": "recovery",
@@ -154,7 +154,7 @@
         {
           "name": "completion",
           "score": 100,
-          "detail": "4/4 assertions passed; score 100"
+          "detail": "5/5 assertions passed; score 100"
         },
         {
           "name": "citation",
@@ -164,7 +164,7 @@
         {
           "name": "flatness",
           "score": 100,
-          "detail": "first step 15810 prompt tokens, last 16042, peak 16042; growth 1.01x (limit 3x); flat up to 1.1x; score 100"
+          "detail": "first step 17558 prompt tokens, last 17790, peak 17790; growth 1.01x (limit 3x); flat up to 1.1x; score 100"
         }
       ]
     },
@@ -233,7 +233,7 @@
         {
           "name": "flatness",
           "score": 100,
-          "detail": "first step 15803 prompt tokens, last 15991, peak 15991; growth 1.01x (limit 3x); flat up to 1.1x; score 100"
+          "detail": "first step 17552 prompt tokens, last 17739, peak 17739; growth 1.01x (limit 3x); flat up to 1.1x; score 100"
         }
       ]
     },

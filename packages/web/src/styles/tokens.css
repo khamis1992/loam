@@ -135,6 +135,15 @@
   --gradual-white-0: #fff0;
   --gradual-white-menu-0: #fff0;
   --icon-blue: #0081f2;
+  --icon-blue-rgb: 0 129 242;
+  --status-active: #0081f2;
+  --border-composer: #e5e7eb;
+  /* Motion tokens — theme-invariant; consumed via tailwind duration-fast/medium/slow */
+  --motion-fast: 150ms;
+  --motion-medium: 250ms;
+  --motion-slow: 350ms;
+  --motion-ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --motion-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
   --icon-disable: #a6a6a6;
   --icon-live-event-entry-secondary: #5e5e5b;
   --icon-onblack: #fff;
@@ -298,6 +307,9 @@
   --gradual-white-0: #1a1a1a00;
   --gradual-white-menu-0: #1f1f1f00;
   --icon-blue: #1a93fe;
+  --icon-blue-rgb: 26 147 254;
+  --status-active: #1a93fe;
+  --border-composer: #ffffff14;
   --icon-disable: #595959;
   --icon-live-event-entry-secondary: var(--icon-secondary);
   --icon-onblack: #000000d9;

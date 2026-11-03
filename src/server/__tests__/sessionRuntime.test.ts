@@ -76,13 +76,13 @@ describe("session runtime (budget + sleep together)", () => {
     assert.equal(runtime.isStoppedOnBudget("s1"), true);
   });
 
-  it("stops on the token budget as well", () => {
+  it("warns when the token ceiling is reached and keeps the session running", () => {
     runtime.markActive("s1");
     runtime.recordUsage("s1", 800, 0);
     assert.equal(runtime.evaluate("s1").action, "warn");
     runtime.recordUsage("s1", 200, 0);
-    assert.equal(runtime.evaluate("s1").action, "stop");
-    assert.equal(runtime.isStoppedOnBudget("s1"), true);
+    assert.equal(runtime.evaluate("s1").action, "warn");
+    assert.equal(runtime.isStoppedOnBudget("s1"), false);
   });
 
   it("raising the budget clears the stop and resumes the session", () => {
@@ -250,6 +250,19 @@ describe("session runtime (budget + sleep together)", () => {
       assert.equal(session.budget.stepLimit, 25); // 0 + 25 (singleton has no configured ceiling)
       assert.equal(session.budget.tokenLimit, 100000); // 0 + 100000
       assert.equal(good.json.raised, true);
+    });
+
+    it("pauses and resumes the budget policy over HTTP", async () => {
+      const paused = await request(server, "POST", "/api/sessions/s-pause/budget-pause", { reason: "operator hold" });
+      assert.equal(paused.status, 200);
+      assert.equal((paused.json.pause as { paused: boolean }).paused, true);
+      const state = await request(server, "GET", "/api/sessions/s-pause/runtime");
+      assert.equal((state.json.pause as { reason: string }).reason, "operator hold");
+
+      const resumed = await request(server, "POST", "/api/sessions/s-pause/budget-resume");
+      assert.equal(resumed.status, 200);
+      assert.equal(resumed.json.resumed, true);
+      assert.equal((resumed.json.pause as { paused: boolean }).paused, false);
     });
 
     it("does not handle unrelated paths", async () => {

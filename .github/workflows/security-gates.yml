@@ -1,0 +1,57 @@
+# Security platform CI (ALL_SERVICES program gates, Revisions 42-49).
+#
+# Runs the offline security gates on every push to main and every PR:
+#   check:normalize  — the unified funnel + coverage ledger (W0)
+#   check:scanners   — the seven scanner tools over a fixture project (W1)
+#   check:re         — RE core: identity, evidence ids, rebuild-verify, tools (W3)
+#   check:fuzz       — fuzz planner/triage/campaign wiring + proposal-only patch (W4)
+#   check:selfscan   — deterministic self-scan of this repository against the
+#                      recorded baseline docs/bench/selfscan-baseline.json (W1/W5)
+#
+# All gates are offline and engine-optional: external engines (opengrep, checkov,
+# jazzer) degrade to notes instead of failing, so this job is deterministic.
+# Regenerate the baseline after an intentional rule change with
+# `npm run selfscan:baseline` and commit the updated JSON.
+
+name: security-gates
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  security-gates:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - run: npm ci
+        continue-on-error: false
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Red team, mobile and enterprise security gates
+        run: npm run verify:security
+
+      - name: Normalize funnel + coverage ledger (check:normalize)
+        run: npm run check:normalize
+
+      - name: Scanner surface (check:scanners)
+        run: npm run check:scanners
+
+      - name: RE core (check:re)
+        run: npm run check:re
+
+      - name: Fuzz pipeline (check:fuzz)
+        run: npm run check:fuzz
+
+      - name: Repository self-scan vs baseline (check:selfscan)
+        run: npm run check:selfscan

@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: loam-security
+  labels:
+    app.kubernetes.io/name: loam-security
+    app.kubernetes.io/part-of: loam-security

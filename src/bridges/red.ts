@@ -1,0 +1,321 @@
+/**
+ * Red-team bridge manifests (RED_TEAM_BUILD_SPEC §4.4, §6.3, §6.5, §6.6, §6.8,
+ * §6.9, §6.11). Raw data on purpose: registry.ts validates every one at load.
+ *
+ * Red bridges ship DISABLED BY DEFAULT — bridges only run when the user enables
+ * them in config (`cfg.bridges.enabled[id]`). Heavy engines are discovered on
+ * the machine (where/named paths), not bundled (spec O-3). The orchestrator
+ * consults the §0.4 authorization gate on the target BEFORE any bridge executes;
+ * the bridge boundary is defense-in-depth, not the authorization itself.
+ *
+ * Licence discipline (§5.9): engines run as external processes. No upstream
+ * code is copied into Loam.
+ */
+export const RED_MANIFESTS: unknown[] = [
+  {
+    id: "red-ffuf",
+    name: "ffuf (web fuzzer)",
+    description: "Path/param/content fuzzing against an in-scope target (RED_TEAM_BUILD_SPEC 6.5).",
+    probe: { names: ["ffuf.exe", "ffuf"], paths: ["%USERPROFILE%\\.loam\\tools\\ffuf.exe"] },
+    versionArgs: ["-V"],
+    commands: [
+      {
+        id: "fuzz",
+        description: "Fuzz a FUZZ-marked URL with a wordlist; writes JSON results into the workspace.",
+        effect: "external",
+        argv: [
+          "-u", "{url}",
+          "-w", "{wordlist}",
+          "-t", "{threads}",
+          "-mc", "200,301,302,401,403",
+          "-of", "json", "-o", "{out}",
+          { when: "rate", args: ["-rate", "{rate}"] },
+        ],
+        params: {
+          url: { type: "string", required: true, description: "Target URL with a FUZZ keyword marking the injection point." },
+          wordlist: { type: "path", access: "read", required: true, description: "Wordlist file." },
+          threads: { type: "number", description: "Parallel workers (default 10)." },
+          rate: { type: "number", description: "Requests per second cap (recommended 10)." },
+          out: { type: "path", access: "write", required: true, description: "JSON results file inside the workspace." },
+        },
+        output: "text",
+        timeoutSeconds: 600,
+      },
+    ],
+  },
+  {
+    id: "red-nuclei",
+    name: "nuclei (template scanner)",
+    description: "Fast template-based vulnerability checks against an in-scope target (RED_TEAM_BUILD_SPEC 6.6).",
+    probe: { names: ["nuclei.exe", "nuclei"], paths: ["%USERPROFILE%\\.loam\\tools\\nuclei.exe"] },
+    versionArgs: ["-version"],
+    commands: [
+      {
+        id: "scan",
+        description: "Run nuclei templates against one in-scope URL, emitting JSONL findings.",
+        effect: "external",
+        argv: [
+          "-u", "{target}",
+          "-severity", "{severity}",
+          "-jsonl", "-silent", "-nc",
+          { when: "rate", args: ["-rl", "{rate}"] },
+          { when: "tags", args: ["-tags", "{tags}"] },
+          { when: "ids", args: ["-id", "{ids}"] },
+          { when: "templates", args: ["-t", "{templates}"] },
+        ],
+        params: {
+          target: { type: "string", required: true, description: "In-scope target URL." },
+          severity: { type: "enum", required: true, values: ["info", "low", "medium", "high", "critical"], description: "Minimum severity to report." },
+          rate: { type: "number", description: "Requests per second cap (recommended 10)." },
+          tags: { type: "string", description: "Comma-separated template tags to restrict the run (e.g. cve,fuzz)." },
+          ids: { type: "string", description: "Comma-separated exact nuclei template ids derived from recon CVE leads." },
+          templates: { type: "path", access: "read", description: "Optional custom template file or directory (e.g. Loam's private lab/self-scan templates)." },
+        },
+        output: "jsonl",
+        timeoutSeconds: 600,
+        // A partially configured Google provider on the host otherwise aborts
+        // nuclei before scanning (GOOGLE_API_KEY set without GOOGLE_API_CX).
+        env: { GOOGLE_API_KEY: "", GOOGLE_API_CX: "" },
+      },
+    ],
+  },
+  {
+    id: "red-sqlmap",
+    name: "sqlmap (SQL injection)",
+    description: "Automated SQL injection testing against an in-scope target (RED_TEAM_BUILD_SPEC 6.3). GPL-2.0: external process only, no code copied; runs through the local Python launcher.",
+    probe: { names: ["py.exe", "py"] },
+    versionArgs: ["--version"],
+    commands: [
+      {
+        id: "test",
+        description: "Non-destructive SQLi detection: enumerate injectable parameters and fingerprint the DBMS. Never dumps data or opens a shell.",
+        effect: "external",
+        argv: [
+          "{script}",
+          "-u", "{url}",
+          "--batch", "--level", "{level}", "--risk", "{risk}",
+          "--technique", "BEUSTQ",
+          "--output-dir", "{workdir}",
+          { when: "data", args: ["--data", "{data}"] },
+        ],
+        params: {
+          script: { type: "path", access: "read", required: true, description: "Path to sqlmap.py (from the red engine installer)." },
+          url: { type: "string", required: true, description: "Target URL with the parameter under test." },
+          level: { type: "number", description: "Test level 1-5 (default 1)." },
+          risk: { type: "number", description: "Test risk 1-3 (default 1)." },
+          workdir: { type: "path", access: "write", required: true, description: "sqlmap output directory inside the workspace." },
+          data: { type: "string", description: "POST data string, when testing a form." },
+        },
+        output: "text",
+        timeoutSeconds: 900,
+      },
+      {
+        id: "dump",
+        description: "DESTRUCTIVE: dump table rows from a confirmed injection. Requires the gate's destructive approval before invocation.",
+        effect: "external",
+        argv: [
+          "{script}",
+          "-u", "{url}",
+          "--batch", "--technique", "BEUSTQ",
+          "--dump",
+          "--output-dir", "{workdir}",
+          { when: "data", args: ["--data", "{data}"] },
+        ],
+        params: {
+          script: { type: "path", access: "read", required: true, description: "Path to sqlmap.py (from the red engine installer)." },
+          url: { type: "string", required: true },
+          workdir: { type: "path", access: "write", required: true },
+          data: { type: "string" },
+        },
+        output: "text",
+        timeoutSeconds: 900,
+      },
+    ],
+  },
+  {
+    id: "red-zap",
+    name: "OWASP ZAP (DAST)",
+    description: "Active DAST scan via ZAP's quick-scan mode against an in-scope target (RED_TEAM_BUILD_SPEC 6.3). Runs directly on the local JRE to avoid Windows .bat/spawn constraints.",
+    probe: { names: ["java.exe", "java"] },
+    versionArgs: ["-version"],
+    commands: [
+      {
+        id: "daemon",
+        description: "Start a headless ZAP daemon with its REST API enabled (API key disabled for loopback lab use). Lifecycle is owned by the DAST capability via runBridgeDetached.",
+        effect: "external",
+        argv: ["-jar", "{jar}", "-daemon", "-port", "{port}", "-config", "api.disablekey=true"],
+        params: {
+          jar: { type: "path", access: "read", required: true, description: "Absolute path to the ZAP jar from the red engine installer." },
+          port: { type: "number", required: true, description: "Loopback port for the ZAP REST API." },
+        },
+        output: "text",
+        timeoutSeconds: 900,
+      },
+      {
+        id: "quickscan",
+        description: "ZAP baseline+active quick scan of one URL; writes the report file into the workspace.",
+        effect: "external",
+        argv: ["-jar", "{jar}", "-cmdline", "-quickurl", "{target}", "-quickout", "{out}", "-quickprogress"],
+        params: {
+          jar: { type: "path", access: "read", required: true, description: "Absolute path to the ZAP jar from the red engine installer." },
+          target: { type: "string", required: true, description: "In-scope target URL." },
+          out: { type: "path", access: "write", required: true, description: "Report output file inside the workspace." },
+        },
+        output: "text",
+        timeoutSeconds: 900,
+      },
+    ],
+  },
+  {
+    id: "red-ysoserial",
+    name: "ysoserial (Java deserialization)",
+    description: "Generates Java deserialization payloads locally (RED_TEAM_BUILD_SPEC 6.8). MIT; runs as an external jar.",
+    probe: { names: ["java.exe", "java"] },
+    commands: [
+      {
+        id: "gen",
+        description: "Generate one serialized gadget-chain payload on stdout. URLDNS is the benign DNS-only proof gadget; command gadgets are for approved destructive runs. The --add-opens flags unblock JPMS reflection on Java 9+.",
+        effect: "exec_script",
+        argv: [
+          "--add-opens", "java.base/java.net=ALL-UNNAMED",
+          "--add-opens", "java.base/java.util=ALL-UNNAMED",
+          "--add-opens", "java.base/java.lang=ALL-UNNAMED",
+          "-jar", "{jar}", "{gadget}", "{cmd}",
+        ],
+        params: {
+          jar: { type: "path", access: "read", required: true, description: "Path to ysoserial.jar." },
+          gadget: { type: "enum", required: true, values: ["URLDNS", "CommonsCollections1", "CommonsCollections6", "Spring1"], description: "Gadget chain." },
+          cmd: { type: "string", required: true, description: "Gadget argument (a URL for URLDNS, a command otherwise)." },
+        },
+        output: "base64",
+        timeoutSeconds: 60,
+      },
+    ],
+  },
+  {
+    id: "red-caldera",
+    name: "Caldera (adversary simulation)",
+    description: "MITRE ATT&CK adversary emulation server for the isolated lab (RED_TEAM_BUILD_SPEC 6.9). Apache-2.0.",
+    probe: { names: ["caldera.bat", "caldera.exe", "caldera"] },
+    commands: [
+      {
+        id: "start",
+        description: "Start the local Caldera server (lab only; long-running).",
+        effect: "external",
+        argv: ["--lateral", "--fresh"],
+        params: {},
+        output: "text",
+        timeoutSeconds: 900,
+      },
+    ],
+  },
+  {
+    id: "red-freeway",
+    name: "Freeway (WiFi audit)",
+    description: "802.11 auditing on owned lab equipment only (RED_TEAM_BUILD_SPEC 6.11). Requires a monitor-mode adapter.",
+    probe: { names: ["freeway.py", "freeway.exe", "freeway"] },
+    commands: [
+      {
+        id: "scan",
+        description: "Scan owned lab APs and clients on an interface.",
+        effect: "external",
+        argv: ["--scan", "{interface}"],
+        params: { interface: { type: "string", required: true, description: "Monitor-mode interface name." } },
+        output: "text",
+        timeoutSeconds: 300,
+      },
+      {
+        id: "capture",
+        description: "DESTRUCTIVE-adjacent: capture a handshake from an allow-listed owned BSSID (disrupts the lab AP's clients).",
+        effect: "external",
+        argv: ["--capture", "{bssid}", "--interface", "{interface}"],
+        params: {
+          bssid: { type: "string", required: true, description: "Owned, allow-listed BSSID." },
+          interface: { type: "string", required: true },
+        },
+        output: "text",
+        timeoutSeconds: 600,
+      },
+    ],
+  },
+  {
+    id: "red-apktool",
+    name: "Apktool (Android APK decode)",
+    description: "Decode an Android APK for static security analysis (Supremacy M1.1). Apache-2.0; external jar.",
+    probe: { names: ["java.exe", "java"] },
+    commands: [
+      {
+        id: "decode",
+        description: "Decode an APK into smali + resources for manifest and source scanning.",
+        effect: "write_workspace",
+        argv: ["-jar", "{jar}", "d", "-f", "-o", "{out}", "{apk}"],
+        params: {
+          jar: { type: "path", access: "read", required: true, description: "Path to apktool.jar." },
+          apk: { type: "path", access: "read", required: true, description: "Path to the .apk file." },
+          out: { type: "path", access: "write", required: true, description: "Output directory inside the workspace." },
+        },
+        output: "text",
+        timeoutSeconds: 300,
+      },
+    ],
+  },
+  {
+    id: "red-mitmproxy",
+    name: "mitmproxy (mobile traffic recording)",
+    description: "Record mobile app API traffic through a loopback proxy (Supremacy M1.2). MIT+Apache.",
+    probe: { names: ["mitmdump.exe", "mitmdump"] },
+    commands: [
+      {
+        id: "record",
+        description: "Record HTTP flows to a JSON file in the workspace.",
+        effect: "write_workspace",
+        argv: ["--listen-port", "{port}", "-w", "{out}", "--set", "flow_detail=1"],
+        params: {
+          port: { type: "string", required: true, description: "Loopback port to listen on." },
+          out: { type: "path", access: "write", required: true, description: "Output flow dump file inside the workspace." },
+        },
+        output: "text",
+        timeoutSeconds: 300,
+      },
+    ],
+  },
+  {
+    id: "red-frida",
+    name: "Frida (mobile runtime instrumentation)",
+    description: "Attach to a mobile app process for runtime analysis (Supremacy M1.3). Destructive: modifies app state.",
+    probe: { names: ["frida.exe", "frida"] },
+    commands: [
+      {
+        id: "attach",
+        description: "DESTRUCTIVE: attach Frida to a running app by package name.",
+        effect: "external",
+        argv: ["-U", "-f", "{package}", "--no-pause"],
+        params: { package: { type: "string", required: true, description: "Android package name to instrument." } },
+        output: "text",
+        timeoutSeconds: 120,
+      },
+    ],
+  },
+  {
+    id: "red-msfconsole",
+    name: "Metasploit Framework (exploit)",
+    description: "Run a specific Metasploit exploit module against an authorized lab target (Supremacy M2.3). Destructive: requires explicit approval.",
+    probe: { names: ["msfconsole.bat", "msfconsole"] },
+    versionArgs: ["--version"],
+    commands: [
+      {
+        id: "exploit",
+        description: "Run one exploit module against one target. Destructive by definition (opens sessions, modifies state).",
+        effect: "external",
+        argv: ["-q", "-x", "use {module}; set RHOSTS {rhosts}; set RPORT {rport}; exploit -z"],
+        params: {
+          module: { type: "string", required: true, description: "Metasploit module path." },
+          rhosts: { type: "string", required: true, description: "Target host (must be in the authorization allow-list)." },
+          rport: { type: "number", required: true, description: "Target port." },
+        },
+        output: "text",
+        timeoutSeconds: 900,
+      },
+    ],
+  },
+];

@@ -187,6 +187,7 @@ export const VIDEO_STUDIO_COMMAND_CANDIDATES = {
   newProject: ["file.newProject"],
   newSequence: ["file.newSequence"],
   razor: ["timeline.razor", "sequence.razor", "edit.razor"],
+  seek: ["playhead.set"],
   trim: ["timeline.trim", "sequence.trim", "clip.trim"],
   delete: ["timeline.delete", "sequence.delete", "edit.delete"],
   split: ["timeline.split", "sequence.split", "edit.split"],
@@ -314,6 +315,8 @@ interface BuiltAction {
   steps: VideoStudioStep[];
   /** Present only for the export action: the request handed to the service. */
   export?: VideoStudioExportOptions;
+  /** Place imported item ids on the timeline. importFiles only fills the media bin. */
+  placeImported?: boolean;
 }
 interface BuildError {
   error: string;
@@ -323,6 +326,14 @@ type BuildResult = BuiltAction | BuildError;
 /** Wrap one engine command as a relay `execute` step. */
 function execStep(id: string, params: Record<string, unknown> = {}): VideoStudioStep {
   return { method: "execute", params: { command: id, params } };
+}
+
+/** Item ids returned by importFiles / importUrl. A path string is not an item id. */
+function importedItemIds(result: unknown): number[] {
+  if (!result || typeof result !== "object") return [];
+  const items = (result as { items?: unknown }).items;
+  if (!Array.isArray(items)) return [];
+  return items.filter((item): item is number => typeof item === "number" && Number.isSafeInteger(item));
 }
 
 function unknownCommandMessage(
@@ -374,11 +385,11 @@ function buildAction(
     case "import": {
       const url = str(args, "url").trim();
       const fileArg = str(args, "path").trim();
-      if (url) return { steps: [{ method: "importUrl", params: { url } }] };
+      if (url) return { steps: [{ method: "importUrl", params: { url } }], placeImported: true };
       if (fileArg) {
         const abs = resolveImportFile(workspace, fileArg);
         if (!abs) return { error: `import file not found in the task workspace: ${fileArg}` };
-        return { steps: [{ method: "importFiles", params: { files: [abs] } }] };
+        return { steps: [{ method: "importFiles", params: { files: [abs] } }], placeImported: true };
       }
       return { error: 'import requires "url" (importUrl) or "path" (task file -> importFiles)' };
     }
@@ -388,7 +399,13 @@ function buildAction(
       if (!times) return { error: "cut requires atSec (seconds or timecode; an array cuts several points)" };
       const id = resolveCommandId(catalog, VIDEO_STUDIO_COMMAND_CANDIDATES.razor);
       if (!id) return { error: unknownCommandMessage("cut", catalog, VIDEO_STUDIO_COMMAND_CANDIDATES.razor) };
-      return { steps: times.map((atSec) => execStep(id, { atSec })) };
+      const seek = resolveCommandId(catalog, VIDEO_STUDIO_COMMAND_CANDIDATES.seek);
+      const steps: VideoStudioStep[] = [];
+      for (const atSec of times) {
+        if (seek) steps.push(execStep(seek, { seconds: atSec }));
+        steps.push(execStep(id, { atSec }));
+      }
+      return { steps };
     }
 
     case "trim": {
@@ -495,7 +512,7 @@ function buildAction(
         return { error: 'add_audio requires "url" or "path" (audio file in the task workspace)' };
       }
       const id = resolveCommandId(catalog, VIDEO_STUDIO_COMMAND_CANDIDATES.addAudio);
-      if (!id) return { error: unknownCommandMessage("add_audio", catalog, VIDEO_STUDIO_COMMAND_CANDIDATES.addAudio) };
+      if (!id) return { steps, placeImported: true };
       const params: Record<string, unknown> = {};
       optionalTime(params, "atSec", args["atSec"]);
       const gain = num(args, "gain", Number.NaN);
@@ -569,7 +586,7 @@ function buildAction(
           height: num(args, "height", Number.NaN),
           quality: quality as VideoStudioExportQuality | undefined,
           bitrateKbps: num(args, "bitrateKbps", Number.NaN),
-          range: range as VideoStudioExportOptions["range"] | undefined,
+          range: range ? (range as VideoStudioExportOptions["range"]) : undefined,
           startSeconds: toSeconds(args["startSec"] ?? args["fromSec"] ?? args["start"]) ?? undefined,
           endSeconds: toSeconds(args["endSec"] ?? args["toSec"] ?? args["end"]) ?? undefined,
         },
@@ -653,10 +670,10 @@ function relayErrorResult(err: unknown, routing: VideoStudioRouting): ToolResult
       content: JSON.stringify({
         ok: false,
         reason: "panel_not_open",
-        retry: true,
+        retry: false,
         routing,
         message:
-          "No Loam Video panel is attached to this task yet. The Workspace panel opens automatically when video_studio runs; retry this action once it is open.",
+          "No Loam Video panel is attached to this task. Use video_edit for the built-in edit, or open Loam Video and call again with different arguments. Do not retry this same call.",
       }),
     };
   }
@@ -1002,6 +1019,10 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
   // across commands within a run. Tests inject their own to control the hash.
   const stateTracker = options.stateTracker ?? new VideoStudioStateTracker();
   const projectStore = options.projectStore ?? videoStudioProjectStore;
+  // The editor's command list does not change during a task. Reading it again
+  // after a cut and a placed audio clip traps the engine, so later actions
+  // reuse the list from the first successful read.
+  let rememberedCatalog: string[] = [];
 
   return [
     {
@@ -1142,6 +1163,7 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
         if (needsCatalog) {
           try {
             catalog = toCommandIdList(await relay.enqueue(taskId, target, "commands", {}));
+            if (catalog.length > 0) rememberedCatalog = catalog;
           } catch (err) {
             return relayErrorResult(err, routing);
           }
@@ -1165,6 +1187,7 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
               relay,
               taskRoot: ctx.workspace,
               options: built.export,
+              catalog: rememberedCatalog,
             });
             return { ok: true, content: JSON.stringify({ action, ...result }) };
           } catch (err) {
@@ -1185,6 +1208,27 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
               results.push({ method: step.method, ok: true, result: value });
             } catch (err) {
               return relayErrorResult(err, routing);
+            }
+          }
+          if (built.placeImported) {
+            const items = results.flatMap((step) => importedItemIds(step.result));
+            if (items.length > 0) {
+              const followUp: Array<{ command: string; params: Record<string, unknown> }> = [
+                { command: "playhead.set", params: { seconds: 0 } },
+                action === "import"
+                  ? { command: "file.newSequence", params: { fromItems: items } }
+                  : { command: "timeline.place", params: { items } },
+              ];
+              for (const step of followUp) {
+                try {
+                  const placed = await relay.enqueue(taskId, target, "execute", step);
+                  results.push({ method: "execute", ok: true, result: placed });
+                } catch (err) {
+                  const named = err instanceof Error ? err : new Error(String(err));
+                  named.message = `${step.command}: ${named.message}`;
+                  return relayErrorResult(named, routing);
+                }
+              }
             }
           }
         }

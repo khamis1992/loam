@@ -49,6 +49,24 @@ export interface ChatOptions {
   onToken?: (text: string) => void;
   /** Optional constrained JSON output for local models. */
   format?: Record<string, unknown>;
+  /** Enable thinking mode for local models (Qwen etc.). */
+  think?: boolean;
+  /** Mark the stable system prefix as a provider cache breakpoint (Anthropic
+   *  style `cache_control`). Only the cloud path emits it; providers that do
+   *  not understand the field ignore it. */
+  cacheControl?: boolean;
+  /** Context window size for local models. */
+  numCtx?: number;
+  /** Max prediction tokens for local models. */
+  numPredict?: number;
+  /** Nucleus sampling (top_p) for local models. */
+  topP?: number;
+  /** Top-k sampling for local models. */
+  topK?: number;
+  /** Presence penalty for local models. */
+  presencePenalty?: number;
+  /** Thinking token callback for local models. */
+  onThinking?: (text: string) => void;
 }
 
 export interface ChatResult {
@@ -56,6 +74,8 @@ export interface ChatResult {
   toolCalls: OllamaToolCall[];
   model: string;
   doneReason?: string;
+  /** Thinking output from local models (kept separate from content). */
+  thinking?: string;
   usage: {
     promptTokens: number;
     completionTokens: number;
@@ -69,7 +89,7 @@ export interface ChatResult {
 
 interface OllamaStreamChunk {
   model?: string;
-  message?: { role?: string; content?: string; tool_calls?: OllamaToolCall[] };
+  message?: { role?: string; content?: string; thinking?: string; tool_calls?: OllamaToolCall[] };
   done?: boolean;
   done_reason?: string;
   error?: string;
@@ -94,6 +114,34 @@ function normalizeArgs(v: unknown): unknown {
   return v ?? {};
 }
 
+/** Qwen-recommended sampling options for local models. */
+function localSamplingOptions(opts: ChatOptions): Record<string, unknown> {
+  const base: Record<string, unknown> = {
+    num_ctx: opts.numCtx ?? 32768,
+  };
+  
+  if (opts.numPredict !== undefined) base.num_predict = opts.numPredict;
+  
+  if (opts.temperature !== undefined) {
+    base.temperature = opts.temperature;
+  } else if (opts.think) {
+    base.temperature = 0.6;
+    base.top_p = opts.topP ?? 0.95;
+    base.top_k = opts.topK ?? 20;
+  } else {
+    base.temperature = 0.7;
+    base.top_p = opts.topP ?? 0.8;
+    base.top_k = opts.topK ?? 20;
+    base.presence_penalty = opts.presencePenalty ?? 1.5;
+  }
+  
+  if (opts.topP !== undefined) base.top_p = opts.topP;
+  if (opts.topK !== undefined) base.top_k = opts.topK;
+  if (opts.presencePenalty !== undefined) base.presence_penalty = opts.presencePenalty;
+  
+  return base;
+}
+
 export interface CloudModelConfig {
   baseUrl: string;
   apiKey?: string;
@@ -110,7 +158,13 @@ interface OpenAIUsage {
 interface OpenAIStreamChunk {
   model?: string;
   choices?: Array<{
-    delta?: { content?: string | null; tool_calls?: Array<{ index?: number; id?: string; function?: { name?: string; arguments?: string } }> };
+    delta?: {
+      content?: string | null;
+      reasoning_content?: string | null;
+      reasoning?: string | null;
+      thinking?: string | null;
+      tool_calls?: Array<{ index?: number; id?: string; function?: { name?: string; arguments?: string } }>;
+    };
     finish_reason?: string | null;
   }>;
   usage?: OpenAIUsage;
@@ -208,6 +262,15 @@ export class OllamaClient {
           ],
         };
       }
+      // Prompt caching: the system message is the stable prefix of every run, so
+      // it is the one breakpoint worth marking. Providers without block content
+      // (plain OpenAI) accept `cache_control` on a text block or ignore it.
+      if (opts.cacheControl && m.role === "system") {
+        return {
+          role: m.role,
+          content: [{ type: "text", text: m.content, cache_control: { type: "ephemeral" } }],
+        };
+      }
       return { role: m.role, content: m.content };
     });
     const body = {
@@ -239,6 +302,7 @@ export class OllamaClient {
     const decoder = new TextDecoder();
     let buffer = "";
     let content = "";
+    let thinking = "";
     const toolAcc = new Map<number, { id: string; name: string; args: string }>();
     let model = opts.model;
     let doneReason: string | undefined;
@@ -262,6 +326,11 @@ export class OllamaClient {
       if (choice?.delta?.content) {
         content += choice.delta.content;
         opts.onToken?.(choice.delta.content);
+      }
+      const reasoning = choice?.delta?.reasoning_content || choice?.delta?.reasoning || choice?.delta?.thinking;
+      if (typeof reasoning === "string" && reasoning) {
+        thinking += reasoning;
+        opts.onThinking?.(reasoning);
       }
       for (const call of choice?.delta?.tool_calls ?? []) {
         const index = call.index ?? 0;
@@ -294,9 +363,10 @@ export class OllamaClient {
     if (buffer.trim().startsWith("data:")) consume(buffer.trim().slice(5).trim());
     if (!sawFinish) throw new IncompleteModelStream("cloud");
     const toolCalls = [...toolAcc.entries()].sort((a, b) => a[0] - b[0]).map(([, call]) => ({ function: { name: call.name, arguments: normalizeArgs(call.args) } }));
-    log.debug(`cloud chat model=${model} tools=${toolCalls.length} chars=${content.length}`);
+    log.debug(`cloud chat model=${model} tools=${toolCalls.length} chars=${content.length} thinking=${thinking.length}`);
     return {
       content,
+      ...(thinking ? { thinking } : {}),
       toolCalls,
       model,
       doneReason,
@@ -317,7 +387,8 @@ export class OllamaClient {
       })),
       ...(opts.tools && opts.tools.length > 0 ? { tools: opts.tools } : {}),
       ...(opts.format ? { format: opts.format } : {}),
-      options: { temperature: opts.temperature ?? 0.2 },
+      ...(opts.think !== undefined ? { think: opts.think } : {}),
+      options: localSamplingOptions(opts),
     };
 
     const signals: AbortSignal[] = [];
@@ -341,6 +412,7 @@ export class OllamaClient {
     const decoder = new TextDecoder();
     let buffer = "";
     let content = "";
+    let thinking = "";
     let toolCalls: OllamaToolCall[] = [];
     let model = opts.model;
     let doneReason: string | undefined;
@@ -365,6 +437,10 @@ export class OllamaClient {
         if (msg?.content) {
           content += msg.content;
           opts.onToken?.(msg.content);
+        }
+        if (msg?.thinking) {
+          thinking += msg.thinking;
+          opts.onThinking?.(msg.thinking);
         }
         if (msg?.tool_calls && msg.tool_calls.length > 0) {
           toolCalls = msg.tool_calls.map((c) => ({ function: { name: c.function?.name ?? "", arguments: normalizeArgs(c.function?.arguments) } }));
@@ -391,7 +467,14 @@ export class OllamaClient {
     consumeLine(buffer);
     if (!sawDone) throw new IncompleteModelStream("ollama");
 
-    log.debug(`ollama chat model=${model} tools=${toolCalls.length} chars=${content.length}`);
-    return { content, toolCalls, model, doneReason, usage: { promptTokens, completionTokens, durationMs } };
+    log.debug(`ollama chat model=${model} tools=${toolCalls.length} chars=${content.length} thinking=${thinking.length}`);
+    return { 
+      content, 
+      toolCalls, 
+      model, 
+      doneReason, 
+      ...(thinking.length > 0 ? { thinking } : {}),
+      usage: { promptTokens, completionTokens, durationMs } 
+    };
   }
 }

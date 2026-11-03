@@ -28,6 +28,10 @@ export interface SubagentStartOptions {
   /** ACP executable + args. Required when provider is "acp". */
   command?: string;
   args?: string[];
+  /** MCP servers the task already granted; passed to session/new (never vault credentials). */
+  mcpServers?: Array<{ name: string; command: string; args: string[]; env: Array<{ name: string; value: string }> } | { type: "http"; name: string; url: string; headers: Array<{ name: string; value: string }> }>;
+  /** W3C traceparent so the ACP child can join the run's trace. */
+  traceparent?: string;
   /** Current delegation depth (0 = top-level). Used to enforce maxDepth. */
   depth?: number;
   /** Max tool steps for the in-process child loop. Defaults to 20. */
@@ -47,8 +51,9 @@ export type SubagentEvent =
   | { type: "text"; text: string }
   | { type: "update"; data: unknown }
   | { type: "error"; message: string }
-  | { type: "tool_call"; name: string }
-  | { type: "request_permission"; id: string; sessionId: string; options: unknown };
+  | { type: "tool_call"; name: string; node?: { id: string; title: string; kind: string; status: string; paths: string[] } }
+  | { type: "request_permission"; id: string; sessionId: string; options: unknown }
+  | { type: "acp_models"; agent: string; current: string | null; available: string[] };
 
 export type SubagentStopReason = "completed" | "error" | "timeout" | "cancelled";
 

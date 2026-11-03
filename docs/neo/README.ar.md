@@ -4,7 +4,7 @@
 
 كل سلوك موصوف هنا هو السلوك الموجود فعلًا في هذا الإصدار. حين تكون ميزة متوقفة افتراضيًا يقول الدليل ذلك ويذكر الإعداد الذي يشغّلها، وحين يحتاج مزوّد ما إلى إعداد مسبق يذكر الدليل اسم المزوّد بدل أن يوحي بأنها تعمل مباشرة.
 
-ابدأ من هنا: [canvas.ar.md](canvas.ar.md) · [recipe.ar.md](recipe.ar.md) · [knowledge-garden.ar.md](knowledge-garden.ar.md) · [missions.ar.md](missions.ar.md)
+ابدأ من هنا: [canvas.ar.md](canvas.ar.md) · [recipe.ar.md](recipe.ar.md) · [knowledge-garden.ar.md](knowledge-garden.ar.md) · [missions.ar.md](missions.ar.md) · [phase2.ar.md](phase2.ar.md) (قدرات 0.5.32: تحدث مع ملفاتك، الترجمات، محرك التطبيقات، النشر، الصور والصوت، Remote، devflow، السوق، قناة التحديث)
 
 النسخة الإنجليزية: [docs/neo/README.md](README.md)
 

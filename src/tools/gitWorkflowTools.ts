@@ -221,6 +221,7 @@ export function createGitWorkflowTools(options: GitWorkflowToolOptions = {}): To
           body: { type: "string", description: "Pull request body (markdown)." },
           head: { type: "string", description: "Source branch (default: current branch)." },
           base: { type: "string", description: "Target branch (default: main)." },
+          draft: { type: "boolean", description: "Open the pull request as a draft." },
         },
         required: ["title"],
       },
@@ -231,15 +232,17 @@ export function createGitWorkflowTools(options: GitWorkflowToolOptions = {}): To
           if (!title) return { ok: false, content: "pr_create requires a title" };
           const head = str(args, "head").trim() || (await currentBranch(ctx.workspace));
           const base = str(args, "base").trim() || "main";
+          const draft = bool(args, "draft", false);
           if (provider.id === "github" && !repo) return { ok: false, content: "pr_create requires repo as owner/repo for the GitHub provider" };
           const pr = await provider.createPr({
             repo: repo || "local/repo",
             title,
             head,
             base,
+            ...(draft ? { draft: true } : {}),
             ...(str(args, "body").trim() ? { body: str(args, "body") } : {}),
           });
-          return { ok: true, content: `created pull request #${pr.number}: ${pr.title} (${pr.head} -> ${pr.base}) ${pr.url}` };
+          return { ok: true, content: `created pull request #${pr.number}: ${pr.title} (${pr.head} -> ${pr.base}) ${pr.url}${pr.draft ? " draft" : ""}` };
         } catch (err) {
           return fail("pr_create", err);
         }

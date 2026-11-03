@@ -1,4 +1,5 @@
 import type { AskUserQuestion } from "../tools/askUserStore.js";
+import type { OrchestrationEvent } from "../orchestration/events.js";
 
 export type Verdict = "pass" | "revise" | "fail";
 
@@ -91,6 +92,8 @@ export type AgentEvent =
   | { type: "task"; taskId: string }
   | { type: "step"; index: number }
   | { type: "assistant_token"; text: string }
+  /** Model reasoning trace, separate from the reply. The client shows it as a quiet thinking block. */
+  | { type: "thinking"; text: string }
   | { type: "assistant_message"; text: string }
   | { type: "tool_call"; name: string; args: unknown }
   | { type: "tool_result"; name: string; ok: boolean; summary: string; ms?: number; content?: string; kbSeedIds?: string[]; kbSeeds?: Array<{ id: string; title: string; tags: string[]; preview: string }> }
@@ -216,6 +219,10 @@ export type AgentEvent =
       /** The checkpoint at the stop, carried so the summary is truthful. */
       checkpoint: import("./mission.js").MissionCheckpoint;
     }
+  /** Budget pause policy: the run parked before its next model call (it keeps its transcript). */
+  | { type: "budget_paused"; taskId: string; reason: string }
+  /** Budget pause policy: a parked run was resumed (`epoch` identifies the pause it left). */
+  | { type: "budget_resumed"; taskId: string; epoch: number; raised: boolean }
   /**
    * Neo N11: the run picked up edits the user made on the canvas (corrected node
    * output, a cut/re-connected edge, a duplicated branch, a merged group, or a
@@ -324,6 +331,24 @@ export type AgentEvent =
       round: number;
       scheduleId?: string;
       summary?: string;
-    };
+    }
+  /** Fresh-context self-review. Findings are also injected once; they never block the turn. */
+  | { type: "review"; verdict: "findings" | "lgtm" | "error" | "skipped"; findings?: string }
+  /** Orchestration Core (BUILD_SPEC §4.0.4): ledger, checkpoints, interrupts,
+   * selection, guard, workflows, direct return. Additive union member. */
+  | OrchestrationEvent
+  /** App Builder run-bound events (MISSING §4.15.1), mapped by mapAgentEvent()
+   * into the app* ChatEvents. Type-only import: no runtime coupling. */
+  | AppBuilderRunEvent;
+
+/** The App Builder run-bound AgentEvents (MISSING §4.15.1); no run-graph node. */
+export type AppBuilderRunEvent =
+  | { type: "app_questions_required"; projectId: string; card: import("../appbuilder/types.js").QuestionsCard }
+  | { type: "app_questions_resolved"; projectId: string; cardId: string; status: "answered" | "skipped" | "expired" }
+  | { type: "app_plan_draft"; projectId: string; draft: import("../appbuilder/types.js").PlanDraft }
+  | { type: "app_plan_decided"; projectId: string; draftId: string; revision: number; decision: "approved" | "declined" | "superseded"; reason?: string }
+  | { type: "app_assignment"; projectId: string; assignment: import("../appbuilder/types.js").AppTaskAssignment }
+  | { type: "app_verify_report"; requestId: string; projectId: string; runId: string; attempt: number; tier: "fast" | "standard" | "strict"; pass: boolean; error: "verify_limit" | "aborted" | null }
+  | { type: "app_version"; projectId: string; phase: "created" | "updated"; version: import("../appbuilder/types.js").AppVersion };
 
 export type Emit = (event: AgentEvent) => void;

@@ -1,0 +1,12 @@
+{
+  "app": "recordercraft",
+  "name": "Loam Recorder",
+  "bridge": "recorder:* postMessage v1 (loam=1)",
+  "repo": "https://github.com/khamis1992/openscreen",
+  "upstream": "https://github.com/getopenscreen/openscreen",
+  "rev": "8ecc76b7735efcc17866929cdc05a7d877b17008",
+  "short": "8ecc76b",
+  "platform": "win32-x64",
+  "zip": null,
+  "sha256": null
+}

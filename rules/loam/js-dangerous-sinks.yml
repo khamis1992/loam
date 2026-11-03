@@ -1,0 +1,37 @@
+rules:
+  - id: loam.js.eval-dynamic
+    message: eval or Function called with a non-literal argument; check whether input can reach it.
+    severity: WARNING
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          - pattern: eval($X)
+          - pattern: new Function(..., $X)
+      - pattern-not: eval("...")
+      - pattern-not: new Function(..., "...")
+  - id: loam.js.child-process-exec-dynamic
+    message: Shell command built from a non-literal value; prefer execFile with an argv array.
+    severity: WARNING
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          - pattern: child_process.exec($X, ...)
+          - pattern: exec($X, ...)
+          - pattern: execSync($X, ...)
+      - pattern-not: exec("...", ...)
+      - pattern-not: execSync("...", ...)
+  - id: loam.js.sql-string-concat
+    message: SQL text built by string concatenation or a template; use bound parameters.
+    severity: WARNING
+    languages: [javascript, typescript]
+    pattern-either:
+      - pattern: $DB.query(`...${$X}...`, ...)
+      - pattern: $DB.query("..." + $X, ...)
+      - pattern: $DB.exec(`...${$X}...`)
+  - id: loam.js.innerhtml-assign
+    message: Assignment to innerHTML or dangerouslySetInnerHTML; confirm the value is sanitized.
+    severity: INFO
+    languages: [javascript, typescript]
+    pattern-either:
+      - pattern: $EL.innerHTML = $X
+      - pattern: <$T dangerouslySetInnerHTML={{__html: $X}} />

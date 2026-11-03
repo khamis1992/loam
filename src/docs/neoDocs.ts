@@ -47,6 +47,7 @@ export const NEO_DOC_FILES = [
   'recipe.md',
   'knowledge-garden.md',
   'missions.md',
+  'phase2.md',
 ] as const;
 
 export type NeoDocFile = (typeof NEO_DOC_FILES)[number];

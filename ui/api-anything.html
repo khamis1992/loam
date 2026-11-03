@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ar" dir="rtl"><head><script src="/theme.js"></script><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>واجهات المواقع · Loam</title><link rel="stylesheet" href="/loam.css"><link rel="stylesheet" href="/api-anything.css"><link rel="stylesheet" href="/icons.css"><script type="module" src="/icons.js"></script><link rel="icon" href="/assets/loam-symbol.svg"></head>
+<body><main>
+<a href="/#/services" target="_top"><loam-icon name="back"></loam-icon> خدمات Loam</a>
+<h1><loam-icon name="automate"></loam-icon> واجهات المواقع</h1>
+<p>يتعلّم Loam الطلبات التي يرسلها موقع تستخدمه، ثم ينفّذها مباشرة بجلستك بدل فتح المتصفح في كل مرة. البيانات وملفات الدخول تبقى على جهازك.</p>
+<p class="scope">تعمل هذه العمليات بحسابك أنت فقط وعلى المواقع التي تفعّلها هنا. عمليات الكتابة (نشر، شراء، تعديل) متوقفة افتراضيًا. لا تُعرض قيم الكوكيز في أي مكان.</p>
+
+<section id="statusCard" class="card" aria-labelledby="statusTitle"><h2 id="statusTitle"><loam-icon name="check"></loam-icon> الحالة</h2><dl id="status"></dl><p id="restart" class="warn" hidden>غيّرت إعدادًا يتطلب إعادة تشغيل Loam.</p><button id="refresh" type="button"><loam-icon name="refresh"></loam-icon> تحديث</button></section>
+
+<section class="card" aria-labelledby="settingsTitle"><h2 id="settingsTitle"><loam-icon name="settings"></loam-icon> الإعدادات</h2>
+<label class="switch"><input id="enabled" type="checkbox"> تفعيل واجهات المواقع (يتطلب إعادة التشغيل)</label>
+<label class="switch"><input id="allowWrites" type="checkbox"> السماح بعمليات الكتابة على حساباتي (يتطلب إعادة التشغيل)</label>
+<label class="switch"><input id="allowWriteLearning" type="checkbox"> السماح بتعلّم عمليات الكتابة (يتطلب إعادة التشغيل)</label>
+<h3>النطاقات المسموح بالتعلّم عليها</h3><ul id="domains"></ul>
+<form id="domainForm"><input id="domain" placeholder="مثال: example.com" aria-label="نطاق جديد" dir="ltr" required><button><loam-icon name="plus"></loam-icon> إضافة</button></form>
+<h3>البحث عن الأشخاص</h3><p class="hint">عمليات ملفات الأشخاص (LinkedIn وInstagram وX) متوقفة إلا لمهمة تختارها، وبحد أقصى 20 شخصًا لكل مهمة.</p>
+<div class="controls"><label>المهمة<select id="peopleTask"><option value="">اختر مهمة</option></select></label><label class="switch"><input id="peopleOn" type="checkbox" disabled> السماح بالبحث عن الأشخاص لهذه المهمة</label></div>
+</section>
+
+<section class="card" aria-labelledby="grantTitle"><h2 id="grantTitle"><loam-icon name="integrations"></loam-icon> تفعيل الأدوات لمهمة</h2>
+<div class="controls"><label>المهمة<select id="grantTask"><option value="">اختر مهمة</option></select></label><button id="grant" type="button" disabled><loam-icon name="check"></loam-icon> تفعيل أدوات واجهات المواقع لهذه المهمة</button></div></section>
+
+<section class="card" aria-labelledby="sitesTitle"><h2 id="sitesTitle"><loam-icon name="data"></loam-icon> المواقع</h2><p id="loginNote" class="warn" hidden>أكمل تسجيل الدخول في النافذة المفتوحة ثم أغلقها لإنهاء العملية.</p><div id="sites"></div></section>
+
+<section class="card" aria-labelledby="learnTitle"><h2 id="learnTitle"><loam-icon name="learning"></loam-icon> تعلّم عملية جديدة</h2>
+<form id="learnForm"><label>رابط الصفحة<input name="url" type="url" dir="ltr" placeholder="https://www.example.com/search?q=kittens" required></label>
+<label>اسم الموقع<input name="site" dir="ltr" pattern="[a-z0-9][a-z0-9._-]{0,63}" placeholder="example" required></label>
+<label>اسم العملية<input name="op" dir="ltr" pattern="[A-Za-z0-9_-]{1,64}" placeholder="search" required></label>
+<label>قيمة مثال كما كتبتها في الصفحة<input name="example" dir="ltr" placeholder="q=kittens" required></label>
+<label>قيمة مثال ثانية مختلفة<input name="example2" dir="ltr" placeholder="q=puppies" required></label>
+<button><loam-icon name="play"></loam-icon> جهّز مهمة التعلّم</button></form>
+<div id="learnOut" hidden><p>أُنشئت مهمة وفُعّلت أدواتها، وأضيف النطاق إلى القائمة. انسخ الطلب التالي وأرسله في المهمة:</p><pre id="learnPrompt" dir="ltr"></pre><button id="copyPrompt" type="button"><loam-icon name="file"></loam-icon> نسخ الطلب</button> <a id="openTask" target="_top"><loam-icon name="forward"></loam-icon> افتح المهمة</a></div></section>
+
+<section class="card" aria-labelledby="auditTitle"><h2 id="auditTitle"><loam-icon name="eye"></loam-icon> سجل الاستخدام</h2><p class="hint">يسجّل أسماء المعاملات وبصمتها فقط، دون القيم.</p><ol id="audit"></ol></section>
+<p id="msg" role="status"></p>
+</main><script type="module" src="/api-anything.js"></script></body></html>

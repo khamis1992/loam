@@ -2,6 +2,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { spawn } from "node:child_process";
 import type { Checkpoint, VerifierSpec, VerifyContext } from "./types.js";
+import { scoreTrajectory } from "../orchestration/evals/trajectory.js";
 
 export function safeResolve(workspace: string, rel: string): string | null {
   const ws = path.resolve(workspace);
@@ -118,6 +119,11 @@ export async function checkVerifier(spec: VerifierSpec, ctx: VerifyContext): Pro
         return { type, ok, detail: ok ? `${spec.jsonPath}=${JSON.stringify(value).slice(0, 120)}` : `${spec.jsonPath} غير موجود` };
       }
       return { type, ok: true, detail: `HTTP ${res.status}` };
+    }
+    if (type === "trajectory") {
+      const s = scoreTrajectory(ctx.trace.map((t) => ({ name: t.name, ok: t.ok, ...(t.args ? { args: t.args } : {}) })), spec.expect);
+      const min = spec.minScore ?? 0.8;
+      return { type, ok: s.score >= min, detail: `trajectory ${s.score} (min ${min}): ${s.detail}` };
     }
     if (type === "tool_used") {
       const matches = ctx.trace.filter((t) => t.name === spec.name && (spec.expectOk === false || t.ok));

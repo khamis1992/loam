@@ -6,15 +6,24 @@ const sentDraftSessions = new Set<string>();
 import { usePathname, useSearchParams, useRouter } from 'next/navigation';
 import {
   Share, FileChartColumn, MoreHorizontal, PanelRight, CircleCheck, Copy, Repeat2,
-  Star, Loader2,
+  Star, Loader2, AppWindow, Square,
 } from 'lucide-react';
 import { useAppDispatch, useAppSelector, type AppDispatch } from '@/store';
 import { appendEvent, applyDelta, setStatus, setError } from '@/store/chatSlice';
 import { addSession, selectSession } from '@/store/sessionsSlice';
 import { t, PRODUCT } from '@/i18n/t';
-import { Composer } from '@/components/chat/Composer';
+import { Composer, type ComposerHandle } from '@/components/chat/Composer';
+// Phase-2 W5: the Companions voice pattern in the main chat — mic (ar-SA
+// WebSpeech recognition), streaming TTS of assistant replies, barge-in.
+import { useVoiceChat } from '@/hooks/useVoiceChat';
+import { VoiceChatControls } from '@/components/chat/VoiceChatControls';
+// Cap G §4.16: the Agent Studio App Builder workspace opens for tasks that own
+// an App project; the Race chip rides the composer (§4.13.2).
+import { AppBuilderWorkspace } from '@/components/appbuilder/AppBuilderWorkspace';
+import { findProjectByTask, startRun, raceEstimate as fetchRaceEstimate, type AppProjectDto, type RaceEstimateDto } from '@/services/appBuilderApi';
 import { MatterComposer } from '@/components/legal/MatterComposer';
 import { EventList } from '@/components/chat/EventList';
+import { ThinkingTrace } from '@/components/chat/ThinkingTrace';
 import { SessionStatusBadge } from '@/components/chat/SessionStatusBadge';
 import { useSessionRuntime } from '@/components/chat/useSessionRuntime';
 // J7 idle session hibernation: release the derived render caches after a
@@ -29,19 +38,24 @@ import {
   resolveHibernationReady,
 } from '@/components/chat/hibernationTestHook';
 import { requestHibernation, wakeHibernatedSessionWithAuth } from '@/services/sessionHibernationApi';
-import { StepTimeline, type TimelineStep } from '@/components/chat/StepTimeline';
+import { StepTimeline, deriveTimelineSteps, type TimelineStep } from '@/components/chat/StepTimeline';
+import { TaskMetricsBand } from '@/components/chat/TaskMetricsBand';
 import { SideChatPanel } from '@/components/chat/SideChatPanel';
 import { AttachmentCard, kindFromName, type AttachmentKind } from '@/components/chat/AttachmentCard';
 import { ComputerPanel } from '@/components/computer/ComputerPanel';
+import { ComputerDock } from '@/components/computer/ComputerDock';
+import { CompletionCard } from '@/components/chat/CompletionCard';
 import {
   WorkspacePanel,
   latestWorkspaceDecision,
+  mergeWorkspaceTarget,
   subscribeWorkspaceEditors,
   workspaceEditorsVersion,
   type WorkspaceFile,
   type WorkspaceOpenTarget,
 } from '@/components/workspace';
 import { craftAppForExtension, craftExtOf, editorKindForExtension } from '@/components/workspace/craft';
+import { ensureTaskRelay, TaskRelayHost } from '@/components/workspace/TaskRelayHost';
 import { CRAFT_APPS } from '@/lib/craftBridge';
 import { ShareDialog } from '@/components/dialogs/ShareDialog';
 import { ChatSocket } from '@/services/chatSocket';
@@ -327,6 +341,16 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
     return latest?.content ?? '';
   }, [events]);
 
+  // Phase-2 W5 voice: the LAST assistant message, streamed or final, feeds TTS.
+  const assistantLive = useMemo(() => {
+    const latest = [...events].reverse().find((e): e is ChatMessageEvent => e.type === 'chat' && e.sender === 'assistant');
+    return {
+      id: latest?.id ?? '',
+      text: latest?.content ?? '',
+      finished: latest ? latest.deliveryKind === 'result' : false,
+    };
+  }, [events]);
+
   const wasStoppedByUser = useMemo(() => events.some((e) => e.type === 'userStop'), [events]);
 
   const hasResult = useMemo(() => events.some((e) => e.type === 'chat' && e.sender === 'assistant' && e.deliveryKind === 'result'), [events]);
@@ -336,6 +360,13 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   const workspaceOpenActionRef = useRef<string>('');
   const editorsVersion = useSyncExternalStore(subscribeWorkspaceEditors, workspaceEditorsVersion, workspaceEditorsVersion);
   const [filesOpen, setFilesOpen] = useState(false);
+  // Cap G: the App project bound to this task (if any), its workspace drawer,
+  // and the composer Race chip state.
+  const [appProject, setAppProject] = useState<AppProjectDto | null>(null);
+  const [appBuilderOpen, setAppBuilderOpen] = useState(false);
+  const [raceActive, setRaceActive] = useState(false);
+  const [raceBranches, setRaceBranches] = useState<2 | 3 | 4>(2);
+  const [raceEstimate, setRaceEstimate] = useState<RaceEstimateDto | null>(null);
   const [taskFiles, setTaskFiles] = useState<Array<{ name: string; path: string; size: number; kind: AttachmentKind }>>([]);
   const [taskFilesLoading, setTaskFilesLoading] = useState(false);
   const autoOpenedRef = useRef<Set<string>>(new Set());
@@ -345,6 +376,23 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
     const fromClock = events.find((e): e is CascadeTaskClockEvent => e.type === 'cascadeTaskClock');
     return fromAttachment?.taskId ?? fromClock?.clock.taskId;
   }, [events]);
+
+  // Cap G: resolve (and keep fresh) the App project bound to this task, and load
+  // the Race estimate for the selected branch count whenever a project exists.
+  useEffect(() => {
+    if (!taskId) { setAppProject(null); return; }
+    let alive = true;
+    const timer = setInterval(() => {
+      void findProjectByTask(taskId).then((p) => { if (alive) setAppProject(p); }).catch(() => {});
+    }, 15_000);
+    void findProjectByTask(taskId).then((p) => { if (alive) setAppProject(p); }).catch(() => {});
+    return () => { alive = false; clearInterval(timer); };
+  }, [taskId]);
+
+  useEffect(() => {
+    if (!appProject) { setRaceEstimate(null); return; }
+    void fetchRaceEstimate(appProject.id, raceBranches).then((r) => setRaceEstimate(r.estimate)).catch(() => setRaceEstimate(null));
+  }, [appProject, raceBranches]);
 
   const attachmentEvents = useMemo(() => events.filter((e): e is AttachmentEvent => e.type === 'attachment'), [events]);
 
@@ -389,7 +437,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
     if (workspaceOpenActionRef.current === actionId) return;
     workspaceOpenActionRef.current = actionId;
     setSelectedTool(event.type === 'toolUsed' ? event : videoStudioStub(event));
-    setWorkspaceTarget(target);
+    setWorkspaceTarget((current) => mergeWorkspaceTarget(current, target));
     autoOpenedRef.current.add(sessionUid);
   }, [wsDecision, sessionUid]);
 
@@ -401,6 +449,21 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   const handleSend = async (text: string, mode: TaskMode, files: File[], extData?: Record<string, unknown>) => {
     const socket = socketRef.current;
     if (!socket) return;
+    // Cap G §4.13.2: a raced send goes to the App project's run endpoint instead
+    // of the chat socket; the chip turns off again after every send. Until the
+    // multi-agent engine lands the server answers engine_pending, which we show
+    // verbatim instead of pretending a race started.
+    const raceBranchCount = extData?.appRaceBranches;
+    if (appProject && typeof raceBranchCount === 'number') {
+      setRaceActive(false);
+      try {
+        await startRun(appProject.id, text, 'quick', { branches: raceBranchCount as 2 | 3 | 4 });
+      } catch (err) {
+        dispatch(setError({ sessionId: sessionUid, error: err instanceof Error ? err.message : 'فشل إرسال مقارنة الفروع' }));
+      }
+      void runtime.refresh();
+      return;
+    }
     dispatch(setStatus({ sessionId: sessionUid, status: 'running' }));
     let attachments = draftAttachments;
     if (files.length > 0) {
@@ -418,6 +481,45 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
     socket.stop(sessionUid);
   };
 
+  // Phase-2 W5 voice: a finalized mic segment replaces the draft and rides the
+  // composer's own submit path, so mode chips and extData travel with it
+  // exactly as with a typed message. Barge-in lives inside the hook.
+  const composerRef = useRef<ComposerHandle>(null);
+  // H5: completion card is dismissed per run and returns on the next run.
+  const [completionDismissed, setCompletionDismissed] = useState(false);
+  useEffect(() => {
+    if (running) setCompletionDismissed(false);
+  }, [running]);
+  const voiceChat = useVoiceChat({
+    onFinalTranscript: (text) => {
+      const composer = composerRef.current;
+      if (!composer) return;
+      composer.setText(text);
+      composer.focus();
+      composer.submit();
+    },
+  });
+
+  // Feed the growing last assistant reply to TTS while auto-speak is on. The
+  // reply already on screen when the page (or session) first mounts is
+  // remembered, never voiced; only replies that arrive afterwards speak.
+  const voicedReplyRef = useRef<string | null>(null);
+  useEffect(() => {
+    voicedReplyRef.current = null;
+  }, [sessionUid]);
+  const { autoSpeak: voiceAutoSpeak, feedReply, resetReply } = voiceChat;
+  useEffect(() => {
+    if (voicedReplyRef.current === null) {
+      voicedReplyRef.current = assistantLive.id;
+      return;
+    }
+    const isNewReply = voicedReplyRef.current !== assistantLive.id;
+    voicedReplyRef.current = assistantLive.id;
+    if (!voiceAutoSpeak) return;
+    if (isNewReply) resetReply();
+    feedReply(assistantLive.text, assistantLive.finished);
+  }, [assistantLive, voiceAutoSpeak, feedReply, resetReply]);
+
   // Time-travel: clicking a timeline step selects it and greys later steps.
   const handleSelectStep = (step: TimelineStep) => {
     setSelectedActionId(step.actionId);
@@ -425,6 +527,23 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
     if (ev) setSelectedTool(ev);
     if (step.actionId !== workspaceOpenActionRef.current) setWorkspaceTarget(null);
   };
+
+  // H2 follow-live: while running and the user is on the newest step, new
+  // steps advance the panel automatically; scrubbing back stops following
+  // until the «مباشر» button returns to the newest step.
+  const timelineSteps = useMemo(() => deriveTimelineSteps(events), [events]);
+  const lastStep = timelineSteps.at(-1) ?? null;
+  useEffect(() => {
+    if (!running || !lastStep || !selectedTool) return;
+    const onNewest = selectedActionId === null || selectedActionId === lastStep.actionId;
+    if (onNewest && selectedTool.actionId !== lastStep.actionId) {
+      const ev = events.find((e): e is ToolUsedEvent => e.type === 'toolUsed' && e.actionId === lastStep.actionId);
+      if (ev) {
+        setSelectedTool(ev);
+        setSelectedActionId(lastStep.actionId);
+      }
+    }
+  }, [running, lastStep, selectedTool, selectedActionId, events]);
 
   // D16: Pause the running agent, then take over with a "user changed X" note.
   const handlePause = async () => {
@@ -530,8 +649,8 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   };
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="flex h-row items-center justify-end gap-2 px-6">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="flex h-row shrink-0 items-center justify-end gap-2 overflow-x-auto px-4 sm:px-6">
         {running && taskId && !paused && (
           <button
             type="button"
@@ -551,11 +670,23 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
         </button>
         <button className="rounded-control p-1.5 text-text-secondary hover:bg-fill-hover"><FileChartColumn className="size-4" /></button>
         <button className="rounded-control p-1.5 text-text-secondary hover:bg-fill-hover"><MoreHorizontal className="size-4" /></button>
+        {appProject && (
+          <button
+            type="button"
+            onClick={() => setAppBuilderOpen((v) => !v)}
+            aria-pressed={appBuilderOpen}
+            data-testid="appbuilder-toggle"
+            title={t('App Builder workspace')}
+            className={`rounded-control p-1.5 hover:bg-fill-hover ${appBuilderOpen ? 'text-icon-blue' : 'text-text-secondary'}`}
+          >
+            <AppWindow className="size-4" />
+          </button>
+        )}
         <button className="rounded-control p-1.5 text-text-secondary hover:bg-fill-hover"><PanelRight className="size-4" /></button>
       </div>
 
       {paused && (
-        <div className="flex items-center gap-2 border-b border-border-main bg-fill-tsp px-6 py-2">
+        <div className="flex items-center gap-2 border-b border-border-main bg-fill-tsp px-4 py-2 sm:px-6">
           <span className="text-sm text-function-warning">{t('Paused')}</span>
           <input
             type="text"
@@ -576,10 +707,10 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
         </div>
       )}
 
-      <div className="flex flex-1 overflow-hidden">
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto">
-            <div className="mx-auto w-full max-w-[768px] px-6 py-4">
+      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="mx-auto w-full max-w-[min(100%,48rem)] px-4 py-4 sm:px-6">
               <div className="mb-2 flex items-center gap-2">
                 <span className="text-lg">◉</span>
                 <span className="text-base font-semibold text-text-primary">{PRODUCT}</span>
@@ -594,15 +725,13 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
               </div>
               {/* J7: local status only — never a message to the model. */}
               <HibernationNotice hibernated={hibernation.hibernated} />
-              {running && <div className="mb-2 text-sm text-text-tertiary">{t('{name} is thinking', { name: PRODUCT })}…</div>}
+              <ThinkingTrace
+                text={([...events].reverse().find((event): event is Extract<(typeof events)[number], { type: 'liveStatus' }> => event.type === 'liveStatus')?.text) ?? ''}
+                active={running || Boolean(userText && !assistantText && !running && !wasStoppedByUser && !error)}
+              />
               {clockEvent && !running && (
                 <div className="mb-2 text-sm text-text-tertiary">
                   {t('Worked for {duration}', { duration: formatDuration(computeClockDuration(clockEvent)) })} ›
-                </div>
-              )}
-              {userText && !assistantText && !running && !wasStoppedByUser && !error && (
-                <div className="mb-2 text-sm text-text-tertiary">
-                  {t('{name} is thinking', { name: PRODUCT })}…
                 </div>
               )}
               {error && !draftText && (
@@ -610,6 +739,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
                   {error}
                 </div>
               )}
+              <TaskMetricsBand taskId={taskId} />
               <StepTimeline events={events} selectedActionId={selectedActionId} onSelect={handleSelectStep} />
               <EventList
                 events={events}
@@ -625,10 +755,13 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
               />
 
               {hasResult && hasClockClosed && !running && !wasStoppedByUser && (
-                <div className="mx-auto w-full max-w-[768px] px-[var(--ui-content-padding-x,24px)]">
-                  <div className="mb-2 flex items-center gap-2 text-sm text-func-success">
-                    <CircleCheck className="size-4" /> {t('Task completed')}
-                  </div>
+                <div className="mx-auto w-full max-w-[min(100%,48rem)] px-4 sm:px-6">
+                  {!completionDismissed && (
+                    <CompletionCard
+                      onFill={(text) => composerRef.current?.setText(text)}
+                      onDismiss={() => setCompletionDismissed(true)}
+                    />
+                  )}
                   {attachmentEvents.length > 0 && (
                     <div className="mb-3 grid gap-2 sm:grid-cols-2">
                       {attachmentEvents.map((a) => (
@@ -692,15 +825,41 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
             </div>
           </div>
 
-          <div className="mx-auto w-full max-w-[768px] px-6 pb-4">
-            <div className="mb-2 flex h-row-sm items-center gap-2 rounded-control bg-fill-tsp px-2 text-sm text-text-secondary">
+          <div className="mx-auto w-full max-w-[min(100%,48rem)] shrink-0 px-4 pb-4 sm:px-6">
+            <div className="mb-2 flex min-h-8 items-center gap-2 rounded-control bg-fill-tsp px-2 py-1 text-sm text-text-secondary">
               <span className={running ? 'animate-pulse text-icon-blue' : wasStoppedByUser ? 'text-function-warning' : hasResult && hasClockClosed ? 'text-func-success' : 'text-text-tertiary'}>
                 {running ? '●' : wasStoppedByUser ? '◼' : hasResult && hasClockClosed ? '✓' : '○'}
               </span>
               {running ? t('Working') : wasStoppedByUser ? t('Stopped') : hasResult && hasClockClosed ? t('Task completed') : t('Thinking')}
+              {running && (
+                <button
+                  type="button"
+                  onClick={handleStop}
+                  data-testid="stop-task"
+                  aria-label={t('Stop task')}
+                  title={t('Stop task')}
+                  className="ms-auto flex h-7 shrink-0 items-center gap-1 rounded-full bg-[var(--function-error)] px-3 text-xs font-medium text-white hover:opacity-90"
+                >
+                  <Square className="size-3 fill-current" aria-hidden />
+                  {t('Stop task')}
+                </button>
+              )}
             </div>
+            {running && !selectedTool && (
+              <ComputerDock
+                sessionId={sessionUid}
+                taskId={taskId ?? null}
+                events={events}
+                onOpen={(ev) => {
+                  setSelectedTool(ev);
+                  setWorkspaceTarget(null);
+                }}
+              />
+            )}
             <MatterComposer />
+            <VoiceChatControls voice={voiceChat} />
             <Composer
+              ref={composerRef}
               onSend={handleSend}
               onStop={handleStop}
               running={running}
@@ -716,7 +875,15 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
               effort={draftEffort}
               compareModels={draftCompare}
               abModels={draftAbModels}
-              />
+              race={appProject ? {
+                active: raceActive,
+                onToggle: () => setRaceActive((v) => !v),
+                branches: raceBranches,
+                onBranches: setRaceBranches,
+                extraCredits: raceEstimate?.extraCredits,
+                maxTotalCredits: raceEstimate?.maxTotalCredits,
+              } : null}
+            />
             <SideChatPanel taskId={taskId ?? null} />
           </div>
         </div>
@@ -725,6 +892,9 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
             sessionId={sessionUid}
             taskId={taskId ?? undefined}
             event={selectedTool}
+            steps={timelineSteps}
+            onSelectStep={handleSelectStep}
+            live={running}
             onClose={() => {
               setSelectedTool(null);
               setWorkspaceTarget(null);
@@ -738,6 +908,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
                   events={events}
                   requestedPath={workspaceTarget?.path ?? null}
                   requestedKind={workspaceTarget?.kind ?? null}
+                  requestedCraftApp={workspaceTarget?.craftApp ?? null}
                   onChatEdit={handleWorkspaceChatEdit}
                 />
               ) : null
@@ -745,11 +916,37 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
           />
         )}
       </div>
+      {taskId ? (
+        <TaskRelayHost
+          taskId={taskId}
+          onOpen={(target) => {
+            const actionId = `relay-${target.kind ?? 'open'}-${target.path ?? target.craftApp ?? ''}`;
+            setSelectedTool({
+              id: actionId,
+              type: 'toolUsed',
+              tool: target.kind === 'loam-video' ? 'video_studio' : 'office_craft',
+              actionId,
+              status: 'success',
+              timestamp: Date.now(),
+              brief: target.craftApp ?? target.kind ?? '',
+            });
+            setWorkspaceTarget(target);
+            autoOpenedRef.current.add(sessionUid);
+          }}
+        />
+      ) : null}
       <ShareDialog open={shareOpen} onClose={() => setShareOpen(false)} taskId={taskId ?? null} />
+
+      {/* Cap G §4.16: the Agent Studio App Builder workspace drawer. */}
+      {appBuilderOpen && appProject && (
+        <div className="fixed inset-y-0 end-0 z-40 w-[min(35rem,100%)] border-s border-border-main bg-bg-panel shadow-xl" data-testid="appbuilder-workspace">
+          <AppBuilderWorkspace projectId={appProject.id} onClose={() => setAppBuilderOpen(false)} />
+        </div>
+      )}
 
       {filesOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="flex max-h-[80vh] w-full max-w-[640px] flex-col rounded-card border border-border-main bg-bg-menu shadow-lg">
+          <div className="flex max-h-[min(80dvh,100%)] w-full max-w-[min(100%,40rem)] flex-col rounded-card border border-border-main bg-bg-menu shadow-lg">
             <div className="flex h-row items-center justify-between border-b border-border-main px-4">
               <h2 className="text-title-sm text-text-primary">{t('Files in this task')}</h2>
               <button
@@ -835,6 +1032,7 @@ function handleServerMessage(m: ServerMessage, sessionId: string, dispatch: AppD
         if (inner.type === 'statusUpdate') {
           dispatch(setStatus({ sessionId, status: (inner as StatusUpdateEvent).agentStatus }));
         }
+        if (inner.type === 'cascadeTaskClock' && inner.clock.taskId) ensureTaskRelay(inner.clock.taskId);
         const errorLike = inner as unknown as { type?: string; message?: string };
         if (errorLike.type === 'error') {
           dispatch(setError({ sessionId, error: errorLike.message ?? t('An error occurred') }));
@@ -851,6 +1049,7 @@ function handleServerMessage(m: ServerMessage, sessionId: string, dispatch: AppD
   if (ev.type === 'statusUpdate') {
     dispatch(setStatus({ sessionId, status: (ev as StatusUpdateEvent).agentStatus }));
   }
+  if (ev.type === 'cascadeTaskClock' && ev.clock.taskId) ensureTaskRelay(ev.clock.taskId);
   const errorLike = ev as unknown as { type?: string; message?: string };
   if (errorLike.type === 'error') {
     dispatch(setError({ sessionId, error: errorLike.message ?? t('An error occurred') }));

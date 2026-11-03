@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { EffortLevel } from "./llm/router.js";
+
+import { ORCHESTRATION_DEFAULTS, clampOrchestration, type OrchestrationConfig } from "./orchestration/config.js";
 import { resolvePruneConfig } from "./agent/prune/config.js";
 
 function resolveRoot(): string {
@@ -84,11 +86,33 @@ export interface PolicyConfig {
 export interface McpServerConfig {
   command?: string;
   transport?: "stdio" | "http";
+  /** Curated remote preset (supabase / vercel / google-drive / google-mail):
+   *  fills url/headers/lazy from src/tools/mcpPresets.ts; user fields win. */
+  preset?: string;
   url?: string;
   headers?: Record<string, string>;
   args?: string[];
   env?: Record<string, string>;
+  /** Optional tool-name allowlist: only listed tools from `tools/list` register
+   *  (REA_INTO_LOAM §5.4). Enforced inside Loam — the server cannot widen it. */
+  allowlist?: string[];
+  /** "minimal" spawns the child with only a fixed OS-variable allowlist plus `env`
+   *  (api-anything §6.3); default "inherit" keeps the full process environment. */
+  envMode?: "inherit" | "minimal";
+  /** Per-tool call timeouts in ms (api-anything §6.3); unlisted tools use defaultTimeoutMs. */
+  toolTimeouts?: Record<string, number>;
+  defaultTimeoutMs?: number;
+  /** Opt-in OS sandbox for stdio servers (SANDBOX_RUNTIME appendix C4): spawn as
+   *  `srt --settings �?� -- <command>` while the command sandbox mode is on. */
+  sandbox?: boolean;
+  /** Hold this server's tool schemas out of the prompt and reach them through
+   *  the mcp_* bridge tools (list / search / schema / call). Use it for large
+   *  catalogues so connector count no longer costs context. */
+  lazy?: boolean;
 }
+
+import type { CodeGraphConfig } from "./codegraph/config.js";
+import type { ApiAnythingConfig } from "./tools/apiAnything/types.js";
 
 export interface Config {
   model: string;
@@ -96,9 +120,19 @@ export interface Config {
   ollamaUrl: string;
   /** Optional OpenAI-compatible cloud provider (OpenRouter, vLLM, LM Studio, ...).
    *  Models whose name ends with ":cloud" are routed here; the suffix is stripped
-   *  before the call. The user's own key stays in config.json — never in the repo. */
-  cloudModel?: { baseUrl: string; apiKey?: string };
+   *  before the call. The user's own key stays in config.json — never in the repo.
+   *  `images` opts `design_image_generate` into the same provider for image
+   *  generation (BYOK): naming a model is the opt-in; baseUrl/apiKey fall back
+   *  to the parent section. Env overrides: LOAM_IMAGE_MODEL / _BASE_URL / _API_KEY. */
+  cloudModel?: {
+    baseUrl: string;
+    apiKey?: string;
+    images?: { model?: string; baseUrl?: string; apiKey?: string };
+  };
   server: { host: string; port: number };
+  /** Credit ledger gate. `enforce` refuses a new run with HTTP 402 when the
+   *  balance is exhausted; off by default so a local install never blocks. */
+  credits?: { enforce: boolean };
   agent: { maxSteps: number; temperature: number; requestTimeoutMs: number };
   /** D19 session runtime: idle-to-sleep threshold and the per-session compute
    *  budget. Optional so test configs and older config.json files keep working;
@@ -214,6 +248,16 @@ export interface Config {
   /** Codemode sandbox (opt-in, off by default): master switch plus per-run limits.
    *  Optional so a hand-written config.json need not repeat it. */
   codemode?: { enabled: boolean; timeoutMs: number; memoryBytes: number; maxToolCalls: number };
+  /** Per-task execution container (opt-in, off by default; GAP_REVIEW P2#13).
+   *  When enabled, shell commands and interactive sessions run inside a dedicated
+   *  Docker container that mounts only the task workspace, so concurrent tasks
+   *  share no filesystem or process table. Requires a reachable docker daemon
+   *  (Docker Desktop on Windows); the mode fails closed without it.
+   *  Env overrides: LOAM_SANDBOX_CONTAINER, LOAM_SANDBOX_IMAGE, LOAM_SANDBOX_NETWORK,
+   *  LOAM_SANDBOX_CPUS, LOAM_SANDBOX_MEMORY_MB. Optional like codemode above. */
+  sandbox?: {
+    container: { enabled: boolean; image: string; network: "none" | "bridge"; cpus: number; memoryMb: number };
+  };
   /** H5 correction-learning injection (BUILD_SPEC .h2-ref/BUILD_SPEC.md §6.5/§10).
    *  Env overrides: LOAM_LESSONS_ENABLED, LOAM_LESSONS_MAX_CHARS, LOAM_LESSON_MIN_SCORE.
    *  Optional so test configs and older config.json files keep working;
@@ -227,10 +271,26 @@ export interface Config {
     minScore: number;
   };
   mcpServers: Record<string, McpServerConfig>;
+  /** api-anything (Cap H): Loam-managed MCP server for public-site operations.
+   *  Optional on the interface so test fixtures keep compiling (same pattern as
+   *  `session`); `loadConfig` fills it from DEFAULTS. Disabled until the H4
+   *  Windows acceptance checklist passes. */
+  apiAnything?: ApiAnythingConfig;
+  /** Code map (graphify engine). Absent = all defaults from src/codegraph/config.ts (disabled). */
+  codeGraph?: Partial<CodeGraphConfig>;
+
+
+
+  /** Orchestration Core (C1-C11). Optional on the interface so hand-written test fixtures keep compiling;
+   * the loader always fills it (deep-merged over ORCHESTRATION_DEFAULTS, then clamped). */
+  orchestration?: OrchestrationConfig;
   failover?: {
+    /** Mirrors FailoverProvider (src/llm/failover.ts) without the import:
+     * anthropic/google-gemini arrive through the model registry's compiled
+     * chain (PR #4). Keep both unions in sync. */
     providers: Array<{
       id: string;
-      kind: "ollama" | "openai-compatible";
+      kind: "ollama" | "openai-compatible" | "anthropic" | "google-gemini";
       baseUrl: string;
       model: string;
       apiKeyEnv: string;
@@ -382,15 +442,42 @@ export const DEFAULTS: Config = {
   subagent: { maxDepth: 2, maxConcurrentChildren: 4 },
   lessons: { enabled: true, maxChars: 1200, minScore: 0.35 },
   mcpServers: {},
+  // Cap H §12.2: off until the H4 Windows acceptance checklist passes.
+  apiAnything: {
+    enabled: false,
+    allowWrites: false,
+    allowWriteLearning: false,
+    browser: "edge",
+    sites: "all",
+    learnDomains: [],
+    peopleOps: [
+      "linkedin.getProfile",
+      "linkedin.searchPeople",
+      "instagram.getProfile",
+      "instagram.getPosts",
+      "x.getProfile",
+      "x.getUser",
+    ],
+    peopleOpsTasks: [],
+    peopleLimitPerTask: 20,
+    rateLimit: { calls: 30, windowMs: 600_000 },
+    outputBudgetChars: 15_000,
+    timeouts: { listMs: 15_000, callMs: 180_000, loginMs: 900_000, learnMs: 300_000 },
+  },
+  // OD-7 (approved 2026-10-25 after W1-W12 passed — docs/codegraph/windows-validation.md):
+  codeGraph: { enabled: true },
+
+
+
+  orchestration: structuredClone(ORCHESTRATION_DEFAULTS),
   codemode: { enabled: false, timeoutMs: 300_000, memoryBytes: 64 * 1024 * 1024, maxToolCalls: 2_000 },
+  sandbox: { container: { enabled: false, image: "node:22-alpine", network: "none", cpus: 2, memoryMb: 2048 } },
   failover: {
     providers: [
       { id: "ollama", kind: "ollama", baseUrl: "http://127.0.0.1:11434", model: "glm-5.3:cloud", apiKeyEnv: "", enabled: true },
-      // OpenCode Go: the official OpenAI-compatible endpoint is
-      // https://opencode.ai/inference/go/openai/v1/chat/completions (OpenCode "Go" docs,
-      // Endpoints table). The old `https://api.opencode.ai/v1` host does not serve this API
-      // (GET /v1/models there returns 404).
-      { id: "opencode-go", kind: "openai-compatible", baseUrl: "https://opencode.ai/inference/go/openai/v1", model: "opencode-go", apiKeyEnv: "OPENCODE_API_KEY", enabled: true },
+      // OpenCode Go: GET /models on /inference/go/openai/v1 returns 404.
+      // https://opencode.ai/zen/go/v1/models answers with the model list.
+      { id: "opencode-go", kind: "openai-compatible", baseUrl: "https://opencode.ai/zen/go/v1", model: "opencode-go", apiKeyEnv: "OPENCODE_API_KEY", enabled: true },
       // freellmapi is a SELF-HOSTED OpenAI-compatible router, not a public host, and no
       // public endpoint is documented. The repo's own evidence is a local router:
       // docs/agents-state.json records `freellmapi/auto unreachable: localhost:31415 down`.
@@ -436,6 +523,8 @@ export const DEFAULTS: Config = {
       "qwen2": 32768,
       "qwen2.5": 32768,
       "glm": 32768,
+      "glm-5.3": 1_000_000,
+      "glm-5.3-flash": 1_000_000,
       "deepseek": 32768,
       "gemini": 1048576,
       "gemini-1.5": 1048576,
@@ -454,6 +543,49 @@ export const DEFAULTS: Config = {
 
 function isObj(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/** Cap H §6.2: clamp every api-anything field to its bounds; anything malformed
+ *  falls back to the shipped default. outputBudgetChars caps at 15,500 so a
+ *  result plus lifecycle-hook text stays under the registry's 16,000 cut. */
+function normalizeApiAnything(raw: Record<string, unknown> | undefined): ApiAnythingConfig {
+  // DEFAULTS carries the full shipped block (see below); the interface keeps the
+  // field optional only for hand-written test fixtures.
+  const d = DEFAULTS.apiAnything!;
+  const r = raw ?? {};
+  const bool = (v: unknown, def: boolean): boolean => (typeof v === "boolean" ? v : def);
+  const int = (v: unknown, def: number, min: number, max: number): number =>
+    typeof v === "number" && Number.isFinite(v) ? Math.min(max, Math.max(min, Math.floor(v))) : def;
+  const strings = (v: unknown, def: string[], re: RegExp): string[] =>
+    Array.isArray(v) ? [...new Set(v.filter((x): x is string => typeof x === "string" && re.test(x)))] : def;
+  const SITE = /^[a-z0-9][a-z0-9._-]{0,63}$/i;
+  const DOMAIN = /^(?!-)[a-z0-9-]{1,63}(\.[a-z0-9-]{1,63})+$/i;
+  const SITE_OP = /^[a-z0-9][a-z0-9._-]{0,63}\.[A-Za-z0-9_-]{1,64}$/;
+  const TASK = /^task_[a-zA-Z0-9_-]+$/;
+  const rate = isObj(r.rateLimit) ? r.rateLimit : {};
+  const t = isObj(r.timeouts) ? r.timeouts : {};
+  return {
+    enabled: bool(r.enabled, d.enabled),
+    allowWrites: bool(r.allowWrites, d.allowWrites),
+    allowWriteLearning: bool(r.allowWriteLearning, d.allowWriteLearning),
+    browser: typeof r.browser === "string" && r.browser.trim() ? r.browser.trim().slice(0, 260) : d.browser,
+    sites: r.sites === "all" || r.sites === undefined ? "all" : strings(r.sites, [], SITE),
+    learnDomains: strings(r.learnDomains, d.learnDomains, DOMAIN).map((x) => x.toLowerCase()),
+    peopleOps: strings(r.peopleOps, d.peopleOps, SITE_OP),
+    peopleOpsTasks: strings(r.peopleOpsTasks, d.peopleOpsTasks, TASK),
+    peopleLimitPerTask: int(r.peopleLimitPerTask, d.peopleLimitPerTask, 0, 200),
+    rateLimit: {
+      calls: int(rate.calls, d.rateLimit.calls, 1, 1_000),
+      windowMs: int(rate.windowMs, d.rateLimit.windowMs, 1_000, 86_400_000),
+    },
+    outputBudgetChars: int(r.outputBudgetChars, d.outputBudgetChars, 2_000, 15_500),
+    timeouts: {
+      listMs: int(t.listMs, d.timeouts.listMs, 1_000, 120_000),
+      callMs: int(t.callMs, d.timeouts.callMs, 5_000, 900_000),
+      loginMs: int(t.loginMs, d.timeouts.loginMs, 60_000, 3_600_000),
+      learnMs: int(t.learnMs, d.timeouts.learnMs, 30_000, 1_800_000),
+    },
+  };
 }
 
 /** Keep only explicit `true` flags keyed by a plain bridge id; anything else stays off. */
@@ -504,6 +636,23 @@ export function loadConfig(): Config {
     console.warn(`[config] failed to parse ${p}: ${String(err)}`);
   }
   const cfg = merge(DEFAULTS, raw);
+  // Orchestration Core §4.0.1: deep-merge each section over the shipped defaults, then clamp.
+  cfg.orchestration = clampOrchestration({
+    ...ORCHESTRATION_DEFAULTS,
+    ...(cfg.orchestration ?? {}),
+    tracing: { ...ORCHESTRATION_DEFAULTS.tracing, ...(cfg.orchestration?.tracing ?? {}) },
+    durability: { ...ORCHESTRATION_DEFAULTS.durability, ...(cfg.orchestration?.durability ?? {}) },
+    interrupts: { ...ORCHESTRATION_DEFAULTS.interrupts, ...(cfg.orchestration?.interrupts ?? {}) },
+    contracts: { ...ORCHESTRATION_DEFAULTS.contracts, ...(cfg.orchestration?.contracts ?? {}) },
+    ledger: { ...ORCHESTRATION_DEFAULTS.ledger, ...(cfg.orchestration?.ledger ?? {}) },
+    selection: { ...ORCHESTRATION_DEFAULTS.selection, ...(cfg.orchestration?.selection ?? {}) },
+    acp: { ...ORCHESTRATION_DEFAULTS.acp, ...(cfg.orchestration?.acp ?? {}) },
+    returnDirect: { ...ORCHESTRATION_DEFAULTS.returnDirect, ...(cfg.orchestration?.returnDirect ?? {}) },
+    workflows: { ...ORCHESTRATION_DEFAULTS.workflows, ...(cfg.orchestration?.workflows ?? {}) },
+    evals: { ...ORCHESTRATION_DEFAULTS.evals, ...(cfg.orchestration?.evals ?? {}) },
+    memoryRanking: { ...ORCHESTRATION_DEFAULTS.memoryRanking, ...(cfg.orchestration?.memoryRanking ?? {}) },
+    swarm: { ...ORCHESTRATION_DEFAULTS.swarm, ...(cfg.orchestration?.swarm ?? {}) },
+  } as OrchestrationConfig);
   // Verbatim pruning: resolved from the file's own block (not from DEFAULTS), so a
   // stale config without one keeps the summary-only behaviour.
   cfg.compression.prune = resolvePruneConfig(
@@ -511,6 +660,10 @@ export function loadConfig(): Config {
   );
   cfg.wiki = { enabled: isObj(raw) && isObj(raw.wiki) && raw.wiki.enabled === true };
   cfg.bridges = { enabled: readBridgeFlags(isObj(raw) && isObj(raw.bridges) ? raw.bridges.enabled : undefined) };
+  // Cap H §6.2: sanitize the whole block from the file (merge already layered DEFAULTS,
+  // but the normalizer revalidates every field against its bounds). loadConfig always
+  // leaves a full object here even though the interface keeps the field optional.
+  cfg.apiAnything = normalizeApiAnything(isObj(raw) && isObj(raw.apiAnything) ? raw.apiAnything : undefined);
   cfg.coding = { enabled: cfg.coding?.enabled ?? true, chain: cfg.coding?.chain ?? [], logEdits: cfg.coding?.logEdits ?? true };
   // J7: normalize the hibernation setting. A negative or non-numeric value means
   // "off" (0), so a stale config.json can never arm a bogus timer. `merge` can

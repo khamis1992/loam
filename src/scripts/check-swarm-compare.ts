@@ -7,6 +7,7 @@ import http from "node:http";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { fileURLToPath } from "node:url";
+import { evaluateThresholds, median, type MeasureSample, type TaskSize } from "../swarm/measure.js";
 
 // Shared brief — a compact version of the live check's todo service. Both arms build exactly this.
 const brief = "Build a small Node.js task-list web app with no external packages: server.cjs serving GET /tasks (JSON array) and GET / (Arabic RTL HTML with <input id=new-task-title>, <button id=add-task>, <ul id=tasks>) on process.env.PORT||3000, only listening when run directly, plus POST /tasks {title} so the UI works (creates the task and refreshes the list; title validated non-empty and at most 200 characters, otherwise 400), plus tasks.test.cjs with node:test covering GET /tasks empty and the store; run node --test tasks.test.cjs as verification. Keep reports under 120 words.";
@@ -17,12 +18,22 @@ const source = JSON.parse(fs.readFileSync(path.join(repoRoot, "config.json"), "u
 const model = process.env.LOAM_SWARM_MODEL || source.model;
 assert.ok(model, "config.json must define a model for the comparison arms");
 
-type ArmId = "swarm" | "solo";
-interface ArmPlan { arm: ArmId; create: { model: string; concurrency: number; maxSteps: number; singleAgent?: boolean; brief: string } }
-const plannedArms: ArmPlan[] = [
-  { arm: "swarm", create: { model, concurrency: 2, maxSteps: 30, brief } },
-  { arm: "solo", create: { model, concurrency: 1, maxSteps: 30, singleAgent: true, brief } },
-];
+// BUILD_SPEC §12.3: "swarm" is the BEFORE arm (effort full, legacy options), "auto" the AFTER arm
+// (effort auto + recommended profile, approval auto so nothing pauses), "solo" the reference.
+type ArmId = "swarm" | "auto" | "solo";
+interface ArmPlan { arm: ArmId; create: Record<string, unknown> & { model: string; brief: string } }
+const RECOMMENDED = { effort: "auto", intake: "off", approval: "auto", review: "two-stage", taskGraph: true, spec: "ears", projectGuide: true, webResearch: false, visualGate: "advisory" };
+const armIds = (process.env.LOAM_SWARM_COMPARE_ARMS ?? "swarm,solo").split(",").map(a => a.trim()).filter((a): a is ArmId => a === "swarm" || a === "auto" || a === "solo");
+const armPlan = (arm: ArmId, taskBrief: string): ArmPlan => arm === "swarm"
+  ? { arm, create: { model, concurrency: 2, maxSteps: 30, effort: "full", brief: taskBrief } }
+  : arm === "auto" ? { arm, create: { model, concurrency: 2, maxSteps: 30, ...RECOMMENDED, brief: taskBrief } }
+  : { arm, create: { model, concurrency: 1, maxSteps: 30, singleAgent: true, brief: taskBrief } };
+const plannedArms: ArmPlan[] = armIds.map(arm => armPlan(arm, brief));
+// Optional fixed task set (LOAM_SWARM_TASKSET=bench/swarm-taskset.json); default: the single compare brief.
+interface TaskDef { id: string; size: TaskSize; brief: string; seed?: string }
+const tasks: TaskDef[] = process.env.LOAM_SWARM_TASKSET
+  ? (JSON.parse(fs.readFileSync(path.resolve(repoRoot, process.env.LOAM_SWARM_TASKSET), "utf8")) as { tasks: TaskDef[] }).tasks.map(t => ({ ...t, brief: t.brief === "@compare" ? brief : t.brief }))
+  : [{ id: "S1", size: "small", brief }];
 const metricNames = ["status", "durationMs", "tokens", "modelCalls", "repairs", "verificationCommand", "deployType"];
 
 const dryRun = process.argv.includes("--dry-run");
@@ -49,7 +60,7 @@ const runLive = async (): Promise<void> => {
 
   interface ArmReport {
     runId?: string; workspace?: string; status: string; error?: string;
-    durationMs?: number; tokens: number; modelCalls?: number; repairs: number;
+    durationMs?: number; wallMs?: number; tokens: number; modelCalls?: number; repairs: number; effort?: string;
     verificationCommand?: string; deployType?: string; productWorks: boolean; productFailureTail?: string;
   }
 
@@ -104,8 +115,8 @@ const runLive = async (): Promise<void> => {
     return current;
   };
 
-  const runArm = async (plan: ArmPlan): Promise<ArmReport> => {
-    let runId = "";
+  const runArm = async (plan: ArmPlan, probeLive = true): Promise<ArmReport> => {
+    let runId = ""; const wallStart = Date.now();
     try {
       const response = await post("/api/swarm/runs", plan.create);
       assert.equal(response.status, 201, await response.clone().text());
@@ -114,10 +125,12 @@ const runLive = async (): Promise<void> => {
       console.log(JSON.stringify({ phase: "started", arm: plan.arm, model, runId, base, evidence: temp }));
       const run = await waitForRun(runId, 20);
       fs.writeFileSync(path.join(temp, `${plan.arm}-result.json`), JSON.stringify(run, null, 2));
-      const product = await probeProduct(run.workspace);
+      const wallMs = Date.now() - wallStart;
+      // Non-compare tasks have no live probe: completed + recorded verification is the proxy.
+      const product = probeLive ? await probeProduct(run.workspace) : { productWorks: run.status === "completed" && Boolean(run.verification?.command) };
       return {
         runId, workspace: run.workspace, status: run.status, error: run.error,
-        durationMs: run.usage?.durationMs,
+        durationMs: run.usage?.durationMs, wallMs, effort: run.effort?.effort,
         tokens: (run.usage?.promptTokens ?? 0) + (run.usage?.completionTokens ?? 0),
         modelCalls: run.usage?.modelCalls,
         repairs: run.repairs ?? 0,
@@ -143,20 +156,32 @@ const runLive = async (): Promise<void> => {
     // Roadmap §20 wider samples: LOAM_SWARM_COMPARE_ROUNDS=N (default 1) repeats the pair and
     // aggregates mean/min per arm — from anecdote toward statistics.
     const rounds = Math.max(1, Math.min(5, Number(process.env.LOAM_SWARM_COMPARE_ROUNDS ?? "1")));
-    const samples: Partial<Record<ArmId, ArmReport[]>> = { swarm: [], solo: [] };
+    const samples: Partial<Record<ArmId, ArmReport[]>> = Object.fromEntries(armIds.map(a => [a, []]));
+    const measured: MeasureSample[] = [];
     for (let round = 1; round <= rounds; round++) {
       if (rounds > 1) console.log(`== round ${round}/${rounds} ==`);
-      for (const plan of plannedArms) samples[plan.arm]!.push(await runArm(plan));
+      for (const task of tasks) for (const arm of armIds) {
+        const plan = armPlan(arm, task.brief);
+        if (task.seed) plan.create.repoSeed = path.resolve(repoRoot, task.seed);
+        const report = await runArm(plan, task.brief === brief);
+        if (task.brief === brief) samples[arm]!.push(report);
+        measured.push({ task: task.id, size: task.size, arm, round, status: report.status, tokens: report.tokens, modelMs: report.durationMs ?? 0, wallMs: report.wallMs ?? 0, modelCalls: report.modelCalls ?? 0, productWorks: report.productWorks });
+      }
     }
-    for (const arm of ["swarm", "solo"] as const) collected[arm] = samples[arm]![0];
-    const armsReport: Record<ArmId, ArmReport> = { swarm: collected.swarm!, solo: collected.solo! };
+    for (const arm of armIds) collected[arm] = samples[arm]![0];
+    const armsReport = Object.fromEntries(armIds.map(a => [a, collected[a]!])) as Record<ArmId, ArmReport>;
+    const thresholds = evaluateThresholds(measured);
     const report = {
       ranAt: new Date().toISOString(),
       model,
       brief,
       arms: armsReport,
       rounds,
-      aggregate: (Object.fromEntries(["swarm", "solo"].map(arm => {
+      // Every sample (the old report kept only round 1 in arms; aggregate covered the compare brief only).
+      samples: measured,
+      thresholds,
+      medians: Object.fromEntries(armIds.map(a => { const xs = measured.filter(m => m.arm === a); return [a, { tokens: median(xs.map(m => m.tokens)), wallMs: median(xs.map(m => m.wallMs)), modelMs: median(xs.map(m => m.modelMs)) }]; })),
+      aggregate: (Object.fromEntries(armIds.map(arm => {
         const list = samples[arm as ArmId]!;
         const mean = (xs: number[]) => Math.round(xs.reduce((a, b) => a + b, 0) / xs.length);
         return [arm, {
@@ -173,13 +198,14 @@ const runLive = async (): Promise<void> => {
     fs.mkdirSync(path.dirname(output), { recursive: true });
     fs.writeFileSync(output, JSON.stringify(report, null, 2) + "\n");
     console.log("arm    status       ms   tokens  modelCalls  repairs  productWorks");
-    for (const id of ["swarm", "solo"] as const) {
+    for (const id of armIds) {
       const r = armsReport[id];
       console.log(`${id.padEnd(6)} ${r.status.padEnd(10)} ${String(r.durationMs ?? "?").padStart(7)} ${String(r.tokens).padStart(7)} ${String(r.modelCalls ?? "?").padStart(10)} ${String(r.repairs).padStart(8)}  ${r.productWorks}`);
     }
     console.log(`report -> ${output}`);
     const failures: string[] = [];
-    for (const id of ["swarm", "solo"] as const) {
+    for (const c of thresholds.checks) console.log(`${c.pass ? "ok  " : "FAIL"} ${c.name}: ${c.detail}`);
+    for (const id of armIds) {
       const r = armsReport[id];
       if (r.status !== "completed") failures.push(`${id}: status=${r.status}${r.error ? ` error=${String(r.error).slice(0, 300)}` : ""}`);
       if (!r.productWorks) failures.push(`${id}: productWorks=false${r.productFailureTail ? ` — ${r.productFailureTail.slice(0, 400)}` : ""}`);
@@ -198,6 +224,7 @@ const runLive = async (): Promise<void> => {
 if (dryRun) {
   console.log(JSON.stringify({ ranAt: new Date().toISOString(), mode: "dry-run", model, output, brief,
     arms: plannedArms.map(p => ({ arm: p.arm, create: { ...p.create, brief: `<${p.create.brief.length} chars>` } })),
+    tasks: tasks.map(t => ({ id: t.id, size: t.size, chars: t.brief.length })),
     metrics: metricNames, probe: ["GET /tasks 200", "GET / contains new-task-title", "POST /tasks {title:مقارنة} 200/201", "GET /tasks contains title"] }, null, 2));
   console.log("PASS swarm compare (dry-run)");
 } else {

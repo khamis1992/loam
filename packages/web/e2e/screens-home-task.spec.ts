@@ -1,6 +1,9 @@
 import { test, expect } from '@playwright/test';
+import path from 'node:path';
 
-const snapshot = (name: string) => `../tests/visual/baselines/${name}.png`;
+const snapshot = (name: string) => process.env.LOAM_APPROVE_VISUAL_REFRESH === '1'
+  ? `../tests/visual/baselines/${name}.png`
+  : path.resolve('output/visual-actual', `${name}.png`);
 
 async function setTheme(page: any, theme: 'light' | 'dark') {
   await page.evaluate((t: string) => {

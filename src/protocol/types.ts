@@ -73,6 +73,8 @@ export interface UserMessage extends Base {
     worktreeEnabled?: boolean;
     /** Option 18: composer model tier ("max" | "standard" | "lite" | "flex"). */
     modelTier?: string;
+    /** Concrete model id from the picker. Wins over modelTier. */
+    runModel?: string;
     /** Neo N3: opt this run into the user's Knowledge Garden (kb_* tools). */
     knowledge?: boolean;
     /** Legal mode: id of the active matter (opaque; the server reloads it from the encrypted store). */
@@ -504,11 +506,39 @@ export interface AskUserRequestedEvent extends ChatEventBase {
   taskId: string;
   title: string;
   reason: string;
-  questions: Array<{ id: string; prompt: string; options?: string[]; allowFile?: boolean }>;
+  questions: Array<{
+    id: string;
+    prompt: string;
+    options?: string[];
+    allowFile?: boolean;
+    // App Builder V2 (MISSING §4.2.1), all optional so old cards render as before:
+    kind?: "single" | "multi" | "text";
+    optionDetails?: Array<{ id: string; label: string; detail?: string }>;
+    defaultOptionIds?: string[];
+    allowOther?: boolean;
+  }>;
   /** "auto" is the orchestrator's vague/missing-context trigger; "model" a tool call. */
   source?: "auto" | "model";
   /** Set when `source` is "auto"; the client localizes the reason from it. */
   reasonCode?: "vague" | "missing_context" | "ambiguous_target";
+}
+
+/** C2: any durable interrupt opened (cards for kinds without their own event). */
+export interface InterruptRequestedEvent extends ChatEventBase {
+  type: "interruptRequested";
+  requestId: string;
+  taskId: string;
+  kind: "acp_permission" | "stalled_replan" | "workflow_human" | "custom";
+  payload: unknown;
+  expiresAt: number;
+}
+/** C2: an interrupt left "pending". */
+export interface InterruptResolvedEvent extends ChatEventBase {
+  type: "interruptResolved";
+  requestId: string;
+  taskId: string;
+  status: "resolved" | "dismissed" | "expired" | "cancelled";
+  reviewer: "user" | "auto" | "policy" | "timeout";
 }
 
 /** N9: the user answered or dismissed a pending ask-user card. */
@@ -525,6 +555,34 @@ export interface AskUserResolvedEvent extends ChatEventBase {
   };
 }
 
+/** App Builder (MISSING §4.6.6): one app_verify report finished; the full report is on disk at logPath. */
+export interface AppVerifyReportEvent extends ChatEventBase {
+  type: "appVerifyReport";
+  requestId: string;
+  projectId: string;
+  runId: string;
+  attempt: number;
+  tier: "fast" | "standard" | "strict";
+  pass: boolean;
+  error: "verify_limit" | "aborted" | null;
+}
+
+/** App Builder (MISSING §4.15.1) run-bound events, mapped by mapAgentEvent(). */
+export interface AppQuestionsRequestedEvent extends ChatEventBase { type: "appQuestionsRequested"; projectId: string; card: import("../appbuilder/types.js").QuestionsCard }
+export interface AppQuestionsResolvedEvent extends ChatEventBase { type: "appQuestionsResolved"; projectId: string; cardId: string; status: "answered" | "skipped" | "expired" }
+export interface AppPlanDraftEvent extends ChatEventBase { type: "appPlanDraft"; projectId: string; draft: import("../appbuilder/types.js").PlanDraft }
+export interface AppPlanDecidedEvent extends ChatEventBase { type: "appPlanDecided"; projectId: string; draftId: string; revision: number; decision: "approved" | "declined" | "superseded"; reason?: string }
+export interface AppAssignmentEvent extends ChatEventBase { type: "appAssignment"; projectId: string; assignment: import("../appbuilder/types.js").AppTaskAssignment }
+
+/** App Builder project-bound events, appended directly by src/appbuilder/events.ts. */
+export interface AppVersionEvent extends ChatEventBase { type: "appVersion"; projectId: string; phase: "created" | "updated"; version: import("../appbuilder/types.js").AppVersion }
+export interface AppVersionPublishedEvent extends ChatEventBase { type: "appVersionPublished"; projectId: string; number: number; target: string; url: string | null; error?: string }
+export interface AppDevServerEvent extends ChatEventBase { type: "appDevServer"; status: import("../appbuilder/types.js").DevServerStatus }
+export interface AppRuntimeErrorEvent extends ChatEventBase { type: "appRuntimeError"; error: import("../appbuilder/types.js").RuntimeErrorRecord }
+export interface AppQueueEvent extends ChatEventBase { type: "appQueue"; state: import("../appbuilder/types.js").PromptQueueState }
+export interface AppRaceEvent extends ChatEventBase { type: "appRace"; race: import("../appbuilder/types.js").RaceRun }
+export interface AppProjectStatusEvent extends ChatEventBase { type: "appProjectStatus"; projectId: string; status: import("../appbuilder/types.js").AppProjectStatus }
+
 export interface DeviceAttachmentUploadNotify extends ChatEventBase {
   type: "deviceAttachmentUploadNotify";
   targetEventId: string;
@@ -533,6 +591,12 @@ export interface DeviceAttachmentUploadNotify extends ChatEventBase {
   url: string;
   contentType: string;
   contentLength: number;
+}
+
+export interface SecondLookEvent extends ChatEventBase {
+  type: "secondLook";
+  verdict: "findings" | "lgtm" | "error" | "skipped";
+  findings?: string;
 }
 
 export type ChatEvent =
@@ -567,8 +631,22 @@ export type ChatEvent =
   | SimulationProgressEvent
   | AskUserRequestedEvent
   | AskUserResolvedEvent
+  | AppVerifyReportEvent
+  | AppQuestionsRequestedEvent
+  | AppQuestionsResolvedEvent
+  | AppPlanDraftEvent
+  | AppPlanDecidedEvent
+  | AppAssignmentEvent
+  | AppVersionEvent
+  | AppVersionPublishedEvent
+  | AppDevServerEvent
+  | AppRuntimeErrorEvent
+  | AppQueueEvent
+  | AppRaceEvent
+  | AppProjectStatusEvent
   | DeviceAttachmentUploadNotify
   | RecipeUpdateEvent
-  | RecipeRestartEvent;
+  | RecipeRestartEvent
+  | SecondLookEvent;
 
 export type ServerMessage = ServerEnvelope | { type: "session_write_access"; sessionId: string; writable: boolean };

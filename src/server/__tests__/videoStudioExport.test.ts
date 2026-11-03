@@ -172,6 +172,12 @@ describe("video studio export helpers", () => {
     assert.deepEqual(normalizeExportBytes({ bytes: [1, 2, 3] }), expected);
     assert.deepEqual(normalizeExportBytes([1, 2, 3]), expected);
     assert.deepEqual(normalizeExportBytes({ 0: 1, 1: 2, 2: 3 }), expected);
+    const wide: Record<number, number> = {};
+    for (let i = 0; i < 80_000; i++) wide[i] = i & 0xff;
+    const wideBytes = normalizeExportBytes(wide);
+    assert.equal(wideBytes.length, 80_000);
+    assert.equal(wideBytes[0], 0);
+    assert.equal(wideBytes[79_999], 79_999 & 0xff);
     assert.throws(() => normalizeExportBytes(""), /empty file/);
     assert.throws(() => normalizeExportBytes(42), /unrecognised shape/);
   });
@@ -254,6 +260,24 @@ describe("runVideoStudioExport saves the rendered file", () => {
     assert.match(result.name, /\.webm$/);
     assert.equal(result.mime, "video/webm");
     assert.equal(result.command, "export.quick");
+    assert.equal(fs.existsSync(path.join(taskRoot, "exports", result.name)), true);
+  });
+
+  it("queues the export when the editor exposes a queue", async () => {
+    taskRoot = fs.mkdtempSync(path.join(os.tmpdir(), "loam-vs-export-"));
+    relay = new MockRelay();
+    relay.catalog = ["file.exportMedia", "export.queue.list", "export.queue.add", "export.queue.start"];
+    relay.jobCommand = "export.queue.list";
+    relay.pollsUntilDone = 1;
+
+    const result = await runVideoStudioExport(context({ timeoutMs: 5_000, pollIntervalMs: 1 }));
+    assert.equal(result.ok, true);
+    const commands = relay.dispatched
+      .filter((entry) => entry.method === "execute")
+      .map((entry) => entry.params["command"]);
+    assert.deepEqual(commands.slice(0, 2), ["export.queue.add", "export.queue.start"]);
+    assert.equal(commands.includes("file.exportMedia"), false);
+    assert.equal(commands.includes("export.queue.list"), true);
     assert.equal(fs.existsSync(path.join(taskRoot, "exports", result.name)), true);
   });
 

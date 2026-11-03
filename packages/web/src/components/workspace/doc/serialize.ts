@@ -6,7 +6,48 @@ const UNWRAP_TAGS = new Set(['thead', 'tbody', 'colgroup']);
 const PARAGRAPH_TAGS = new Set(['p', 'div', 'blockquote', 'pre', 'span', 'a']);
 const LIST_TAGS = new Set(['ul', 'ol', 'menu']);
 const HEADINGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']);
-const KEEP_STYLES = new Set(['font-family', 'font-size', 'color', 'text-align', 'font-weight', 'font-style', 'text-decoration']);
+const KEEP_STYLES = new Set(['font-family', 'font-size', 'color', 'background-color', 'text-align', 'font-weight', 'font-style', 'text-decoration']);
+
+/** execCommand("fontSize", n) emits <font size="n"> with a coarse 1-7 scale; the editor
+ *  normalizes those into whitelisted <span style="font-size: Npx"> immediately. */
+export const FONT_SIZE_STEPS: Record<string, number> = { '1': 8, '2': 10, '3': 12, '4': 14, '5': 18, '6': 24, '7': 32 };
+
+/** Normalize a CSS color to #rrggbb so the doc round trip (which only maps six-digit hex)
+ *  survives the rgb()/rgba() and #rgb spellings engines put into inline styles.
+ *  Returns null for anything ambiguous (named colors, translucent alpha, gradients). */
+export function normalizeCssColor(value: string): string | null {
+  const trimmed = value.trim().toLowerCase();
+  if (/^#[0-9a-f]{6}$/.test(trimmed)) return trimmed;
+  if (/^#[0-9a-f]{3}$/.test(trimmed)) {
+    const [r, g, b] = [trimmed[1]!, trimmed[2]!, trimmed[3]!].map((c) => c + c);
+    return `#${r}${g}${b}`;
+  }
+  const rgb = /^rgba?\(\s*([0-9]{1,3})\s*,\s*([0-9]{1,3})\s*,\s*([0-9]{1,3})\s*(?:,\s*([0-9.]+)\s*)?\)$/.exec(trimmed);
+  if (!rgb) return null;
+  const alpha = rgb[4] === undefined ? 1 : Number(rgb[4]);
+  if (alpha < 1) return null;
+  const channels = [rgb[1]!, rgb[2]!, rgb[3]!].map((c) => {
+    const n = Number(c);
+    return Number.isInteger(n) && n >= 0 && n <= 255 ? n.toString(16).padStart(2, '0') : null;
+  });
+  if (channels.some((c) => c === null)) return null;
+  return `#${channels.join('')}`;
+}
+
+/** Replace every transient <font size="n"> under `root` with a whitelisted
+ *  <span style="font-size: Npx"> (fixed 1-7 map). `overrideSevenPx` redirects the
+ *  just-applied size 7 to an arbitrary pixel size, letting the toolbar offer sizes
+ *  beyond the command's 1-7 range; other sizes still use the fixed map. */
+export function normalizeFontSizes(root: HTMLElement, overrideSevenPx?: number): void {
+  for (const font of Array.from(root.querySelectorAll('font[size]'))) {
+    const size = String(font.getAttribute('size') ?? '');
+    const px = overrideSevenPx !== undefined && size === '7' ? overrideSevenPx : FONT_SIZE_STEPS[size];
+    const span = document.createElement('span');
+    if (px !== undefined) span.setAttribute('style', `font-size: ${px}px`);
+    while (font.firstChild) span.appendChild(font.firstChild);
+    font.replaceWith(span);
+  }
+}
 
 function escapeXml(value: string): string {
   return value
@@ -24,7 +65,19 @@ function filteredStyle(node: Element): string {
     if (index < 1) continue;
     const name = part.slice(0, index).trim().toLowerCase();
     const value = part.slice(index + 1).trim();
-    if (KEEP_STYLES.has(name) && value) kept.push(`${name}:${value}`);
+    if (!value) continue;
+    if (name === 'background-color') {
+      // Only an exact #rrggbb highlight survives the server's inline recognition.
+      const hex = normalizeCssColor(value);
+      if (hex) kept.push(`background-color:${hex}`);
+    } else if (name === 'color') {
+      // Prefer normalized hex (the server maps hex only); other spellings keep their
+      // legacy verbatim pass-through for display fidelity.
+      const hex = normalizeCssColor(value);
+      kept.push(`color:${hex ?? value}`);
+    } else if (KEEP_STYLES.has(name)) {
+      kept.push(`${name}:${value}`);
+    }
   }
   return kept.join(';');
 }
@@ -68,6 +121,7 @@ function emit(node: Element | Node): string {
 }
 
 export function serializeEditor(root: HTMLElement): string {
+  normalizeFontSizes(root);
   const body = Array.from(root.childNodes, emit).join('');
   return body.trim() || '<p></p>';
 }

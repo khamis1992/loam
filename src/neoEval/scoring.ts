@@ -53,6 +53,8 @@ function round2(value: number): number {
  * These are the same shape as the C18 suite's verifier specs (file_exists,
  * file_matches, ...), so a fixture reads like the suites it sits next to.
  */
+import { scoreTrajectory } from "../orchestration/evals/trajectory.js";
+
 export function runAssertions(fixture: NeoFixture, artifacts: NeoCaseArtifacts): NeoCheckResult[] {
   const results: NeoCheckResult[] = [];
   for (const spec of fixture.asserts ?? []) {
@@ -107,6 +109,13 @@ export function runAssertions(fixture: NeoFixture, artifacts: NeoCaseArtifacts):
         detail = `${spec.tool} called ${count} time(s) (minimum ${spec.count ?? 0})`;
         break;
       }
+      case "trajectory": {
+        const sc = scoreTrajectory(artifacts.trace.map((t) => ({ name: t.name, ok: t.ok, ...(t.args ? { args: t.args as Record<string, unknown> } : {}) })), spec.expect);
+        const min = spec.minScore ?? 0.8;
+        ok = sc.score >= min;
+        detail = `trajectory ${sc.score} (min ${min}): ${sc.detail}`;
+        break;
+      }
     }
     results.push({ kind: spec.kind, label, ok, detail });
   }
@@ -129,6 +138,8 @@ function describeAssert(spec: NonNullable<NeoFixture["asserts"]>[number]): strin
       return `trace_not_used:${spec.tool}`;
     case "count_min":
       return `count_min:${spec.tool}:${spec.count}`;
+    case "trajectory":
+      return `trajectory:${spec.expect.steps.map((x) => x.tool).join("+")}`;
   }
 }
 

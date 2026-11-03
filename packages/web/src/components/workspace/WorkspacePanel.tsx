@@ -23,26 +23,8 @@ import {
   type WorkspaceFile,
   type WorkspaceKind,
 } from './types';
-import { CRAFT_APPS, type CraftApp } from '@/lib/craftBridge';
-import { craftAppForExtension, craftAppForMime, craftExtOf } from './craft';
-
-/** The Loam display name for a file the Craft apps own, else the editor's own label. */
-function editorLabel(def: WorkspaceEditorDef | null, file: WorkspaceFile | null): string {
-  if (!def) return '';
-  if (def.kind === 'craft') {
-    const app = file ? craftAppForFile(file) : null;
-    if (app) return CRAFT_APPS[app].displayName;
-    return t('Loam Craft');
-  }
-  return def.label;
-}
-
-/** The Craft app (docs/sheets/slides/photo/design) that owns this file, if any. */
-function craftAppForFile(file: WorkspaceFile): CraftApp | null {
-  const fromExt = craftAppForExtension(craftExtOf(file.path));
-  if (fromExt) return fromExt;
-  return craftAppForMime(file.mime ?? '');
-}
+import { EditorFallbackCard, EditorOverrideMenu, editorLabel } from './gateway';
+import { isStudioArtifactPath, StudioFileView } from './StudioFileView';
 
 function getSocketBase(): string {
   if (typeof window === 'undefined') return '/';
@@ -90,9 +72,18 @@ export function WorkspaceFilePanel({ file, onClose }: { file: WorkspaceFile; onC
   }, [file.taskId]);
 
   if (!def) {
+    if (isStudioArtifactPath(file.path)) {
+      return (
+        <aside className="flex h-full w-full flex-col border-s border-border-main bg-bg-menu">
+          <StudioFileView taskId={file.taskId} />
+        </aside>
+      );
+    }
+    // The gateway's honest fallback: no editor claims this type, so the card
+    // shows the file's basic info and a download instead of a broken editor.
     return (
-      <aside className="flex flex-col border-s border-border-main bg-bg-menu p-4 text-sm text-text-secondary">
-        <p>{t('This file type has no workspace editor yet.')}</p>
+      <aside className="flex h-full w-full flex-col border-s border-border-main bg-bg-menu">
+        <EditorFallbackCard file={file} apiBase={getApiBase()} />
       </aside>
     );
   }
@@ -174,7 +165,22 @@ export interface WorkspacePanelProps {
   requestedPath?: string | null;
   /** Editor kind the auto-open decision asked for (e.g. loam-video). */
   requestedKind?: WorkspaceKind | null;
+  /** Craft app named by an open request (docs/sheets/slides/photo/design). */
+  requestedCraftApp?: string | null;
   onChatEdit: (instruction: string, file: WorkspaceFile) => void;
+}
+
+const CRAFT_SENTINEL_EXT: Record<string, string> = {
+  docs: 'docx',
+  sheets: 'xlsx',
+  slides: 'pptx',
+  photo: 'png',
+  design: 'pdf',
+};
+
+function craftSentinelPath(app: string | null | undefined): string {
+  const name = app && CRAFT_SENTINEL_EXT[app] ? app : 'slides';
+  return `__loam_craft_${name}__.${CRAFT_SENTINEL_EXT[name]}`;
 }
 
 const MIME_BY_EXT: Record<string, string> = {
@@ -221,6 +227,13 @@ interface FileEntry {
   mtimeMs?: number;
 }
 
+/** A listed file no editor claims; the gateway shows its fallback card for it. */
+interface UnresolvedFile {
+  path: string;
+  name: string;
+  size?: number;
+}
+
 function toWorkspaceFile(taskId: string, entry: FileEntry, def: WorkspaceEditorDef): WorkspaceFile {
   const ext = extensionOf(entry.path);
   return {
@@ -232,10 +245,11 @@ function toWorkspaceFile(taskId: string, entry: FileEntry, def: WorkspaceEditorD
   };
 }
 
-export function WorkspacePanel({ taskId, live, events, requestedPath, requestedKind, onChatEdit }: WorkspacePanelProps) {
+export function WorkspacePanel({ taskId, live, events, requestedPath, requestedKind, requestedCraftApp, onChatEdit }: WorkspacePanelProps) {
   const apiBase = useMemo(() => getApiBase(), []);
   const version = useSyncExternalStore(subscribeWorkspaceEditors, workspaceEditorsVersion, workspaceEditorsVersion);
   const [files, setFiles] = useState<WorkspaceFile[]>([]);
+  const [unresolvedFiles, setUnresolvedFiles] = useState<UnresolvedFile[]>([]);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -256,16 +270,33 @@ export function WorkspacePanel({ taskId, live, events, requestedPath, requestedK
         if (!res.ok) throw new Error(`status ${res.status}`);
         const data = (await res.json()) as { entries?: FileEntry[] };
         const mapped: Array<WorkspaceFile & { mtimeMs: number }> = [];
+        const unresolved: UnresolvedFile[] = [];
         for (const e of data.entries ?? []) {
           if (e.dir) continue;
           const def = getEditorForPath(e.path);
-          if (def) mapped.push({ ...toWorkspaceFile(taskId, e, def), mtimeMs: e.mtimeMs ?? 0 });
+          if (def) {
+            mapped.push({ ...toWorkspaceFile(taskId, e, def), mtimeMs: e.mtimeMs ?? 0 });
+          } else if (extensionOf(e.path)) {
+            // The gateway tracks these so an auto-open (or the user) can still
+            // select one and see the honest fallback card.
+            unresolved.push({
+              path: e.path,
+              name: e.name || (e.path.split(/[\\/]/).pop() ?? e.path),
+              size: e.size,
+            });
+          }
         }
         // Newest modified files first so the live artifact surfaces on top.
         mapped.sort((a, b) => b.mtimeMs - a.mtimeMs);
-        if (!cancelled) setFiles(mapped.map(({ mtimeMs: _mtimeMs, ...file }) => file));
+        if (!cancelled) {
+          setFiles(mapped.map(({ mtimeMs: _mtimeMs, ...file }) => file));
+          setUnresolvedFiles(unresolved);
+        }
       } catch {
-        if (!cancelled) setFiles([]);
+        if (!cancelled) {
+          setFiles([]);
+          setUnresolvedFiles([]);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -282,7 +313,7 @@ export function WorkspacePanel({ taskId, live, events, requestedPath, requestedK
   const autoOpenKeyRef = useRef<string | null>(null);
   useEffect(() => {
     if (!requestedKind && !requestedPath) return;
-    const key = `${requestedKind ?? ''}:${requestedPath ?? ''}`;
+    const key = `${requestedKind ?? ''}:${requestedCraftApp ?? ''}:${requestedPath ?? ''}`;
     if (autoOpenKeyRef.current === key) return;
     autoOpenKeyRef.current = key;
     if (requestedKind === 'loam-video') {
@@ -303,8 +334,13 @@ export function WorkspacePanel({ taskId, live, events, requestedPath, requestedK
         setSelectedPath(match.path);
         return;
       }
+      if (requestedPath) {
+        setSelectedPath(requestedPath);
+        return;
+      }
       const firstCraft = files.find((f) => getEditorForPath(f.path)?.kind === 'craft');
       if (firstCraft) setSelectedPath(firstCraft.path);
+      else setSelectedPath(craftSentinelPath(requestedCraftApp));
       return;
     }
     // The Canvas tab is task-wide (the run graph), so there is no file to
@@ -314,13 +350,22 @@ export function WorkspacePanel({ taskId, live, events, requestedPath, requestedK
       return;
     }
     if (requestedPath && files.some((f) => f.path === requestedPath)) setSelectedPath(requestedPath);
+    // Gateway honesty: the requested file has no editor, so open it on the
+    // fallback card instead of silently selecting a different file.
+    else if (requestedPath && !getEditorForPath(requestedPath)) setSelectedPath(requestedPath);
     else if (requestedPath && files.length > 0) setSelectedPath(files[0].path);
-  }, [files, requestedPath, requestedKind]);
+  }, [files, requestedPath, requestedKind, requestedCraftApp]);
 
   // Default selection + keep the selection valid as the file list changes.
   useEffect(() => {
     if (!selectedPath && files.length > 0) {
       setSelectedPath(files[0].path);
+      return;
+    }
+    // A workspace that produced only uneditable files still shows something
+    // honest: the newest one's fallback card.
+    if (!selectedPath && files.length === 0 && unresolvedFiles.length > 0) {
+      setSelectedPath(unresolvedFiles[0].path);
       return;
     }
     if (
@@ -329,11 +374,12 @@ export function WorkspacePanel({ taskId, live, events, requestedPath, requestedK
       !files.some((f) => f.path === selectedPath) &&
       selectedPath !== LOAM_VIDEO_STUDIO_PATH &&
       selectedPath !== CANVAS_RUN_PATH &&
+      !selectedPath.startsWith('__loam_craft_') &&
       selectedPath !== requestedPath
     ) {
       setSelectedPath(files[0].path);
     }
-  }, [files, selectedPath, requestedPath]);
+  }, [files, unresolvedFiles, selectedPath, requestedPath]);
 
   const selected = useMemo(() => {
     if (selectedPath === LOAM_VIDEO_STUDIO_PATH) {
@@ -342,6 +388,9 @@ export function WorkspacePanel({ taskId, live, events, requestedPath, requestedK
     if (selectedPath === CANVAS_RUN_PATH) {
       return { taskId, path: CANVAS_RUN_PATH, name: t('Canvas'), kind: 'canvas' as const };
     }
+    if (selectedPath?.startsWith('__loam_craft_')) {
+      return { taskId, path: selectedPath, name: t('Loam'), kind: 'craft' as const };
+    }
     return files.find((f) => f.path === selectedPath) ?? null;
   }, [files, selectedPath, taskId]);
 
@@ -349,19 +398,42 @@ export function WorkspacePanel({ taskId, live, events, requestedPath, requestedK
   const loamVideoDef = getEditorForKind('loam-video');
   const canvasDef = getEditorForKind('canvas');
 
+  // The gateway fallback: the selection is a real file path that no editor
+  // claims (auto-opened, e.g. a tool output with an exotic extension), so the
+  // panel shows the honest card for it instead of an editor.
+  const unresolvedSelection = useMemo(() => {
+    if (!selectedPath || selectedPath === LOAM_VIDEO_STUDIO_PATH || selectedPath === CANVAS_RUN_PATH || selectedPath.startsWith('__loam_craft_')) return null;
+    if (selected) return null;
+    if (getEditorForPath(selectedPath)) return null;
+    if (!extensionOf(selectedPath)) return null;
+    const listed = unresolvedFiles.find((f) => f.path === selectedPath);
+    return {
+      taskId,
+      path: selectedPath,
+      name: listed?.name ?? (selectedPath.split(/[\\/]/).pop() ?? selectedPath),
+      size: listed?.size,
+    };
+  }, [selected, selectedPath, unresolvedFiles, taskId]);
+
   const onSave = useMemo(() => {
     if (!selected) return async () => undefined;
     return async (data: Blob | string) => {
       const headers = await getApiHeaders();
-      const body = data;
       const params = new URLSearchParams({ taskId: selected.taskId, path: selected.path });
+      // The doc route parses a JSON { html } body; other kinds keep their raw payload
+      // (the sheet editor already passes serialized JSON text its own route parses).
+      const asDocJson = selected.kind === 'doc' && typeof data === 'string';
       const res = await fetch(`${apiBase}/api/workspace/${selected.kind}/file?${params.toString()}`, {
         method: 'PUT',
         headers: {
           ...headers,
-          ...(typeof data === 'string' ? { 'content-type': 'text/plain' } : { 'content-type': 'application/octet-stream' }),
+          ...(asDocJson
+            ? { 'content-type': 'application/json' }
+            : typeof data === 'string'
+              ? { 'content-type': 'text/plain' }
+              : { 'content-type': 'application/octet-stream' }),
         },
-        body,
+        body: asDocJson ? JSON.stringify({ html: data }) : data,
       });
       if (!res.ok) throw new Error(`save failed: ${res.status}`);
     };
@@ -391,6 +463,9 @@ export function WorkspacePanel({ taskId, live, events, requestedPath, requestedK
               : t('Workspace')}
         </span>
         {loading && <Loader2 className="size-3.5 animate-spin text-text-tertiary" />}
+        {selected && selectedPath !== LOAM_VIDEO_STUDIO_PATH && selectedPath !== CANVAS_RUN_PATH && (
+          <EditorOverrideMenu file={selected} />
+        )}
       </div>
 
       {(files.length > 1 || loamVideoDef || canvasDef) && (
@@ -461,6 +536,14 @@ export function WorkspacePanel({ taskId, live, events, requestedPath, requestedK
               events={events}
             />
           </Suspense>
+        ) : unresolvedSelection && isStudioArtifactPath(unresolvedSelection.path) ? (
+          <StudioFileView taskId={taskId} />
+        ) : unresolvedSelection ? (
+          <EditorFallbackCard
+            file={unresolvedSelection}
+            size={unresolvedSelection.size}
+            apiBase={apiBase}
+          />
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
             <MonitorPlay className="size-8 text-text-quaternary" />

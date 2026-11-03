@@ -4,16 +4,22 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
+  ChevronLeft,
+  ChevronRight,
+  Download,
   ExternalLink,
+  FileText,
+  Fullscreen,
   Folder,
   FolderOpen,
   Globe,
   Maximize2,
+  Minimize2,
   Monitor,
   Palette,
+  PenLine,
   RotateCcw,
   Terminal,
-  FileText,
   Eye,
   X,
 } from 'lucide-react';
@@ -22,13 +28,15 @@ import { t } from '@/i18n/t';
 import { desktopEvents } from '@/services/desktopApis';
 import { getApiBase } from '@/services/rpc';
 import { LiveView } from '@/components/computer/LiveView';
+import type { TimelineStep } from '@/components/chat/StepTimeline';
+import { getToolFamily, getStudioMode, type ToolFamily, type StudioMode } from '@/components/chat/toolIcons';
+import { humanizeToolName } from '@/components/chat/toolLabels';
 
 // int-f3: studio iframes load real backend UI pages served from the same origin used for /api/* calls.
 const OFFICE_PREVIEW_PATH = '/office-preview.html';
 const CREATIVE_RENDER_PATH = '/creative-render.html';
 
-type TabId = 'terminal' | 'editor' | 'browser' | 'preview' | 'files' | 'studio' | 'workspace' | 'live';
-type StudioMode = 'media' | 'office';
+type TabId = ToolFamily;
 
 interface ComputerPanelProps {
   event: ToolUsedEvent;
@@ -40,6 +48,12 @@ interface ComputerPanelProps {
   focusWorkspace?: boolean;
   /** Real Loam task id when known; lets the Live tab resolve browser frames. */
   taskId?: string;
+  /** Timeline steps for the in-panel scrubber (H2); the footer is hidden when absent. */
+  steps?: TimelineStep[];
+  /** Selecting a scrubber step moves the whole task view to that step. */
+  onSelectStep?: (step: TimelineStep) => void;
+  /** True while the task is still running (drives the «مباشر» follow state). */
+  live?: boolean;
 }
 
 interface TerminalDetail {
@@ -90,11 +104,21 @@ const clampWidth = (w: number) => Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.r
 
 const eventsBySession =new Map<string, Partial<Record<TabId, ToolUsedEvent>>>();
 
-export function ComputerPanel({ event, sessionId, onClose, workspaceSlot, focusWorkspace, taskId }: ComputerPanelProps) {
+export function ComputerPanel({ event, sessionId, onClose, workspaceSlot, focusWorkspace, taskId, steps, onSelectStep, live }: ComputerPanelProps) {
   const derivedTab = useMemo(() => getToolFamily(event.tool), [event.tool]);
   const [userTab, setUserTab] = useState<TabId | null>(null);
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const expanded = width > DEFAULT_WIDTH;
+  // M2: true full-screen view — fixed overlay over the whole window; Esc exits.
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFullscreen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [fullscreen]);
   useEffect(() => {
     try {
       const saved = Number(localStorage.getItem(WIDTH_KEY));
@@ -161,28 +185,82 @@ export function ComputerPanel({ event, sessionId, onClose, workspaceSlot, focusW
   }, [userTab, workspaceSlot, focusWorkspace, derivedTab, visibleTabs]);
   const tabEvent = seen[activeTab] ?? (activeTab === derivedTab ? event : undefined);
   const isDriving = !isFinalStatus(event.status) && activeTab === 'browser';
+  // H2 scrubber: position of the event being viewed within the timeline.
+  const stepIndex = steps ? Math.max(0, steps.findIndex((s) => s.actionId === event.actionId)) : 0;
+
+  // Viewer chrome (Manus-style content panel): document title, last-modified
+  // time, and the real actions that exist for the viewed artifact.
+  const docPath = docPathOf(event);
+  const docName = docPath ? baseName(docPath) : null;
+  const viewerTitle = docName ?? humanizeToolName(event.tool);
+  const modifiedLabel = new Date(event.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const isDocSurface = activeTab === 'preview' || activeTab === 'studio';
+  const canDownload = Boolean(docPath && taskId);
+  const canAnnotate = visibleTabs.some((tab) => tab.id === 'editor');
 
   return (
     <div
-      style={{ width }}
+      data-testid={fullscreen ? 'computer-panel-fullscreen' : 'computer-panel'}
+      style={fullscreen ? undefined : { width }}
       className={[
-        'relative flex h-full max-w-[85vw] shrink-0 flex-col border-s bg-bg-menu',
-        isDriving ? 'border-s-4 border-s-[var(--icon-blue)]' : 'border-border-main',
+        'relative flex h-full shrink-0 flex-col bg-bg-menu',
+        fullscreen ? 'fixed inset-0 z-40 max-w-none' : 'max-w-[85vw] border-s',
+        isDriving ? 'border-s-4 border-s-[var(--icon-blue)]' : fullscreen ? '' : 'border-border-main',
       ].join(' ')}
     >
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-label={t('Resize')}
-        onPointerDown={onDragStart}
-        onDoubleClick={() => commitWidth(DEFAULT_WIDTH)}
-        className="absolute inset-y-0 -start-1 z-10 w-2 cursor-col-resize touch-none hover:bg-[var(--icon-blue)]/30"
-      />
-      <div className="flex h-[40px] shrink-0 items-center justify-between border-b border-border-main px-2">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-text-primary">{t("Loam's computer")}</span>
+      {!fullscreen && (
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={t('Resize')}
+          onPointerDown={onDragStart}
+          onDoubleClick={() => commitWidth(DEFAULT_WIDTH)}
+          className="absolute inset-y-0 -start-1 z-10 w-2 cursor-col-resize touch-none hover:bg-[var(--icon-blue)]/30"
+        />
+      )}
+      <div className="flex h-[44px] shrink-0 items-center justify-between border-b border-border-main px-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <FileText className="size-4 shrink-0 text-text-tertiary" aria-hidden />
+          <span className="truncate text-sm font-semibold text-text-primary" data-testid="viewer-title" title={viewerTitle}>
+            {viewerTitle}
+          </span>
+          <span className="hidden shrink-0 text-xs text-text-tertiary sm:inline" dir="ltr">
+            · {t('Last modified {time}', { time: modifiedLabel })}
+          </span>
         </div>
         <div className="flex items-center gap-1">
+          {canAnnotate && (
+            <button
+              type="button"
+              aria-label={t('Open in editor')}
+              title={t('Open in editor')}
+              onClick={() => setUserTab('editor')}
+              className="flex items-center gap-1 rounded-control border border-border-main bg-fill-tsp px-2 py-1 text-xs text-text-secondary transition-colors duration-fast hover:bg-fill-hover hover:text-text-primary"
+            >
+              <PenLine className="size-3.5" /> {t('Open in editor')}
+            </button>
+          )}
+          {canDownload && (
+            <a
+              href={`${getApiBase()}/api/media?taskId=${encodeURIComponent(taskId!)}&path=${encodeURIComponent(docPath!)}`}
+              aria-label={t('Download file')}
+              title={t('Download file')}
+              download
+              className="rounded-control p-1.5 text-text-secondary hover:bg-fill-hover"
+            >
+              <Download className="size-4" />
+            </a>
+          )}
+          <button
+            type="button"
+            aria-label={t(fullscreen ? 'Exit full screen' : 'Full screen')}
+            aria-pressed={fullscreen}
+            data-testid="computer-fullscreen-toggle"
+            onClick={() => setFullscreen((v) => !v)}
+            className="rounded-control p-1.5 text-text-secondary hover:bg-fill-hover"
+          >
+            {fullscreen ? <Minimize2 className="size-4" /> : <Fullscreen className="size-4" />}
+          </button>
           <button
             type="button"
             aria-label={t('Expand')}
@@ -192,13 +270,22 @@ export function ComputerPanel({ event, sessionId, onClose, workspaceSlot, focusW
           >
             <Maximize2 className="size-4" />
           </button>
-          <button aria-label={t('Close')} onClick={onClose} className="rounded-control p-1.5 text-text-secondary hover:bg-fill-hover">
-            <X className="size-4" />
-          </button>
         </div>
       </div>
 
-      <div role="tablist" className="flex h-[40px] shrink-0 items-stretch border-b border-border-main px-1">
+      <div className="flex h-[36px] shrink-0 items-stretch border-b border-border-main ps-1">
+        <button
+          type="button"
+          aria-label={t('Close panel')}
+          title={t('Close panel')}
+          onClick={onClose}
+          className="me-1 flex w-8 shrink-0 items-center justify-center border-e border-border-main text-text-secondary hover:bg-fill-hover"
+        >
+          <X className="size-4" />
+        </button>
+        {/* ARIA: tablist may only contain tabs — the panel-close button lives
+            in this outer toolbar row, not inside the tablist itself. */}
+        <div role="tablist" className="flex min-w-0 flex-1 items-stretch">
         {visibleTabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -222,19 +309,92 @@ export function ComputerPanel({ event, sessionId, onClose, workspaceSlot, focusW
             </button>
           );
         })}
+        </div>
       </div>
 
-      <div className="flex-1 overflow-hidden">
-        <TabContent
-          event={tabEvent}
-          sessionId={sessionId}
-          tab={activeTab}
-          studioMode={studioMode}
-          workspaceSlot={workspaceSlot}
-          taskId={taskId}
-          fallbackEvent={event}
-        />
+      <div className={isDocSurface ? 'flex-1 overflow-y-auto bg-fill-tsp p-3' : 'flex-1 overflow-hidden'}>
+        <div
+          className={
+            isDocSurface
+              ? 'mx-auto flex min-h-full max-w-[860px] flex-col overflow-hidden rounded-card border border-border-main bg-bg-menu shadow-card'
+              : 'h-full'
+          }
+          data-testid={isDocSurface ? 'viewer-paper' : undefined}
+        >
+          <TabContent
+            event={tabEvent}
+            sessionId={sessionId}
+            tab={activeTab}
+            studioMode={studioMode}
+            workspaceSlot={workspaceSlot}
+            taskId={taskId}
+            fallbackEvent={event}
+          />
+        </div>
       </div>
+
+      {isDocSurface && (
+        <div
+          data-testid="viewer-statusbar"
+          className="flex h-[30px] shrink-0 items-center justify-between border-t border-border-main px-3 text-xs text-text-tertiary"
+        >
+          <span className="truncate" dir="auto">{docName ?? viewerTitle}</span>
+          <span dir="ltr">{t('Last modified {time}', { time: modifiedLabel })}</span>
+        </div>
+      )}
+
+      {steps && steps.length >= 2 && onSelectStep && (
+        <div
+          data-testid="computer-scrubber"
+          className="flex h-[44px] shrink-0 items-center gap-2 border-t border-border-main px-3"
+        >
+          <button
+            type="button"
+            aria-label={t('Previous step')}
+            disabled={stepIndex <= 0}
+            onClick={() => onSelectStep(steps[Math.max(0, stepIndex - 1)]!)}
+            className="rounded-control p-1 text-text-secondary hover:bg-fill-hover disabled:opacity-40"
+          >
+            <ChevronRight className="size-4 rtl:-scale-x-100" />
+          </button>
+          {/* Time flows in one direction regardless of locale — keep the
+              scrubber physically LTR so RTL users get the same mental model. */}
+          <input
+            type="range"
+            dir="ltr"
+            min={0}
+            max={steps.length - 1}
+            value={stepIndex}
+            aria-label={t('Timeline scrubber')}
+            data-testid="computer-scrubber-range"
+            onChange={(e) => onSelectStep(steps[Number(e.target.value)]!)}
+            className="h-1 flex-1 cursor-pointer accent-[var(--status-active)]"
+          />
+          <button
+            type="button"
+            aria-label={t('Next step')}
+            disabled={stepIndex >= steps.length - 1}
+            onClick={() => onSelectStep(steps[Math.min(steps.length - 1, stepIndex + 1)]!)}
+            className="rounded-control p-1 text-text-secondary hover:bg-fill-hover disabled:opacity-40"
+          >
+            <ChevronLeft className="size-4 rtl:-scale-x-100" />
+          </button>
+          {stepIndex < steps.length - 1 && (
+            <button
+              type="button"
+              data-testid="computer-jump-live"
+              onClick={() => onSelectStep(steps[steps.length - 1]!)}
+              className="flex items-center gap-1 rounded-control border border-[var(--status-active)] px-2 py-0.5 text-xs text-status-active transition-colors duration-fast"
+            >
+              <span className="status-active-dot" aria-hidden />
+              {t('Live')}
+            </button>
+          )}
+          <span className="text-xs text-text-tertiary" data-testid="computer-scrubber-position">
+            {stepIndex + 1}/{steps.length}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -596,34 +756,8 @@ function FilesContent({ event, sessionId }: { event: ToolUsedEvent; sessionId: s
   );
 }
 
-function getStudioMode(tool: string): StudioMode | null {
-  const name = tool.toLowerCase();
-  if (
-    name.startsWith('creative_') ||
-    name === 'loam_creative' ||
-    name === 'loam_canvas'
-  )
-    return 'media';
-  if (
-    name.startsWith('office_') ||
-    name === 'loam_studio' ||
-    name === 'loam_document' ||
-    name === 'loam_dataset' ||
-    name === 'data_chart'
-  )
-    return 'office';
-  return null;
-}
-
-function getToolFamily(tool: string): TabId {
-  const name = tool.toLowerCase();
-  if (getStudioMode(tool)) return 'studio';
-  if (name === 'terminal' || name.startsWith('shell_') || name.startsWith('pty_')) return 'terminal';
-  if (name === 'text_editor' || name.startsWith('file_')) return 'editor';
-  if (name.startsWith('browser_') || name === 'browser' || name === 'web_fetch' || name === 'webpage_extract') return 'browser';
-  if (name.startsWith('preview_') || name === 'webdev') return 'preview';
-  return 'files';
-}
+// getToolFamily / getStudioMode live in components/chat/toolIcons.tsx (M3) so
+// the chat tool rows and this panel share one vocabulary.
 
 function isFinalStatus(status: ToolUsedEvent['status']): boolean {
   return ['success', 'error', 'failed', 'cancelled', 'stopped', 'rollback'].includes(status);
@@ -631,6 +765,24 @@ function isFinalStatus(status: ToolUsedEvent['status']): boolean {
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+}
+
+/** Workspace-relative file path for the viewed artifact, when the tool event
+ *  carries one (editor writes, office previews, …) — drives the viewer title,
+ *  the annotate action, and the real /api/media download. */
+function docPathOf(event: ToolUsedEvent): string | null {
+  const detail = asRecord(event.detail);
+  const args = asRecord(event.argumentsDetail);
+  for (const source of [detail, args, detail ? asRecord(detail.preview) : undefined]) {
+    const path = source?.path;
+    if (typeof path === 'string' && path.length > 0 && path.length <= 512) return path;
+  }
+  return null;
+}
+
+function baseName(path: string): string {
+  const normalized = path.split('\\').join('/');
+  return normalized.slice(normalized.lastIndexOf('/') + 1) || path;
 }
 
 function extractTerminalDetail(event: ToolUsedEvent): TerminalDetail {

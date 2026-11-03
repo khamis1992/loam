@@ -17,12 +17,17 @@ const model = http.createServer(async (req, res) => {
   const body = JSON.parse(raw);
   const messages = body.messages as Array<{role:string; content:string}>;
   const system = messages[0]?.content ?? "";
+  const prompt = messages.findLast((m) => m.role === "user")?.content ?? "";
   let content = ""; let tool_calls: unknown[] = [];
   if(system.includes("planner role")) content = JSON.stringify({goal:"Write an isolated document",trivial:false,steps:[{id:"write",title:"Create report",instruction:"Use loam_document to write report.md",success_criteria:"report.md exists"}]});
-  else if(system.includes("COMPLETED task as a whole")) { if(body.tools?.length && messages.at(-1)?.role !== "tool") tool_calls=[{function:{name:"file_read",arguments:{path:"report.md"}}}]; else content=JSON.stringify({verdict:"pass",reason:"Document contents independently inspected"}); }
+  else if(system.includes("COMPLETED task as a whole")) {
+    if(!messages.some(m=>m.role==="tool")) tool_calls=[{function:{name:"file_read",arguments:{path:"report.md"}}}];
+    else content=JSON.stringify({verdict:"pass",reason:"Document contents inspected in task workspace"});
+  }
   else if(system.includes("ONE executed plan step")) content=JSON.stringify({verdict:"pass",reason:"Document saved in task workspace"});
   else if(messages.at(-1)?.role === "tool") content="تم إنشاء مستند Loam بنجاح داخل مساحة المهمة.";
-  else { nativeCalls++; tool_calls=[{function:{name:"loam_document",arguments:{path:"report.md",title:"Loam E2E",content:"Verified integration document",format:"markdown"}}}]; }
+  else if(prompt.includes("Use loam_document")) { nativeCalls++; tool_calls=[{function:{name:"loam_document",arguments:{path:"report.md",title:"Loam E2E",content:"Verified integration document",format:"markdown"}}}]; }
+  else { content="No reusable skill found."; }
   res.setHeader("content-type","application/x-ndjson");res.end(JSON.stringify({model:"test-model",message:{role:"assistant",content,tool_calls},done:true})+"\n");
 });
 model.listen(0, "127.0.0.1"); await once(model, "listening");
@@ -46,8 +51,9 @@ const start = async (): Promise<void> => {
   logs = "";
   const serverArgs = process.argv.includes("--bundle") ? ["dist/server.cjs"] : ["--import", "tsx", "src/index.ts"];
   child = spawn(process.execPath, serverArgs, { cwd: root, windowsHide: true, env: {
-    ...process.env, MANUS_LOCAL_CONFIG: config, MANUS_LOCAL_DATA_DIR: path.join(tmp, "data"), MANUS_LOCAL_PORT: String(port), AGENT_STUDIO_LEGACY_UI: "1", LOAM_AUTH_DISABLED: "true",
-    MANUS_LOCAL_EVALS_DIR: path.join(tmp, "evals"), MANUS_LOCAL_SKILLS_DIR: path.join(tmp, "skills"), LOAM_CODER_ROUTING: "0", LOAM_CODER_CHAIN: "test-model",
+    ...process.env, MANUS_LOCAL_CONFIG: config, MANUS_LOCAL_DATA_DIR: path.join(tmp, "data"), MANUS_LOCAL_PORT: String(port), LOAM_AUTH_DISABLED: "true", AGENT_STUDIO_LEGACY_UI: "1",
+    MANUS_LOCAL_EVALS_DIR: path.join(tmp, "evals"), MANUS_LOCAL_SKILLS_DIR: path.join(tmp, "skills"),
+    LOAM_CODER_ROUTING: "0", LOAM_CODER_CHAIN: "test-model",
   }, stdio: ["ignore", "pipe", "pipe"] });
   child.stdout?.on("data", (chunk) => { logs += chunk; }); child.stderr?.on("data", (chunk) => { logs += chunk; });
   await waitFor(async () => {

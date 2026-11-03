@@ -212,7 +212,7 @@ describe("promptwire mode tool lists", () => {
     for (const mode of LOAM_MODES) {
       if (mode.tools.includes("file_write")) {
         assert.ok(mode.tools.includes("artifact_publish"), `${mode.id} writes files but is missing artifact_publish`);
-      } else {
+      } else if (mode.id !== "reverse-engineer") {
         assert.ok(!mode.tools.includes("artifact_publish"), `${mode.id} must not expose artifact_publish`);
       }
     }

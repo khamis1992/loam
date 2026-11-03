@@ -36,10 +36,12 @@ const model = http.createServer(async (req, res) => {
     content = "File saved and checked.";
   } else {
     const second = prompt.includes("WRITE_SECOND");
+    const first = prompt.includes("WRITE_FIRST");
     if (second && blockSecond) { secondWaiting = true; return; }
     if (second) secondTools++;
-    if (prompt.includes("WRITE_FIRST")) firstTools++;
-    tool_calls = [{ function: { name: "file_write", arguments: { path: second ? "second.txt" : "first.txt", content: "one effect\n", append: true } } }];
+    else if (first) firstTools++;
+    else { content = "No reusable skill found."; }
+    if (second || first) tool_calls = [{ function: { name: "file_write", arguments: { path: second ? "second.txt" : "first.txt", content: "one effect\n", append: true } } }];
   }
   res.setHeader("content-type", "application/x-ndjson");
   res.end(JSON.stringify({ model: "test-model", message: { role: "assistant", content, tool_calls }, done: true }) + "\n");

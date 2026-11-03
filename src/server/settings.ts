@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { DATA_DIR } from "../config.js";
+import { normalizeDomains } from "../sandbox/srt/policy.js";
 
 export interface Settings {
   theme: "dark" | "light" | "system";
@@ -35,6 +36,35 @@ export interface Settings {
    *  Missing/undefined is ON (the spec default), so an older settings file keeps
    *  the learning loop active. */
   lessonsAutoApply?: boolean;
+  /** Settings › عزل الأوامر (sandbox-runtime): containment mode for shell exec.
+   *  Off by default until the W-checklist passes (OD-1); flat keys per appendix C2. */
+  sandboxMode?: "off" | "untrusted_only" | "all_shell";
+  /** Egress allowlist for sandboxed commands — empty means NO network (OD-7). */
+  sandboxAllowedDomains?: string[];
+  /** Install posture: skip the machine-wide profile-read grant (OD-4, default true). */
+  sandboxSkipProfileGrant?: boolean;
+  /** User acknowledged the 0.0.81 transitive audit findings (OD-10 disclosure). */
+  sandboxSupplyChainAck?: boolean;
+  /** الهوية في المستندات (د2): the acting identity for office intelligence,
+   *  track changes and audits. Unset keeps the legacy admin/"local" identity. */
+  officeIdentity?: { name?: string; role?: "partner" | "senior" | "associate" | "paralegal" | "reviewer" | "client" | "admin" };
+  /** «تحدث مع ملفاتك» (Phase-2 W2): the Knowledge Garden (kb_*) tools ship in
+   *  the core ask/build modes. Missing/undefined is ON (the spec default), so
+   *  an older settings file keeps the garden promoted; `false` removes the
+   *  kb_* names from those modes' tool lists everywhere at once. */
+  knowledgeRag?: boolean;
+  /** lazy-senior (Ponytail BUILD_SPEC P2): coding-discipline level injected
+   *  into build-mode prompts. Missing/undefined is `full` (the spec default);
+   *  the /lazy chat command overrides it for the current session only. */
+  codingDiscipline?: "off" | "lite" | "full" | "ultra";
+}
+
+const OFFICE_ROLES = new Set(["partner", "senior", "associate", "paralegal", "reviewer", "client", "admin"]);
+
+function isOfficeIdentitySetting(value: unknown): value is NonNullable<Settings["officeIdentity"]> {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  return record.name === undefined || typeof record.name === "string";
 }
 
 const FILE = path.join(DATA_DIR, "settings.json");
@@ -69,6 +99,15 @@ export function loadSettings(): Settings {
         ...(typeof parsed.autoApprove === "boolean" ? { autoApprove: parsed.autoApprove } : {}),
         ...(typeof parsed.planApprovalSkipTrivial === "boolean" ? { planApprovalSkipTrivial: parsed.planApprovalSkipTrivial } : {}),
         ...(isLocationSetting(parsed.location) ? { location: parsed.location } : {}),
+        ...(isOfficeIdentitySetting(parsed.officeIdentity) ? { officeIdentity: parsed.officeIdentity } : {}),
+        ...(typeof parsed.knowledgeRag === "boolean" ? { knowledgeRag: parsed.knowledgeRag } : {}),
+        ...(parsed.codingDiscipline === "off" || parsed.codingDiscipline === "lite" || parsed.codingDiscipline === "full" || parsed.codingDiscipline === "ultra"
+          ? { codingDiscipline: parsed.codingDiscipline }
+          : {}),
+        ...(parsed.sandboxMode === "untrusted_only" || parsed.sandboxMode === "all_shell" ? { sandboxMode: parsed.sandboxMode } : {}),
+        ...(Array.isArray(parsed.sandboxAllowedDomains) ? { sandboxAllowedDomains: parsed.sandboxAllowedDomains.map(String) } : {}),
+        ...(typeof parsed.sandboxSkipProfileGrant === "boolean" ? { sandboxSkipProfileGrant: parsed.sandboxSkipProfileGrant } : {}),
+        ...(typeof parsed.sandboxSupplyChainAck === "boolean" ? { sandboxSupplyChainAck: parsed.sandboxSupplyChainAck } : {}),
       };
     }
   } catch {
@@ -105,6 +144,15 @@ export function updateSettings(patch: Partial<Settings>): Settings {
   if (typeof patch.codemode === "boolean") settings.codemode = patch.codemode;
   if (typeof patch.trainingOptOut === "boolean") settings.trainingOptOut = patch.trainingOptOut;
   if (typeof patch.lessonsAutoApply === "boolean") settings.lessonsAutoApply = patch.lessonsAutoApply;
+  if (patch.officeIdentity !== undefined) {
+    const normalized = isOfficeIdentitySetting(patch.officeIdentity)
+      ? {
+          ...(typeof patch.officeIdentity.name === "string" && patch.officeIdentity.name.trim() ? { name: patch.officeIdentity.name.trim().slice(0, 80) } : {}),
+          ...(OFFICE_ROLES.has(patch.officeIdentity.role as never) ? { role: patch.officeIdentity.role as NonNullable<Settings["officeIdentity"]>["role"] } : {}),
+        }
+      : {};
+    settings.officeIdentity = Object.keys(normalized).length ? normalized : undefined;
+  }
   if (patch.location !== undefined) {
     settings.location = isLocationSetting(patch.location)
       ? {
@@ -113,6 +161,30 @@ export function updateSettings(patch: Partial<Settings>): Settings {
           ...(typeof patch.location.region === "string" && patch.location.region.trim() ? { region: patch.location.region.trim() } : {}),
         }
       : undefined;
+  }
+  // Sandbox keys (appendix C2): mode must be a known value (unknown → off),
+  // domains ride the policy normalizer (dedupe/lowercase/junk-filter). OD-10:
+  // a non-off mode is only honoured once the supply-chain acknowledgement is set.
+  if (patch.sandboxMode !== undefined) {
+    const requested = patch.sandboxMode === "untrusted_only" || patch.sandboxMode === "all_shell" ? patch.sandboxMode : "off";
+    const acked = settings.sandboxSupplyChainAck === true || patch.sandboxSupplyChainAck === true;
+    settings.sandboxMode = requested !== "off" && !acked ? "off" : requested;
+  }
+  if (patch.sandboxAllowedDomains !== undefined) {
+    settings.sandboxAllowedDomains = Array.isArray(patch.sandboxAllowedDomains)
+      ? normalizeDomains(patch.sandboxAllowedDomains)
+      : [];
+  }
+  if (typeof patch.sandboxSkipProfileGrant === "boolean") settings.sandboxSkipProfileGrant = patch.sandboxSkipProfileGrant;
+  if (typeof patch.sandboxSupplyChainAck === "boolean") settings.sandboxSupplyChainAck = patch.sandboxSupplyChainAck;
+  if (typeof patch.knowledgeRag === "boolean") settings.knowledgeRag = patch.knowledgeRag;
+  if (
+    patch.codingDiscipline === "off" ||
+    patch.codingDiscipline === "lite" ||
+    patch.codingDiscipline === "full" ||
+    patch.codingDiscipline === "ultra"
+  ) {
+    settings.codingDiscipline = patch.codingDiscipline;
   }
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });

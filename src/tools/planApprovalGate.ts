@@ -45,6 +45,10 @@ export interface PlanApprovalRecord {
   decidedAt?: string;
   /** The plan the agent must re-present when the user edited it. */
   editedPlan?: SuggestPlanArgs;
+  /** App Builder (MISSING §4.2.2): which plan-draft revision this gate blocks for. */
+  revision?: number;
+  /** App Builder: the stored decline reason (at most 1,000 characters). */
+  declineReason?: string;
 }
 
 /** How the user decided a pending plan. `edited` carries the revised plan. */

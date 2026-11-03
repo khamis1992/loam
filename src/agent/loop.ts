@@ -1,5 +1,6 @@
 import type { Config } from "../config.js";
 import type { ChatResult, OllamaClient, ChatMessage } from "../ollama.js";
+import { instructedToolCall, toolCallFromProse } from "./toolCallFromProse.js";
 import type { Emit, Usage, ToolTraceItem, TodoItem, TodoStatus } from "./events.js";
 import { verifyFinal } from "./verifier.js";
 import { AcceptanceGuard } from "./acceptanceGuard.js";
@@ -10,7 +11,6 @@ import { loadProjectSkills } from "../tools/skills.js";
 import type { WorkerCheckpoint } from "./checkpoint.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import { chatWithFallback } from "./model.js";
-import { chatWithCodingRouter, isCodingTurn } from "../llm/codingRouter.js";
 import { chatWithRouting } from "../tools/routingModel.js";
 import {
   effortStepBudget,
@@ -24,15 +24,20 @@ import {
 import { isEditTool, recordEditModel } from "../llm/modelAudit.js";
 import type { CooldownStore, FailoverProvider, ProviderClient } from "../llm/failover.js";
 import { createStallGuard } from "./stallGuard.js";
+import { clearRepeatBlocks, noteToolOutcome, repeatBlockReason } from "./repeatGuard.js";
 import { ciWatchEscalationNotice } from "./ciWatchLoop.js";
 import { compressContext, getContextWindow } from "./contextCompressor.js";
+import { spillToolOutput } from "./spill.js";
 import { PrunedStore } from "./prune/prunedStore.js";
 import type { ToolMeta } from "./prune/types.js";
 import { ContextSelector } from "./contextSelector.js";
 import { runLifecycleHooks, wrapHookContext } from "../policy/hooks.js";
 import { throwIfCancelled, isCancelled, isCancelledError } from "../server/runControl.js";
+import { beginForeground, endForeground, maybeSecondLook, noteTouchedPath, queueTurnIngest, recallSystemBlock } from "../review/turnHook.js";
 import { openSession, closeSession } from "./sessionHooks.js";
 import { isUntrustedTool, markUntrusted, type SandboxMode } from "../policy/riskTier.js";
+import { guardUntrusted } from "../orchestration/contracts/injectionGuard.js";
+import { directReturnText, type BatchResult } from "../orchestration/handoff/returnDirect.js";
 import { ReminderChannel, TODO_UPDATE_TOOLS, MEMORY_UPDATE_TOOLS, type ReminderChannelOptions } from "./reminders.js";
 import { getTaskPhase } from "../tools/phaseTools.js";
 import { ReadState } from "../tools/readState.js";
@@ -43,8 +48,10 @@ import {
   consumeTokens,
   consumeWallClock,
   createUnlimitedBudget,
+  totalTokens,
   type ComputeBudget,
 } from "./computeBudget.js";
+import { budgetPauseReason, clearBudgetPause, isBudgetPaused, waitForBudgetResume } from "./budgetPause.js";
 import { estimateCostUsd } from "./insights.js";
 import { budgetStoppedCheckpoint, budgetSummary, resumeStep, type MissionCheckpoint } from "./mission.js";
 import { fileTouchRegistry, forgetFileTouchSession } from "../tools/fileTouch.js";
@@ -160,6 +167,8 @@ export interface RunOptions {
   suppressFinal?: boolean;
   /** Subagent delegation depth for this run (0 = top-level). */
   depth?: number;
+  /** Active Loam mode for this run. Recall and Second Look read it per turn. */
+  loamMode?: string;
   /** Internal evidence channel, independent of abbreviated UI tool events. */
   onToolEvidence?: (item: ToolTraceItem) => void;
   /** Internal accounting snapshot, including work preceding a worker failure. */
@@ -203,6 +212,9 @@ export interface RunOptions {
   /** Provider label used for prompt-cache classification (`openai-api` for
    *  cloud routes, `ollama` for the local endpoint). Defaults to `ollama`. */
   provider?: string;
+  /** Force provider cache breakpoints on the stable system prefix. Defaults to
+   *  on for anthropic routes, off elsewhere. */
+  cacheControl?: boolean;
   /** Expected prompt-cache retention in seconds, when known. */
   cacheTtlSecs?: number;
   /** Whether `cacheTtlSecs` is only an estimate (never treated as hard expiry). */
@@ -268,6 +280,17 @@ export class MissionBudgetError extends Error {
 /** True when the error is a clean budget stop rather than a failed run. */
 export function isMissionBudgetError(err: unknown): err is MissionBudgetError {
   return err instanceof MissionBudgetError;
+}
+
+/** The loop already emitted this stop. Callers must not emit it a second time. */
+export function markBudgetStop(error: Error): Error {
+  (error as Error & { budgetStop?: boolean }).budgetStop = true;
+  return error;
+}
+
+/** True when `markBudgetStop` flagged an error the loop already reported. */
+export function isBudgetStopError(err: unknown): boolean {
+  return err instanceof Error && (err as { budgetStop?: boolean }).budgetStop === true;
 }
 
 /** Deterministic 32-bit FNV-1a hash; stable across processes for the same input. */
@@ -366,8 +389,19 @@ function summarize(text: string, lines = 10): string {
 }
 
 /** Web/email/browser output is external data; wrap it so the model never follows it as instructions. */
-function toolMessageContent(name: string, content: string): string {
-  return isUntrustedTool(name) ? markUntrusted(content, name) : content;
+function toolMessageContent(name: string, content: string, opts?: RunOptions): string {
+  const body = opts?.cfg.workspace ? spillToolOutput(opts.cfg.workspace, name, content, opts.taskId) : content;
+  // Every guarded-MCP result is target-originated untrusted data: REA tool text
+  // (REA_INTO_LOAM §8) and Cua Driver GUI text/screenshots (CUA_INTO_LOAM §6.2 —
+  // UI labels are a prompt-injection surface).
+  if (name.startsWith("mcp__rea__") || name.startsWith("mcp__cua-driver__")) return markUntrusted(body, name.startsWith("mcp__rea__") ? "rea" : "cua-driver");
+  if (!isUntrustedTool(name)) return body;
+  // Orchestration Core §4.6.2: score and neutralize before the wrap (forged
+  // closing markers never survive any strategy; guard "off" only skips scoring).
+  const g = opts?.cfg.orchestration?.contracts;
+  const v = guardUntrusted(body, g?.injectionGuard ?? "warn", g?.injectionThreshold ?? 0.6);
+  if (v.action !== "pass") opts?.emit?.({ type: "guard_flagged", tool: name, score: v.score, signals: v.signals, action: v.action });
+  return markUntrusted(v.content, name);
 }
 
 /** Maximum number of independent read-only tool calls executed concurrently from
@@ -401,13 +435,22 @@ async function mapWithConcurrency<T, R>(
 }
 
 export async function runAgent(opts: RunOptions): Promise<RunResult> {
+  clearRepeatBlocks(opts.taskId);
   // A session's file-touch reader marks are worthless once it is gone; forget
   // them on every exit path so finished sessions are never notified.
   const sessionId = opts.sessionId ?? opts.taskId ?? `session-${process.pid}-${Date.now()}`;
+  beginForeground();
+  let result: RunResult | undefined;
   try {
-    return await runAgentInner(opts, sessionId);
+    result = await runAgentInner(opts, sessionId);
+    return result;
   } finally {
+    endForeground();
+    if (result) queueTurnIngest(sessionId, opts.cfg.workspace, opts.prompt, result.text, (opts.depth ?? 0) > 0);
     forgetFileTouchSession(sessionId);
+    // A parked run that ends (finished or cancelled) has no waiter left, so its
+    // pause state must not outlive it and trap the next run of the same task.
+    if (opts.taskId) clearBudgetPause(opts.taskId);
   }
 }
 
@@ -439,6 +482,7 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
       opts.sandboxMode,
       undefined,
       opts.prompt,
+      opts.sessionId ?? opts.taskId,
     );
   const system =
     opts.systemSuffix && opts.systemSuffix.trim().length > 0
@@ -449,7 +493,13 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
   // before them. `auto` adds nothing, which keeps pre-N10 prompts byte-identical.
   const outputInstruction = outputTypeSuffix(outputType);
   const routingSystem = outputInstruction ? `${system}\n\n${outputInstruction}` : system;
-  let messages: ChatMessage[] = [{ role: "system", content: routingSystem }];
+  const memoryBlock = await recallSystemBlock(opts.prompt, opts.cfg.workspace, (opts.depth ?? 0) > 0, opts.loamMode);
+  const routed = memoryBlock ? `${routingSystem}\n\n${memoryBlock}` : routingSystem;
+  let messages: ChatMessage[] = [{ role: "system", content: routed }];
+  const touched: string[] = [];
+  let toolCallCount = 0;
+  let reviewed = false;
+  const turnStartedAt = Date.now();
 
   if (opts.history && opts.history.length > 0) {
     // History selection already preserves user constraints under its explicit
@@ -460,11 +510,15 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
   messages.push({ role: "user", content: opts.prompt });
 
   let finalText = "";
+  /** C10: set when a direct return ended the loop with the answer in hand. */
+  let directEnd = false;
   let usedModel = opts.model && opts.model.trim() ? opts.model.trim() : opts.cfg.model;
   let step = 0;
   // How this run actually ended, so SessionEnd can report a truthful reason
   // instead of a blanket "failed".
   let endedReason: "completed" | "cancelled" | "failed" = "failed";
+  let lastStepFailed = false;
+  let consecutiveEmptyResults = 0;
   const usage: Usage = { promptTokens: 0, completionTokens: 0, durationMs: 0 };
   // Prompt-cache (KV) accounting: classify a miss whenever a meaningful part of
   // the previously reusable prefix was not read back.
@@ -543,8 +597,8 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
   // The tool names this run may use. Tools that fan out to child agents read
   // it from the tool context so a child never exceeds the parent's reach.
   const runAllowedTools = opts.tools.names();
-  // Coding turns route through the strongest coder in the configured chain.
-  const routeCoding = opts.cfg.coding?.enabled !== false && isCodingTurn(opts.prompt, opts.history);
+  // The composer selection is the model for every step, including a turn the
+  // coding heuristic would otherwise hand to a different provider.
   // Edit attribution is on by default and can be disabled per config.
   const auditEdits = opts.cfg.coding?.logEdits !== false;
   // Harness reminders (stale todo list, external file change, plan mode, memory
@@ -603,6 +657,7 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
   // args, plus the run's store holding the bodies of removed results.
   const toolMessageMeta = new Map<ChatMessage, ToolMeta>();
   const prunedStore = new PrunedStore();
+  let notedTokenCeiling = false;
 
   try {
     // SessionStart and UserPromptSubmit fire once per run, before any model call.
@@ -613,6 +668,30 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
       const session = await openSession({ workspace, prompt: opts.prompt, signal: opts.signal, taskId: opts.taskId, enabled: true, wikiCfg: opts.cfg });
       if (session.injected) messages.push({ role: "user", content: session.injected });
     }
+
+  async function injectSecondLook(): Promise<boolean> {
+    if (reviewed) return false;
+    reviewed = true;
+    const note = await maybeSecondLook({
+      runId: opts.taskId ?? sessionId,
+      workspace: opts.cfg.workspace,
+      requests: [opts.prompt],
+      reply: finalText,
+      turnStartedAt,
+      touched,
+      toolCalls: toolCallCount,
+      depth: opts.depth ?? 0,
+      aborted: Boolean(opts.signal?.aborted),
+      alreadyReviewed: false,
+      ollama: opts.ollama,
+      modelName: usedModel || opts.cfg.model,
+      ...(opts.loamMode ? { mode: opts.loamMode } : {}),
+    });
+    if (!note) return false;
+    opts.emit({ type: "review", verdict: "findings", findings: note });
+    messages.push({ role: "user", content: note });
+    return true;
+  }
 
   for (step = (restored?.steps ?? (mission && opts.resumeMission ? resumeStep(opts.resumeMission) - 1 : 0)) + 1; step <= stepCeiling; step++) {
     // Neo N6: a mission checkpoints BEFORE its step runs, marking the step as
@@ -630,11 +709,23 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
       if (mission) {
         const summary = budgetStoppedCheckpoint({ taskId: opts.taskId, prompt: opts.prompt, lastStep: step - 1, budget: opts.budget ?? createUnlimitedBudget() });
         opts.emit({ type: "budget_exhausted", taskId: opts.taskId ?? "", reason: budgetDecision.reason, checkpoint: summary });
-        throw new MissionBudgetError(`${budgetDecision.reason}. Raise the session budget to continue.`, summary);
+        throw new MissionBudgetError(budgetDecision.reason, summary);
       }
-      const msg = `${budgetDecision.reason}. Raise the session budget to continue.`;
-      opts.emit({ type: "error", message: msg });
-      throw new Error(msg);
+      // The reason already tells the user to raise the ceiling. Emitting it here
+      // and throwing it is one report; markBudgetStop keeps the caller from
+      // broadcasting the same stop again.
+      opts.emit({ type: "error", message: budgetDecision.reason });
+      throw markBudgetStop(new Error(budgetDecision.reason));
+    }
+    // Budget pause policy: a stop always wins (handled above); a pause parks the
+    // run at this boundary and keeps the transcript. The epoch-safe wait means a
+    // resume that lands before we start waiting is not lost.
+    if (opts.taskId && isBudgetPaused(opts.taskId)) {
+      const reason = budgetPauseReason(opts.taskId) ?? "paused";
+      opts.emit({ type: "budget_paused", taskId: opts.taskId, reason });
+      await waitForBudgetResume(opts.taskId, opts.signal);
+      throwIfCancelled(opts.signal, opts.taskId);
+      opts.emit({ type: "budget_resumed", taskId: opts.taskId, epoch: 0, raised: Boolean(opts.budget?.raised) });
     }
     if (opts.budget) consumeSteps(opts.budget, 1);
     // O6: a step boundary is the safe place to pick up messages that arrived
@@ -727,53 +818,74 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
       ...(opts.cacheTtlIsEstimate !== undefined ? { ttlIsEstimate: opts.cacheTtlIsEstimate } : {}),
     };
     cacheMonitor.beginRequest(route, requestSignature(routingSystem, requestTools, messages));
+    // Prompt caching: mark the stable system prefix as a cache breakpoint on the
+    // routes that support block-level cache control. The prefix is byte-stable
+    // across turns and siblings, which is exactly what the provider cache needs.
+    const cacheControl = Boolean(opts.cacheControl) || /claude|anthropic/i.test(usedModel) || /anthropic/i.test(opts.provider ?? "");
 
-    const chatRequest = {
-      model: opts.cfg.model,
+    // Determine if thinking mode should be enabled for local Ollama models.
+    // Default: think=false. Escalate to think=true for hard tasks:
+    // - Multi-file / architectural planning
+    // - Debugging after a failed test
+    // - Math/algorithmic tasks
+    // - After a think=false attempt failed validation
+    const isLocalOllama = !opts.cfg.model.endsWith(":cloud");
+    const recentMessages = messages.slice(-5).map(m => m.content ?? "").join(" ").toLowerCase();
+    const isArchitectural = /\b(architect|design|refactor|restructure|reorganize|multi-file|multiple file|several file)/i.test(opts.prompt + " " + recentMessages);
+    const isMathAlgorithmic = /\b(algorithm|calculate|compute|math|equation|formula|optimization|complexity|recursive|dynamic programming|graph|tree|sort|search)/i.test(opts.prompt + " " + recentMessages);
+    const hasTestFailure = messages.slice(-3).some(m => m.role === "tool" && /\b(test.*fail|fail.*test|error|exception|assertion.*fail)/i.test(m.content ?? ""));
+    const isWriting = /(?:write|presentation|slides|article|essay|explain|summar|عرض|اكتب|برزنتيشن|مقال|اشرح|صفحة)/i.test(opts.prompt);
+    const shouldThink = isLocalOllama && (lastStepFailed || isArchitectural || isMathAlgorithmic || hasTestFailure || consecutiveEmptyResults > 0 || isWriting);
+    let thinkingText = "";
+    let thinkingEmitAt = 0;
+    const onThinking = (delta: string) => {
+      if (!delta) return;
+      thinkingText += delta;
+      const now = Date.now();
+      if (now - thinkingEmitAt < 400 && thinkingText.length > delta.length) return;
+      thinkingEmitAt = now;
+      opts.emit({ type: "thinking", text: thinkingText });
+    };
+
+    // The selected model is sent on every step. A coding turn does not swap it
+    // for another provider in the coder chain.
+    const pinnedModel = (opts.model && opts.model.trim()) || opts.cfg.model;
+    const stepStartedAt = mission ? Date.now() : 0;
+    const offeredEarly = requestTools.map((tool) => tool.function.name);
+    const instructedFirst = !messages.some((message) => message.role === "tool")
+      ? instructedToolCall(opts.prompt, offeredEarly)
+      : null;
+    const result0: ChatResult = instructedFirst
+      ? { content: "", toolCalls: [instructedFirst], model: pinnedModel, usage: { promptTokens: 0, completionTokens: 0, durationMs: 0 } }
+      : await chatWithRouting({
+      cfg: opts.cfg,
+      ollama: opts.ollama,
       messages,
       tools: requestTools,
       temperature: opts.cfg.agent.temperature,
-      // An explicit per-run model (the quick-edit route) wins over the config
-      // default; the router still replaces it with the strongest coder on a
-      // coding turn.
-      ...(opts.model && opts.model.trim() ? { model: opts.model.trim() } : {}),
+      timeoutMs: opts.cfg.agent.requestTimeoutMs,
       ...(opts.signal ? { signal: opts.signal } : {}),
-    };
-    // Neo N10: one dispatch point. A mapped route (per-tool, then effort) takes
-    // precedence; otherwise the existing coding-turn routing applies, and a run
-    // with no map at all keeps the plain fallback chain it had before N10.
-    const stepStartedAt = mission ? Date.now() : 0;
-    const result: ChatResult = routeCoding
-      ? await chatWithCodingRouter({
-          cfg: opts.cfg,
-          chat: chatRequest,
-          fallback: opts.ollama,
-          env: opts.env,
-          store: opts.cooldownStore,
-          createClient: opts.createProviderClient,
-          onRoute: opts.onCodingRoute,
-        })
-      : await chatWithRouting({
-          cfg: opts.cfg,
-          ollama: opts.ollama,
-          messages,
-          tools: requestTools,
-          temperature: opts.cfg.agent.temperature,
-          timeoutMs: opts.cfg.agent.requestTimeoutMs,
-          ...(opts.signal ? { signal: opts.signal } : {}),
-          ...(opts.model && opts.model.trim() ? { model: opts.model.trim() } : {}),
-          ...(outputType !== "auto" ? { outputType } : {}),
-          ...(effortLevel ? { effort: effortLevel } : {}),
-          ...(routingTool ? { tool: routingTool } : {}),
-          env: opts.env,
-          store: opts.cooldownStore,
-          createClient: opts.createProviderClient,
-          // Buffer candidate answers: streaming an unverified success claim would
-          // expose a result that the completion gate may subsequently reject.
-          notify: (message) => opts.emit({ type: "error", message }),
-        });
+      ...(pinnedModel ? { model: pinnedModel } : {}),
+      ...(cacheControl ? { cacheControl } : {}),
+      think: shouldThink,
+      onThinking,
+      ...(outputType !== "auto" ? { outputType } : {}),
+      ...(effortLevel ? { effort: effortLevel } : {}),
+      ...(routingTool ? { tool: routingTool } : {}),
+      env: opts.env,
+      store: opts.cooldownStore,
+      createClient: opts.createProviderClient,
+      onRoute: opts.onCodingRoute,
+      // Buffer candidate answers: streaming an unverified success claim would
+      // expose a result that the completion gate may subsequently reject.
+      notify: (message) => opts.emit({ type: "error", message }),
+    });
+    let result = result0;
     throwIfCancelled(opts.signal, opts.taskId);
     usedModel = result.model;
+    if (result.thinking && result.thinking !== thinkingText) {
+      opts.emit({ type: "thinking", text: result.thinking });
+    }
     if (providerCompaction) cacheMonitor.noteProviderCompaction();
     // Reusable boundary = cached reads plus cache writes (uncached input is not
     // reusable). Providers with no cache telemetry report neither field.
@@ -789,8 +901,19 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
       consumeWallClock(opts.budget, Date.now() - stepStartedAt);
       consumeCost(opts.budget, estimateCostUsd(usedModel, result.usage.promptTokens, result.usage.completionTokens));
     }
-    if (opts.budget && checkBudget(opts.budget).action === "warn") {
-      opts.emit({ type: "error", message: "Compute budget is close to its ceiling; consider raising it." });
+    if (opts.budget) {
+      const overTokens = opts.budget.tokenLimit !== undefined && totalTokens(opts.budget) >= opts.budget.tokenLimit;
+      if (overTokens && !notedTokenCeiling) {
+        notedTokenCeiling = true;
+        opts.budget.ceilingWarned = true;
+        opts.emit({
+          type: "error",
+          message: `Context token ceiling reached (${totalTokens(opts.budget)}/${opts.budget.tokenLimit}). The live window is summarized and the conversation continues.`,
+        });
+      } else if (opts.budget.ceilingWarned !== true && checkBudget(opts.budget).action === "warn") {
+        opts.budget.ceilingWarned = true;
+        opts.emit({ type: "error", message: "Compute budget is close to its ceiling; consider raising it." });
+      }
     }
     opts.onProgress?.({ steps: step, model: usedModel, usage: { ...usage } });
     const miss = cacheMonitor.finishRequest(reusableCacheTokens, readTokens);
@@ -820,9 +943,48 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
       });
     }
 
+    const offered = requestTools.map((tool) => tool.function.name);
+    const noToolsYet = !messages.some((message) => message.role === "tool");
+    const instructed = noToolsYet ? instructedToolCall(opts.prompt, offered) : null;
+    const proseCall = () => instructed ?? toolCallFromProse([thinkingText, result.thinking, result.content].filter(Boolean).join("\n"), offered);
+    const inferred = proseCall();
+    if (inferred) result = { ...result, toolCalls: [inferred] };
+    if (shouldThink && requestTools.length > 0 && result.toolCalls.length === 0) {
+      const retry = await chatWithRouting({
+        cfg: opts.cfg,
+        ollama: opts.ollama,
+        messages,
+        tools: requestTools,
+        temperature: opts.cfg.agent.temperature,
+        timeoutMs: opts.cfg.agent.requestTimeoutMs,
+        ...(opts.signal ? { signal: opts.signal } : {}),
+        ...(pinnedModel ? { model: pinnedModel } : {}),
+        ...(cacheControl ? { cacheControl } : {}),
+        think: false,
+        onThinking,
+        ...(outputType !== "auto" ? { outputType } : {}),
+        ...(effortLevel ? { effort: effortLevel } : {}),
+        ...(routingTool ? { tool: routingTool } : {}),
+        env: opts.env,
+        store: opts.cooldownStore,
+        createClient: opts.createProviderClient,
+        onRoute: opts.onCodingRoute,
+        notify: (message) => opts.emit({ type: "error", message }),
+      });
+      usedModel = retry.model;
+      addUsage(usage, retry.usage);
+      if (opts.budget) consumeTokens(opts.budget, retry.usage.promptTokens, retry.usage.completionTokens);
+      if (retry.toolCalls.length > 0) result = retry;
+      else {
+        const retried = instructed ?? toolCallFromProse([thinkingText, result.thinking, retry.thinking, retry.content].filter(Boolean).join("\n"), offered);
+        if (retried) result = { ...retry, toolCalls: [retried] };
+      }
+    }
+
     if (result.toolCalls.length === 0) {
       finalText = result.content.trim();
       if (!finalText) {
+        consecutiveEmptyResults++;
         // Retry only an empty completed response, never a tool execution or a
         // transport failure with uncertain effects. Retain the full transcript
         // and charge this attempt against the existing step/token budget.
@@ -832,6 +994,7 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
         messages.push({ role: "user", content: "Your last response contained neither text nor tool calls. Continue from the tool results already present above; do not repeat completed actions. Provide an evidence-grounded answer or the next necessary tool call. Completion still requires verification." });
         continue;
       }
+      consecutiveEmptyResults = 0;
       if (opts.suppressFinal !== true) {
         // Stop: a hook may force the agent to continue for another step.
         const stop = await runLifecycleHooks("Stop", "", { stopReason: "completed" }, workspace);
@@ -853,13 +1016,16 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
         opts.emit({ type: "verify", verdict: checked.verdict, reason: checked.reason });
         verificationAttempts++;
         if (checked.verdict !== "pass") {
+          lastStepFailed = true;
           if (checked.unavailable) throw new Error(`Independent verification unavailable; preserve output and retry verification when the environment is ready: ${checked.reason}`);
           if (verificationAttempts >= 2) throw new Error(`task incomplete: final verification ${checked.verdict}: ${checked.reason}`);
           messages.push({ role: "assistant", content: finalText });
           messages.push({ role: "user", content: `Verification did not pass: ${checked.reason}\n${checked.fixes.join("\n")}\nObtain evidence or repair the result. Do not claim completion without verification.` });
           continue;
         }
+        lastStepFailed = false;
         finalText = checked.finalAnswer ?? finalText;
+        if (await injectSecondLook()) continue;
         opts.emit({ type: "assistant_message", text: finalText });
         opts.emit({ type: "done", text: finalText, steps: step, model: usedModel });
         endedReason = "completed";
@@ -891,6 +1057,8 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
 
     const pendingImages: string[] = [];
     const stallNotices: string[] = [];
+    /** C10: this step's tool outcomes, for the single-call direct-return rule. */
+    const stepToolOutcomes: BatchResult[] = [];
     const canBatchParallel =
       result.toolCalls.length > 1 &&
       result.toolCalls.every((c) => PARALLEL_READ_TOOLS.has(c.function?.name ?? ""));
@@ -900,6 +1068,8 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
         const name = call.function?.name ?? "";
         const args = normalizeArgs(call.function?.arguments);
         opts.emit({ type: "tool_call", name, args });
+        toolCallCount += 1;
+        noteTouchedPath(name, args, touched);
         return { name, args, t0: Date.now(), callId: toolCallIdOf(call, step, index++) };
       });
       if (logSession) {
@@ -908,20 +1078,25 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
       // Neo N10: remember the batch's tool so the next request can honour a
       // per-tool routing entry. Parallel reads share one tool, so this is exact.
       lastToolCallName = prepared.length === 1 ? prepared[0]!.name : null;
-      const batchResults = await mapWithConcurrency(prepared, PARALLEL_READ_LIMIT, (item) =>
-        opts.tools.exec(item.name, item.args, {
-          cfg: opts.cfg,
-          workspace: opts.cfg.workspace,
-          emit: opts.emit,
-          ollama: opts.ollama,
-          signal: opts.signal,
-          allowedTools: runAllowedTools,
-          readState,
-          prunedStore,
-          ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
-          ...(opts.taskId ? { taskId: opts.taskId } : {}),
-        }),
-      );
+      const batchResults = await mapWithConcurrency(prepared, PARALLEL_READ_LIMIT, async (item) => {
+        const blocked = repeatBlockReason(opts.taskId, item.name, item.args);
+        const toolResult = blocked
+          ? { ok: false, content: blocked }
+          : await opts.tools.exec(item.name, item.args, {
+            cfg: opts.cfg,
+            workspace: opts.cfg.workspace,
+            emit: opts.emit,
+            ollama: opts.ollama,
+            signal: opts.signal,
+            allowedTools: runAllowedTools,
+            readState,
+            prunedStore,
+            ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
+            ...(opts.taskId ? { taskId: opts.taskId } : {}),
+          });
+        noteToolOutcome(opts.taskId, item.name, item.args, toolResult.ok, toolResult.content ?? "");
+        return toolResult;
+      });
       for (let i = 0; i < prepared.length; i++) {
         const item = prepared[i]!;
         const toolResult = batchResults[i]!;
@@ -953,7 +1128,7 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
           ...(toolResult.kbSeedIds && toolResult.kbSeedIds.length > 0 ? { kbSeedIds: toolResult.kbSeedIds } : {}),
           ...(toolResult.kbSeeds && toolResult.kbSeeds.length > 0 ? { kbSeeds: toolResult.kbSeeds } : {}),
         });
-        const toolMessage = { role: "tool", tool_name: item.name, content: toolMessageContent(item.name, toolResult.content) } as ChatMessage;
+        const toolMessage = { role: "tool", tool_name: item.name, content: toolMessageContent(item.name, toolResult.content, opts) } as ChatMessage;
         // Neo N5: capture the result as a selectable artefact and remember which
         // transcript message it belongs to, so the selector can fold it away
         // later without losing the pairing.
@@ -968,23 +1143,29 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
         const name = call.function?.name ?? "";
         const args = normalizeArgs(call.function?.arguments);
         opts.emit({ type: "tool_call", name, args });
+        toolCallCount += 1;
+        noteTouchedPath(name, args, touched);
         lastToolCallName = name;
 
         const callId = toolCallIdOf(call, step, index++);
         if (logSession) recordToolCall(logSession, callId, name, opts.taskId);
         const t0 = Date.now();
-        const toolResult = await opts.tools.exec(name, args, {
-          cfg: opts.cfg,
-          workspace: opts.cfg.workspace,
-          emit: opts.emit,
-          ollama: opts.ollama,
-          signal: opts.signal,
-          allowedTools: runAllowedTools,
-          readState,
-          prunedStore,
-          ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
-          ...(opts.taskId ? { taskId: opts.taskId } : {}),
-        });
+        const blocked = repeatBlockReason(opts.taskId, name, args);
+        const toolResult = blocked
+          ? { ok: false, content: blocked }
+          : await opts.tools.exec(name, args, {
+            cfg: opts.cfg,
+            workspace: opts.cfg.workspace,
+            emit: opts.emit,
+            ollama: opts.ollama,
+            signal: opts.signal,
+            allowedTools: runAllowedTools,
+            readState,
+            prunedStore,
+            ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
+            ...(opts.taskId ? { taskId: opts.taskId } : {}),
+          });
+        noteToolOutcome(opts.taskId, name, args, toolResult.ok, toolResult.content ?? "");
 
         if (logSession) {
           recordToolResult(logSession, callId, name, toolResult.ok ? "succeeded" : "failed", toolResult.content, opts.taskId, opts.cfg.workspace);
@@ -1012,12 +1193,13 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
           currentTodos = parseTaskList(name, args);
         }
         if (MEMORY_UPDATE_TOOLS.has(name) && toolResult.ok) reminders.memoryUpdated();
-        const toolMessage = { role: "tool", tool_name: name, content: toolMessageContent(name, toolResult.content) } as ChatMessage;
+        const toolMessage = { role: "tool", tool_name: name, content: toolMessageContent(name, toolResult.content, opts) } as ChatMessage;
         toolMessageIds.set(toolMessage, selector.capture(name, toolResult.content, { path: editTargetPath(args) }).id);
         toolMessageMeta.set(toolMessage, toolMetaOf(callId, toolResult.ok, args));
         messages.push(toolMessage);
         // Cancel pressed while the tool ran? Stop before the next tool/step.
         throwIfCancelled(opts.signal, opts.taskId);
+        stepToolOutcomes.push({ tool: name, ok: toolResult.ok, content: toolResult.content, ...(toolResult.returnDirect ? { returnDirect: true } : {}) });
 
         if (opts.cfg.vision.enabled && toolResult.images && toolResult.images.length > 0) {
           for (const img of toolResult.images) {
@@ -1025,6 +1207,32 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
           }
         }
       }
+    }
+
+    // C10: a single-call step whose delegate flagged return_direct already
+    // holds the answer; skip the rewording model call. Final verification
+    // still runs below before the run may report completion.
+    const direct = directReturnText(stepToolOutcomes, opts.cfg.orchestration?.returnDirect.enabled === true);
+    if (direct) {
+      opts.emit({ type: "return_direct", tool: stepToolOutcomes[0]!.tool, chars: direct.length });
+      finalText = direct;
+      if (await injectSecondLook()) continue;
+      directEnd = true;
+      break;
+    }
+    // A plan step names one call. Once that call succeeds, the next step is a
+    // separate worker, so this worker must not spend another model turn narrating.
+    const instructedDone =
+      instructed != null &&
+      stepToolOutcomes.length === 1 &&
+      stepToolOutcomes[0]?.ok === true &&
+      stepToolOutcomes[0].tool === instructed.function.name;
+    if (instructedDone) {
+      const evidence = stepToolOutcomes[0]?.content?.trim() ?? "";
+      finalText = evidence.slice(0, 2000) || `Completed ${instructed.function.name}.`;
+      if (await injectSecondLook()) continue;
+      directEnd = true;
+      break;
     }
 
     if (stallNotices.length > 0) {
@@ -1051,9 +1259,28 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
       if (after.action === "stop") {
         const stopped = budgetStoppedCheckpoint({ taskId: opts.taskId, prompt: opts.prompt, lastStep: step, budget: opts.budget });
         opts.emit({ type: "budget_exhausted", taskId: opts.taskId ?? "", reason: after.reason, checkpoint: stopped });
-        throw new MissionBudgetError(`${after.reason}. Raise the session budget to continue.`, stopped);
+        throw new MissionBudgetError(after.reason, stopped);
       }
     }
+  }
+
+  // C10: the direct return ended the loop with the answer in hand; the
+  // verifier still judges it before the run may report completion.
+  if (directEnd) {
+    if (opts.suppressFinal !== true) {
+      const checked = await verifyFinal({ acceptanceGuard, independentGuard, independentRequest, cfg: opts.cfg, ollama: opts.ollama, request: opts.prompt, goal: opts.prompt, finalText, completedSteps: [], trace,
+        history: opts.history, tools: opts.tools, emit: opts.emit, signal: opts.signal, taskId: opts.taskId });
+      addUsage(usage, checked.usage);
+      throwIfCancelled(opts.signal, opts.taskId);
+      opts.emit({ type: "verify", verdict: checked.verdict, reason: checked.reason });
+      if (checked.verdict !== "pass") throw new Error(`task incomplete: final verification ${checked.verdict}: ${checked.reason}`);
+      finalText = checked.finalAnswer ?? finalText;
+      opts.emit({ type: "assistant_message", text: finalText });
+      opts.emit({ type: "done", text: finalText, steps: step, model: usedModel });
+      endedReason = "completed";
+    }
+    await Promise.all(armPromises);
+    return { text: finalText, messages, steps: step, model: usedModel, usage, verified: opts.suppressFinal !== true };
   }
 
   // Both sides converge on settling every arm here: an N10 A/B sibling must not

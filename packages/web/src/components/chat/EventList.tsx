@@ -9,6 +9,7 @@ import { ToolUsedRow } from './ToolUsedRow';
 import { StatusUpdateRow } from './StatusUpdateRow';
 import { CacheUsageRow } from './CacheUsageRow';
 import { ContextPrunedRow } from './ContextPrunedRow';
+import { SecondLookChip } from './SecondLookChip';
 import { PlanStepRow, PlanUpdateRow, TodoListRow } from './PlanStep';
 import { ApprovalCard, AskUserCard, FolderAccessApprovalCard, PlanApprovalCard, type LocalExecutionApprovalRequested, type PlanApprovalRequested } from '@/components/approval';
 import { AttachmentCard } from './AttachmentCard';
@@ -98,6 +99,8 @@ export function ChatEventRow({ e, sessionId, socket, renderChat, onOpenFile }: C
       return <CacheUsageRow e={e as CacheUsageEvent} />;
     case 'context_pruned':
       return <ContextPrunedRow e={e as ContextPrunedEvent} />;
+    case 'secondLook':
+      return <SecondLookChip findings={e.findings} verdict={e.verdict} />;
     case 'explanation':
       return <p className="text-sm text-text-secondary">{e.content}</p>;
     case 'mode': {

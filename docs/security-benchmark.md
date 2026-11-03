@@ -33,4 +33,12 @@ Four campaigns over the same app: the nine HTTP-only classes run as one campaign
 - One representative endpoint per class with the engines' default canaries; variant classes (stored XSS, CSRF, business-logic families) are covered by their own gates but not by this set, and harder variants (WAF-style normalization, polyglots) are absent by construction.
 - 10/10 on a ten-endpoint set is a floor, not a statistically meaningful detection rate; the set must grow before precision/recall claims generalize.
 
-Worktree-only; not yet in an installed release. All 36 `check:security*` gates, typecheck for the touched modules and `check:encoding` pass.
+Worktree-only; not yet in an installed release. The historical 36-gate evidence applies to the older chain, not the current `verify:security` manifest chain.
+
+## Mobile parser benchmark
+
+`npm run check:mobile` also runs `src/scripts/check-mobile-bench.ts`: four independent report fixtures (two vulnerable and two benign, including false-positive traps) exercise the MobSF report parser. The required result is two true positives, two true negatives, and no false positives or false negatives. This is a small parser regression gate, not a statistically meaningful mobile detection-rate claim; external vulnerable/safe mobile applications and real devices remain required for that evaluation.
+
+## Mobile scale acceptance corpus
+
+`npm run check:mobile:scale` executes 20 additional loopback cases through the real authorization and business-scenario functions. The versioned corpus covers BOLA, anonymous access, order, quota, replay, offline state, recovery and refunds. Required result: 9 true positives, 9 true negatives, no false positives/negatives, and exactly two declared inconclusive negative controls. Unavailable or inconclusive cases are excluded from clean results rather than counted as successes. The command writes a machine-readable report to a temporary directory. This remains a regression corpus, not a global detection-rate claim.

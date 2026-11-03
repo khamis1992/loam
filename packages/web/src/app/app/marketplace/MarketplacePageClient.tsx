@@ -28,11 +28,16 @@ import {
 import { MarketplaceBotTable } from './MarketplaceBotTable';
 import { MarketplaceBotCard } from './MarketplaceBotCard';
 import { EntryAttribution } from './EntryAttribution';
+import { SkillsMarket } from '@/components/marketplace/SkillsMarket';
+import { IntegrationsMarket } from '@/components/marketplace/IntegrationsMarket';
+import { bi } from '@/components/marketplace/labels';
 
 type Toast = { kind: 'success' | 'error'; text: string; agentId?: string } | null;
+type MarketTab = 'bots' | 'skills' | 'bridges';
 
 export default function MarketplacePageClient() {
   const router = useRouter();
+  const [tab, setTab] = useState<MarketTab>('bots');
   const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -208,8 +213,39 @@ export default function MarketplacePageClient() {
     }
   };
 
+  const marketTabs: Array<{ id: MarketTab; label: string }> = [
+    { id: 'bots', label: bi('Bots', 'البوتات') },
+    { id: 'skills', label: bi('Skills', 'المهارات') },
+    { id: 'bridges', label: bi('Bridges & connectors', 'الجسور والموصلات') },
+  ];
+
   return (
     <div className="mx-auto w-full max-w-[1150px] px-6 py-8">
+      {/* W-U3: one marketplace surface — bots (existing), skills and bridges/connectors. */}
+      <div role="tablist" aria-label={t('Marketplace')} className="flex items-center gap-1 border-b border-border-main">
+        {marketTabs.map((item) => (
+          <button
+            key={item.id}
+            role="tab"
+            type="button"
+            aria-selected={tab === item.id}
+            data-testid={`market-tab-${item.id}`}
+            onClick={() => setTab(item.id)}
+            className={`-mb-px border-b-2 px-3 py-2 text-[13.5px] font-medium transition-colors ${
+              tab === item.id
+                ? 'border-text-primary text-text-primary'
+                : 'border-transparent text-text-tertiary hover:text-text-secondary'
+            }`}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'skills' && <div className="mt-4"><SkillsMarket /></div>}
+      {tab === 'bridges' && <div className="mt-4"><IntegrationsMarket /></div>}
+
+      {tab === 'bots' && (<>
       <header>
         <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#2563EB]">{t('Works with Loam')}</p>
         <h1 className="mt-2 text-[46px] font-medium leading-[1.05] tracking-[-0.02em] text-text-primary max-[700px]:text-[34px]">
@@ -374,6 +410,7 @@ export default function MarketplacePageClient() {
           </button>
         </div>
       )}
+      </>)}
     </div>
   );
 }

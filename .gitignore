@@ -36,7 +36,6 @@ Thumbs.db
 /.jblocked
 /.neo-done
 /.neo-blocked
-/.github/workflows/release.yml
 
 nul
 /packages/web/e2e/report/
@@ -78,3 +77,20 @@ tmp-*.mts
 .devin-done
 .jgatefail.txt
 .jtask.md
+.gitnexus
+
+# Local probes, generated evidence and agent-only scratch state
+/tmp/
+output/
+/.zcode/
+/_missing_export/
+/server.cjs
+/law-review.md
+/notes.md
+/task_plan.md
+.claude/settings.local.json
+# Anchored: the typst binary dir at repo root only — must NOT match src/tools/.
+/tools/
+
+# Mimosa scanner working data (local only)
+.mimosa/

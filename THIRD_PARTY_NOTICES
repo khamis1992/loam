@@ -153,3 +153,227 @@ Loam's app bridges (src/bridges/, src/tools/appBridgeTools.ts) are an independen
 implementation of the publicly described idea of driving desktop applications
 through their command-line interfaces with declarative manifests. No upstream
 code was copied.
+
+Security audit (src/security/audit/)
+------------------------------------
+Loam's source-code security audit is a clean-room rewrite of the publicly described
+approach of the Cloudflare security-audit-skill (MIT License, Copyright Cloudflare, Inc.):
+a coverage-led, multi-phase audit with an independent verification pass. No upstream
+code was copied; the rule files in rules/loam/ are Loam's own.
+
+External scanners are invoked as separate command-line processes if installed on the
+user's machine and are not bundled or redistributed by Loam:
+  - Gitleaks (MIT License)
+  - OSV-Scanner (Apache License 2.0)
+  - GuardDog (Apache License 2.0)
+  - Opengrep (LGPL 2.1), run as a separate process with Loam's own rules
+  - Trivy (Apache License 2.0), filesystem scans only
+  - Nuclei (MIT License), only against an explicitly configured live target
+  - garak (Apache License 2.0, NVIDIA), external Python process for agent
+    self-audit (Phase G) only, never against customer code
+
+Native security scanners (src/security/native/)
+-----------------------------------------------
+Clean-room implementations; no upstream source was copied.
+  secrets/  design follows Gitleaks (MIT): keyword prefilter, regex + entropy,
+            allowlists, redaction, SARIF output. The default rule set is
+            Gitleaks' config/gitleaks.toml (MIT), vendored verbatim at
+            rules/loam/secrets/gitleaks.toml and translated for JS RegExp at
+            load time; Loam-authored rules win on id collisions.
+  sca/      matches against the OSV database (osv.dev, Apache-2.0 / CC-BY-4.0 data)
+            and follows OSV-Scanner's lockfile coverage (Apache-2.0).
+  pkgintel/ heuristics follow the ideas in DataDog GuardDog (Apache-2.0):
+            typosquatting, install scripts, bundled binaries, risk scoring.
+  lleval/   prompt-evaluation core follows promptfoo's design (MIT):
+            deterministic assertion handlers returning {pass, score, reason},
+            a model-graded rubric and vars expansion. No upstream code was copied.
+  fuzz/     planning and triage follow Jazzer.js (Apache-2.0): CLI flags, exit
+            codes and bug-detector report titles. The fuzzer itself runs as an
+            external process and is not bundled or redistributed by Loam.
+
+External security engines (invoked, never bundled)
+===================================================
+
+The Loam Security surface invokes these external, user-installed CLI engines through
+pinned adapter commands. Their binaries are NOT distributed with Loam; only their
+SARIF/JSON output is parsed. Each remains under its own licence:
+
+  gitleaks (MIT)            https://github.com/gitleaks/gitleaks
+  osv-scanner (Apache-2.0)  https://github.com/google/osv-scanner
+  guarddog (Apache-2.0)     https://github.com/DataDog/guarddog
+  opengrep (LGPL-2.1)       https://github.com/opengrep/opengrep   — arm's-length process only
+  checkov (Apache-2.0)      https://github.com/bridgecrewio/checkov
+  trivy (Apache-2.0)        https://github.com/aquasecurity/trivy
+  nuclei (Apache-2.0)       https://github.com/projectdiscovery/nuclei
+  jazzer.js (Apache-2.0)    https://github.com/CodeIntelligenceTesting/jazzer.js
+  mobsfscan / MobSF (GPL-3.0) https://github.com/MobSF/Mobile-Security-Framework-MobSF
+                              — external process only; never embedded (copyleft).
+  rea-agents (MIT)          https://github.com/morluto/rea
+  ImHex (GPL-2.0)           https://github.com/WerWolv/ImHex
+                              — user-installed desktop bridge; never bundled.
+  x64dbg (own licence)      https://github.com/x64dbg/x64dbg
+                              — user-installed desktop bridge; never bundled.
+
+Technique attributions (clean-room implementations, no upstream code copied):
+  ALL_SERVICES_BUILD_SPEC §5-§20 grafts — secrets entropy/verification (gitleaks/
+  trufflehog/Prompt-Recon concepts), capability-diff (socket-cli), Dockerfile roast
+  (dockerfile-roast), taint pass (CodeQL technique, first-party), crash-FP taxonomy
+  (oss-fuzz-gen), AIxCC discover→prove→patch loop (Atlantis/buttercup/RoboDuck
+  techniques, rebuilt), bench scorer (CASTLE uniform-wrapper idea), skill
+  distillation (hivemind), memory citations (loci), context packing (repomix).
+
+rea-agents (MIT)
+-----------
+The external REA MCP server is invoked — never bundled, never vendored — as a
+pinned exact-version install under the Loam data dir (see docs/rea-pin.md):
+`rea-agents@6.7.0`, installed with --ignore-scripts after registry SRI
+verification. Only the 13 allowlisted tools in src/tools/reaAllowlist.ts are
+reachable; every result is marked untrusted. The hybrid evidence identity
+(src/security/reaEvidence.ts) and the ASAR surface projection
+(src/security/reaAsarSurface.ts) are clean-room first-party implementations of
+the published conventions; no REA source is copied into this repository.
+
+Distributed under the MIT License.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+Cua Driver (MIT) — Copyright (c) 2025 Cua AI, Inc.
+-----------
+The external Cua Driver MCP server is invoked — never bundled, never vendored —
+as a pinned exact-version install under the Loam data dir (see
+docs/cua-driver-pin.md): the GitHub release asset `cua-driver-rs-0.38.0-
+windows-x86_64.zip` (tag `cua-driver-rs-v0.38.0`), sha256-verified against both
+the recorded pin and the release's own SHA256SUMS before extraction, with a
+valid "Cua AI, Inc." Authenticode signature. Only the 14 contract tools in
+src/tools/cuaDriverAllowlist.ts are reachable; every result is marked untrusted.
+No other part of the cua monorepo is used: Spaces/spacesd (FSL-1.1-MIT), Lume
+(macOS-only), cua-perception/cua-som (AGPL — never redistributed) and the
+deprecated cuabot are excluded by design. The type mirrors in
+src/tools/cuaDriverTypes.ts are clean-room; no Cua source is copied into this
+repository.
+
+Distributed under the MIT License.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+graphify (graphifyy) 0.9.95 — https://github.com/Graphify-Labs/graphify
+---------------------------------------------------------------------
+Downloaded from PyPI onto the user's machine at the user's request
+(Services -> «خريطة الكود» -> «تثبيت المحرك»); NOT redistributed in the
+Loam installer. Driven as an external engine per the integration spec
+(Option c Hybrid): hash-locked install (--require-hashes --no-deps
+--only-binary :all:), LLM backends off (GRAPHIFY_BACKEND=none), query
+log off, graph stores outside the user's repositories.
+Licensed under the Apache License, Version 2.0
+(https://www.apache.org/licenses/LICENSE-2.0). Portions contributed
+before relicensing are under the MIT License.
+NOTICE: Copyright 2026 Safi Shamsi and the Graphify contributors.
+Full dependency licence census: docs/codegraph/dependency-licences.md
+(generated with pip-licenses in the locked venv; zero copyleft).
+
+uv 0.13.5 — https://github.com/astral-sh/uv
+---------------------------------------------------------------------
+Redistributed as resources/codegraph/uv.exe (MIT License,
+Copyright (c) 2025 Astral Software Inc. — full text in
+resources/codegraph/LICENSE-uv). Used once, with a pinned sha256, to
+provision the hash-locked graphify runtime; its cache is deleted after
+installation.
+
+@anthropic-ai/sandbox-runtime 0.0.81 — Apache-2.0, Copyright 2025 Anthropic PBC
+---------------------------------------------------------------------
+Invoked — never bundled — as a pinned exact-version install under the Loam data
+dir (see docs/srt-pin.md): installed with --ignore-scripts after the npm tarball
+sha256 and BOTH vendored srt-win.exe hashes were verified against the recorded
+pins. The package is intentionally NOT a production dependency: its transitive
+node-forge/zod advisories (GHSA-86w9-cpqp-85rv, GHSA-mrhx-c7xc-m3w5) stay out of
+the shipped tree; the exact pin ships only in devDependencies for typechecking,
+and the runtime loads the library from the data-dir pin. The bridge modules under
+src/sandbox/srt/ are first-party clean-room implementations.
+
+Licensed under the Apache License, Version 2.0. You may obtain a copy at
+http://www.apache.org/licenses/LICENSE-2.0. Unless required by applicable law or
+agreed to in writing, software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND.
+
+CognitionAI/devin-vuln-fixes (MIT)
+----------------------------------
+Vulnerability-fix skill procedures (Node, PHP, self-managed GitLab) and the
+five-step remediation shape (inventory -> approval gate -> verified target ->
+before/after tests -> one PR per repo) inform Loam's Remediate engine and
+playbooks.
+
+  https://github.com/CognitionAI/devin-vuln-fixes
+  commit 39a04007a1cb19aafd3c487d615c524479963ebf
+
+Copyright (c) 2026 Cognition AI, Inc.
+
+MIT License — see the full MIT text in the jcode notice above. The engine
+contains no upstream code and no upstream prose; advisory facts are reproduced
+from vendor-corroborated tables; playbook text is rewritten fresh.
+
+---------------------------------------------------------------------------
+Agensh / DeLM (design attribution — no code bundled)
+---------------------------------------------------------------------------
+Loam's coding team (فريق البرمجة / نتريو, src/orchestration/swarm/, capability C11 of the Orchestration Core) implements a
+clean-room coordination model inspired by Agensh (Microsoft Research, MIT;
+arXiv:2609.26781); the shared-context board idea traces to DeLM
+(arXiv:2606.10662). Reimplemented independently for Loam: no Agensh or DeLM
+source code or prose is bundled or copied. Constants reproduced are
+uncopyrightable facts (note caps, claim TTL, retry backoff schedule).
+
+---------------------------------------------------------------------------
+Orchestration Core (C1-C11)
+---------------------------------------------------------------------------
+Design influences, all reimplemented independently for Loam (no third-party
+agent code is bundled): progress ledger and durable checkpoints are Loam's own;
+trajectory scoring weights follow CrewAI (MIT); workflow superstep semantics
+follow LangGraph.js (MIT) concepts; workflow graph shape ideas from ChatDev 2.0
+(Apache-2.0) and Mastra step DSL (Apache-2.0, non-ee parts); the direct-return
+idea from VoltAgent's subagent "bail" (MIT); ACP wire shapes follow the public
+Agent Client Protocol v1 pages. The coding team (C11) is a clean-room
+coordination model inspired by Agensh (Microsoft Research, MIT; arXiv:2609.26781);
+the shared-context board idea traces to DeLM (arXiv:2606.10662). No Agensh,
+DeLM, LangChain, LangGraph, Mastra, VoltAgent, CrewAI or OpenHands code is
+copied or bundled.
+
+## MISSING programme pinned payloads (2026-10-26)
+
+- wakaru 1.14.0 (Apache License 2.0) — JavaScript module recovery. Pinned
+  triple-verified (npm SRI sha512 + tgz sha256 + Windows exe sha256) in
+  src/bridges/binaries.ts; fetched on demand to %DATA_DIR%\bin\wakaru.
+- api-anything @ commit 441e50905acea35f407127c2b8a4032e969288f7 (MIT) —
+  site-API learning/calling engine, vendored payload under
+  addons/api-anything/pkg (gitignored, fetched by
+  scripts/vendor/fetch-api-anything.mjs with hash verification). Loam-side
+  code is clean-room; only the pinned payload is MIT.
+
+## Ponytail (MIT, courtesy credit — 2026-10-31)
+
+The lazy-senior coding-discipline work — the `skills/lazy-senior` skill, the
+`skills/lazy-review` and `skills/lazy-audit` command skills, and the levelled
+coding-discipline prompt blocks — is a clean-room paraphrase of the ideas in
+Ponytail by DietrichGebert:
+
+  https://github.com/DietrichGebert/ponytail
+
+MIT License, Copyright (c) 2026 DietrichGebert. No Ponytail text was copied
+verbatim into this repository, the "Ponytail" name and logo are not used in
+Loam's UI, and Ponytail's published benchmark figures are not presented
+anywhere in Loam as if Loam measured them; Loam reports only its own A/B
+numbers from bench/lazy-senior.

@@ -302,7 +302,50 @@ export function blocksToHtml(blocks: DocumentBlock[], regions: DocumentRegion[])
 
 /* ---------------- HTML parsing (edited html → blocks) ---------------- */
 
-interface PendingFlags { bold?: boolean; italic?: boolean; underline?: boolean }
+interface PendingFlags { bold?: boolean; italic?: boolean; underline?: boolean; color?: string; highlight?: string; size?: number; font?: string }
+
+/** The studio's fixed highlight palette (store.ts highlightColors minus "none") with the
+ *  sRGB triple each Word name renders as; the editor's highlight swatches use the same
+ *  hex values so its picks map back to exactly the same highlight. */
+const HIGHLIGHT_RGB: Record<string, readonly [number, number, number]> = {
+  yellow: [0xff, 0xff, 0x00], green: [0x00, 0xff, 0x00], cyan: [0x00, 0xff, 0xff], magenta: [0xff, 0x00, 0xff],
+  blue: [0x00, 0x00, 0xff], red: [0xff, 0x00, 0x00], darkBlue: [0x00, 0x00, 0x80], darkCyan: [0x00, 0x80, 0x80],
+  darkGreen: [0x00, 0x80, 0x00], darkMagenta: [0x80, 0x00, 0x80], darkRed: [0x80, 0x00, 0x00], darkYellow: [0x80, 0x80, 0x00],
+  darkGray: [0x80, 0x80, 0x80], lightGray: [0xc0, 0xc0, 0xc0], black: [0x00, 0x00, 0x00], white: [0xff, 0xff, 0xff],
+};
+
+/** Nearest highlight name from the fixed 16-color palette to a #rrggbb background, or null
+ *  when the value is not a six-digit hex color. */
+export function nearestHighlight(hex: string): string | null {
+  if (!/^#[a-f0-9]{6}$/i.test(hex)) return null;
+  const channels = [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16));
+  if (channels.some((channel) => !Number.isFinite(channel))) return null;
+  const [r, g, b] = channels as [number, number, number];
+  let best: string | null = null;
+  let bestDistance = Infinity;
+  for (const [name, [hr, hg, hb]] of Object.entries(HIGHLIGHT_RGB)) {
+    const distance = (r - hr) ** 2 + (g - hg) ** 2 + (b - hb) ** 2;
+    if (distance < bestDistance) { bestDistance = distance; best = name; }
+  }
+  return best;
+}
+
+/** Inline font-size in px → studio segment size. The studio stores sizes in points with
+ *  half-point steps (word-runs writes w:sz = size * 2) and the block-level round trip
+ *  already emits "Npx" for an N-point size, so the pixel number maps 1:1; values outside
+ *  the valid 4–144 range clamp to it. Returns null for unparsable sizes. */
+export function inlineFontSizePx(px: number): number | null {
+  if (!Number.isFinite(px)) return null;
+  const clamped = Math.min(144, Math.max(4, px));
+  return Math.round(clamped * 2) / 2;
+}
+
+/** Inline font-family → segment font: strip quoting and honor the store's family pattern
+ *  (otherwise the save's validateStudio would reject the whole document). */
+export function inlineFontFamily(value: string): string | null {
+  const font = value.replace(/["']/g, "").trim().slice(0, 100);
+  return font && /^[\p{L}\p{N} _.,+\-]+$/u.test(font) ? font : null;
+}
 
 function styleEntries(style: string | null): Record<string, string> {
   const out: Record<string, string> = {};
@@ -315,11 +358,18 @@ function styleEntries(style: string | null): Record<string, string> {
   return out;
 }
 
+const INLINE_SEGMENT_KEYS = ["bold", "italic", "underline", "color", "highlight", "size", "font"] as const;
+const segmentsSignature = (segment: InlineSegment): string => JSON.stringify(INLINE_SEGMENT_KEYS.map((key) => (segment as Record<string, unknown>)[key] ?? null));
+
 function inlineSegmentFlags(entry: PendingFlags): Record<string, unknown> | null {
   const clean: Record<string, unknown> = {};
   if (entry.bold) clean.bold = true;
   if (entry.italic) clean.italic = true;
   if (entry.underline) clean.underline = true;
+  if (entry.color) clean.color = entry.color;
+  if (entry.highlight) clean.highlight = entry.highlight;
+  if (entry.size !== undefined) clean.size = entry.size;
+  if (entry.font) clean.font = entry.font;
   return Object.keys(clean).length ? clean : null;
 }
 
@@ -328,7 +378,7 @@ function mergeSegments(list:InlineSegment[]):InlineSegment[]{
   for (const segment of list) {
     if (!segment.text) continue;
     const last = merged[merged.length - 1];
-    if (last && JSON.stringify([last.bold ?? null, last.italic ?? null, last.underline ?? null]) === JSON.stringify([segment.bold ?? null, segment.italic ?? null, segment.underline ?? null])) {
+    if (last && segmentsSignature(last) === segmentsSignature(segment)) {
       last.text += segment.text;
     } else merged.push({ ...segment });
   }
@@ -336,7 +386,9 @@ function mergeSegments(list:InlineSegment[]):InlineSegment[]{
 }
 
 /** Inline runs of a block element: bold/italic/underline recognized on strong/b, em/i, u and
- *  matching span styles; <br> becomes a newline; anything else passes through as text. */
+ *  matching span styles; color/highlight/size/font recognized on span/font inline styles
+ *  (highlight snaps to the studio's fixed palette, sizes clamp into the valid point range);
+ *  <br> becomes a newline; anything else passes through as text. */
 function collectSegments(node: any, flags: PendingFlags, out: InlineSegment[]): void {
   for (const child of Array.from(node.childNodes as ArrayLike<any>)) {
     if (!child) continue;
@@ -361,6 +413,20 @@ function collectSegments(node: any, flags: PendingFlags, out: InlineSegment[]): 
         if (/^(bold|[5-9]\d\d?)$/i.test(weight)) next.bold = true;
         if (style["font-style"] === "italic") next.italic = true;
         if ((style["text-decoration"] ?? "").includes("underline")) next.underline = true;
+        if (style.color && /^#[a-f0-9]{6}$/i.test(style.color)) next.color = style.color.toLowerCase();
+        if (style["background-color"] && /^#[a-f0-9]{6}$/i.test(style["background-color"])) {
+          const highlight = nearestHighlight(style["background-color"]);
+          if (highlight) next.highlight = highlight;
+        }
+        if (style["font-size"]) {
+          const px = Number(/^(\d+(?:\.\d+)?)px$/.exec(style["font-size"])?.[1] ?? NaN);
+          const size = inlineFontSizePx(px);
+          if (size !== null) next.size = size;
+        }
+        if (style["font-family"]) {
+          const font = inlineFontFamily(style["font-family"]);
+          if (font) next.font = font;
+        }
       }
       else if (["img", "table", "script", "style", "ul", "ol", "menu"].includes(tag)) descend = false;
       if (descend) collectSegments(child, next, out);
@@ -386,11 +452,14 @@ function cellText(node: any): string {
 
 /** Mirror importWordBlocks' segmentation rules: a uniform bold/italic paragraph carries
  *  block-level flags and no segments, so the word round trip keeps using its cheaper
- *  patchText path; multi-run or underlined paragraphs keep explicit segments. */
+ *  patchText path; multi-run, underlined or color/highlight/size/font-styled paragraphs
+ *  keep explicit segments (folding would drop those properties). */
 function foldUniform(block: DocumentBlock): void {
   const segments = block.segments;
   if (!segments?.length) return;
-  if (segments.length === 1 && !segments[0]!.underline) {
+  const carriesInlineStyle = (segment: InlineSegment): boolean =>
+    segment.color !== undefined || segment.highlight !== undefined || segment.size !== undefined || segment.font !== undefined;
+  if (segments.length === 1 && !segments[0]!.underline && !carriesInlineStyle(segments[0]!)) {
     const segment = segments[0]!;
     if (segment.bold) block.bold = true;
     if (segment.italic) block.italic = true;

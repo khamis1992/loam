@@ -1,0 +1,20 @@
+rules:
+  - id: loam.go.exec-shell
+    message: exec.Command runs a shell with an interpolated string; pass argv elements instead.
+    severity: WARNING
+    languages: [go]
+    pattern-either:
+      - pattern: exec.Command("sh", "-c", $X)
+      - pattern: exec.Command("bash", "-c", $X)
+  - id: loam.go.tls-skip-verify
+    message: TLS certificate verification is disabled.
+    severity: WARNING
+    languages: [go]
+    pattern: "InsecureSkipVerify: true"
+  - id: loam.go.sql-sprintf
+    message: SQL built with fmt.Sprintf; use placeholders.
+    severity: WARNING
+    languages: [go]
+    pattern-either:
+      - pattern: $DB.Query(fmt.Sprintf(...), ...)
+      - pattern: $DB.Exec(fmt.Sprintf(...), ...)

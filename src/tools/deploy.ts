@@ -41,14 +41,15 @@ export function deployTargetCatalog(deps: DeployToolDeps): DeployTarget[] {
 /**
  * deploy_app {taskId, target?}: one-click deploy + export for a task's built app.
  * Runs the export (zips the build output) and pushes through the chosen target
- * (local by default). Cloud targets stay honest stubs about credentials.
+ * (local by default). Cloud targets deploy statically when their token env is
+ * present, and stay honest about missing credentials otherwise.
  */
 export function createDeployTools(deps: DeployToolDeps): Tool[] {
   return [
     {
       name: "deploy_app",
       description:
-        "نشر/تصدير تطبيق مبني بضغطة واحدة من مساحة المهمة: يجد مخرجات البناء (dist/build/out/www أو index.html)، ينتج أرشيف ZIP للتصدير، ثم يدفع عبر الهدف المحدد. الهدف local يكتب مجلد dist محليًا ويعيد رابطًا محليًا؛ أهداف سحابية (vercel/netlify) حالية كستُب تبلّغ ببيانات الاعتماد المطلوبة.",
+        "نشر/تصدير تطبيق مبني بضغطة واحدة من مساحة المهمة: يجد مخرجات البناء (dist/build/out/www أو index.html)، ينتج أرشيف ZIP للتصدير، ثم يدفع عبر الهدف المحدد. الهدف local يكتب مجلد dist محليًا ويعيد رابطًا محليًا؛ أهداف سحابية (vercel/netlify) تنشر ثابتًا عند توفر التوكن في البيئة (VERCEL_TOKEN/NETLIFY_AUTH_TOKEN) وتفصح ببيانات الاعتماد الناقصة عند غيابه — الرفض لأي صفحة تستدعي APIs بنفس الأصل (السحابي للثابت فقط).",
       parameters: {
         type: "object",
         properties: {

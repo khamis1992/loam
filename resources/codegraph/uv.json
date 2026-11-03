@@ -1,0 +1,8 @@
+{
+  "version": "0.13.5",
+  "sha256": {
+    "win32-x64": "f45d1cb9d9140ca6d3f4005fdfc0ebeccf849fd04d1dc85804155cb923f1597b"
+  },
+  "zipSha256": "a38b8d1902b7cfbc76b423ba1bb456f623f42064cdc72628b6075b89afd1019a",
+  "source": "https://github.com/astral-sh/uv/releases/tag/0.13.5"
+}

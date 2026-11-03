@@ -118,6 +118,7 @@ const TOOL_LABEL: Record<string, ToolLabel> = {
   creative_export_result: { verb: 'Fetched', noun: 'export result' },
   creative_timeline: { verb: 'Read', noun: 'timeline' },
   creative_image: { verb: 'Generated', noun: 'image' },
+  creative_subtitles: { verb: 'Generated', noun: 'subtitles' },
 
   // Generators & search (N12)
   gen_3d_from_image: { verb: 'Generated', noun: '3D model' },

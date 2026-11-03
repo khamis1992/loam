@@ -83,7 +83,7 @@ interface SkippedMatch {
 }
 
 /** Minimal glob → RegExp: `**` crosses directories, `*`/`?` stay within one segment. */
-function globToRegExp(glob: string): RegExp {
+export function globToRegExp(glob: string): RegExp {
   const escaped = glob.replace(/[.+^${}()|[\]\\]/g, "\\$&");
   let pattern = escaped
     .replace(/\*\*/g, "\u0000")

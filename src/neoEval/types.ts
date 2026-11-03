@@ -132,7 +132,8 @@ export type NeoAssertSpec =
   | { kind: "answer_matches"; value: string }
   | { kind: "trace_used"; tool: string }
   | { kind: "trace_not_used"; tool: string }
-  | { kind: "count_min"; tool: string; count: number };
+  | { kind: "count_min"; tool: string; count: number }
+  | { kind: "trajectory"; expect: import("../orchestration/evals/trajectory.js").TrajectoryExpectation; minScore?: number };
 
 /** The run state a scripted turn or fault hook can observe. */
 export interface NeoScriptRuntime {

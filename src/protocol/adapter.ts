@@ -80,7 +80,7 @@ export async function startProtocolAdapter(deps: ProtocolAdapterDeps): Promise<P
         // CORS
         res.setHeader("Access-Control-Allow-Origin", "*");
         res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS");
-        res.setHeader("Access-Control-Allow-Headers", "authorization, content-type, connect-protocol-version, x-client-id, x-client-type, x-client-version, x-client-locale, x-client-timezone, x-client-timezone-offset");
+        res.setHeader("Access-Control-Allow-Headers", "authorization, content-type, connect-protocol-version, x-client-id, x-client-type, x-client-version, x-client-locale, x-client-timezone, x-client-timezone-offset, x-loam-local-token");
         if (req.method === "OPTIONS") {
           res.writeHead(204).end();
           return;
@@ -176,14 +176,7 @@ export async function startProtocolAdapter(deps: ProtocolAdapterDeps): Promise<P
         // own permissive CORS headers and any x-loam-local-token supplied by the
         // shell.
         const loamPort = Number(process.env.LOAM_PORT || process.env.MANUS_LOCAL_PORT || 3939);
-        const writeMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
-        if (p.startsWith("/api/") && p !== "/api/health" && (req.method === "GET" || writeMethods.has(req.method ?? ""))) {
-          const auth = req.headers.authorization?.replace(/^Bearer /, "");
-          const userUid = auth ? tokenToUserUid(auth) ?? (consumeLoginToken(auth) ? "u_1" : null) : null;
-          if (!userUid) {
-            sendJson(res, 401, { code: "unauthenticated", message: "login required" });
-            return;
-          }
+        const proxyToLoam = (): void => {
           const target = `http://127.0.0.1:${loamPort}${p}${url.search}`;
           const loamToken = getCurrentLocalToken();
           const proxyReq = http.request(
@@ -219,6 +212,30 @@ export async function startProtocolAdapter(deps: ProtocolAdapterDeps): Promise<P
           } else {
             req.pipe(proxyReq);
           }
+        };
+        const writeMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+        if (p.startsWith("/api/") && p !== "/api/health" && (req.method === "GET" || writeMethods.has(req.method ?? ""))) {
+          const auth = req.headers.authorization?.replace(/^Bearer /, "");
+          const userUid = auth ? tokenToUserUid(auth) ?? (consumeLoginToken(auth) ? "u_1" : null) : null;
+          if (!userUid) {
+            sendJson(res, 401, { code: "unauthenticated", message: "login required" });
+            return;
+          }
+          proxyToLoam();
+          return;
+        }
+
+        // Studio pages (int-f3): the renderer embeds the backend's studio UI
+        // (/office-preview.html, /creative-render.html and their assets) in
+        // iframes pointed at the SAME origin used for /api/* calls. On desktop
+        // that origin is this adapter, so plain GET page requests must reach the
+        // Loam server's static handler too — without this the desktop studio
+        // panel shows a literal "not found" instead of the document preview.
+        // Only GET passes through: mutations belong to the authenticated /api
+        // branch above, and the main server enforces its own auth on protected
+        // routes while these pages are deliberately public.
+        if (req.method === "GET" && !p.startsWith("/api/")) {
+          proxyToLoam();
           return;
         }
 

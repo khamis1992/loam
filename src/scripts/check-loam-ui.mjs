@@ -37,7 +37,7 @@ let resumes=0;const server=createServer(async(req,res)=>{try{
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));let browser;
 try {
   browser=await chromium.launch({channel:'msedge',headless:true});const page=await browser.newPage({viewport:{width:1440,height:1000}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
-  const origin=`http://127.0.0.1:${server.address().port}`;await page.goto(origin);await page.locator('.mode-card').first().waitFor();assert.equal(await page.locator('.mode-card').count(),6);
+  const origin=`http://127.0.0.1:${server.address().port}`;await page.goto(origin);await page.locator('.mode-card').first().waitFor();assert.equal(await page.locator('.mode-card').count(),7); // build + 6 studios (reverse-engineer joined in B2)
   await page.locator('#sideSearch').fill('builder-two');assert.equal(await page.locator('#sideTasks a').count(),1);await page.locator('#sideSearch').fill('');
   await page.keyboard.press('Control+k');assert.equal(await page.locator('#sideSearch').evaluate(el=>document.activeElement===el),true);
   assert.equal(await page.locator('.rail').count(),0);assert.equal(await page.locator('.workspace-nav a').count(),3);assert.equal(await page.locator('#homeModes button').count(),LOAM_MODES.length);
@@ -86,7 +86,7 @@ try {
   assert.ok(page.frames().some(f=>new URL(f.url()).pathname==='/mobile.html'));
 
   await page.goto(origin+'/#/home');await page.locator('#modeCards a').first().waitFor();
-  assert.equal(new Set(await page.locator('#modeCards a').evaluateAll(els=>els.map(el=>el.hash))).size,6);
+  assert.equal(new Set(await page.locator('#modeCards a').evaluateAll(els=>els.map(el=>el.hash))).size,7);
   assert.equal(await page.locator('#sideStudios, #sideModes').count(),0);
   for(const [studio,selector] of [['swarm','#brief-form'],['security','#task']]){
     await page.goto(origin+'/#/studios/'+studio);

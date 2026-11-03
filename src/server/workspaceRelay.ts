@@ -33,9 +33,11 @@
  */
 import crypto from "node:crypto";
 import type { AgentEvent } from "../agent/events.js";
+import { log } from "../log.js";
 import { BoundedMap } from "../memory/cache.js";
 import { registerCacheStats } from "../memory/stats.js";
 import { publishTaskEvent, subscriberCount } from "./streams.js";
+import { announcedTargets } from "./relayAttach.js";
 
 /**
  * The Loam Video Studio targets (FilmCraft / EffectCraft).
@@ -100,6 +102,8 @@ export const VideoStudioRelayError = WorkspaceRelayError;
 export interface WorkspaceRelayOptions {
   /** Per-command timeout in milliseconds (default 120000). */
   timeoutMs?: number;
+  /** How long to wait for a panel to attach after the open request (default 15000). */
+  attachTimeoutMs?: number;
 }
 
 /** Backward-compatible alias used by the Video Studio code. */
@@ -151,6 +155,11 @@ function envTimeoutMs(): number {
   return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_TIMEOUT_MS;
 }
 
+function envAttachTimeoutMs(): number {
+  const raw = Number(process.env.LOAM_RELAY_ATTACH_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw >= 0 ? raw : 15_000;
+}
+
 /** The stream event that carries one command. Video keeps its legacy event type. */
 function commandEventType(target: WorkspaceRelayTarget): "video_studio_command" | "workspace_command" {
   return isCraftTarget(target) ? "workspace_command" : "video_studio_command";
@@ -158,6 +167,9 @@ function commandEventType(target: WorkspaceRelayTarget): "video_studio_command" 
 
 export class WorkspaceRelay {
   private readonly timeoutMs: number;
+  private readonly attachTimeoutMs: number;
+  /** Bumped by cancelTask so an in-flight attach wait ends as CANCELLED. */
+  private readonly cancelGeneration = new Map<string, number>();
   /** In-flight commands (J6: bounded). One entry per awaiting panel command; a
    *  panel that never answers holds its timer until the timeout, so the map is
    *  capped and the oldest entry's timer is cleared (its caller already failed).
@@ -178,12 +190,19 @@ export class WorkspaceRelay {
 
   constructor(options: WorkspaceRelayOptions = {}) {
     this.timeoutMs = options.timeoutMs ?? envTimeoutMs();
+    this.attachTimeoutMs = options.attachTimeoutMs ?? envAttachTimeoutMs();
     registerCacheStats("video-studio-pending", () => this.pending.stats());
     registerCacheStats("video-studio-tasks", () => this.tasks.stats());
   }
 
-  /** True when at least one client is attached to the task's event stream. */
-  isAttached(taskId: string): boolean {
+  /**
+   * True when a panel for this target is attached. An announced target list is
+   * exact. A stream subscriber that did not announce targets still counts, so
+   * existing panel clients keep working.
+   */
+  isAttached(taskId: string, target?: WorkspaceRelayTarget): boolean {
+    const announced = announcedTargets(taskId);
+    if (announced) return target ? announced.has(target) : announced.size > 0;
     return subscriberCount(taskId) > 0;
   }
 
@@ -239,22 +258,53 @@ export class WorkspaceRelay {
     method: string,
     params: Record<string, unknown> = {},
   ): Promise<unknown> {
-    if (!this.isAttached(taskId)) {
-      // Nothing can consume the command, but the shell may still be watching the
-      // stream for this task. Ask it to open the panel so a retry can succeed.
-      this.openRequests.set(taskId, {
-        target,
-        path: typeof params["path"] === "string" ? (params["path"] as string) : null,
-      });
-      publishTaskEvent(taskId, {
-        type: "workspace_open_request",
-        target,
-        path: typeof params["path"] === "string" ? (params["path"] as string) : null,
-      });
-      return Promise.reject(
-        new WorkspaceRelayError("PANEL_NOT_OPEN", `no ${targetLabel(target)} panel is attached to task ${taskId}`),
-      );
+    return this.enqueueWhenAttached(taskId, target, method, params);
+  }
+
+  private async enqueueWhenAttached(
+    taskId: string,
+    target: WorkspaceRelayTarget,
+    method: string,
+    params: Record<string, unknown>,
+  ): Promise<unknown> {
+    if (!this.isAttached(taskId, target)) {
+      const path = typeof params["path"] === "string" ? (params["path"] as string) : null;
+      this.openRequests.set(taskId, { target, path });
+      publishTaskEvent(taskId, { type: "workspace_open_request", target, path });
+      const generation = this.cancelGeneration.get(taskId) ?? 0;
+      const outcome = await this.waitForAttachment(taskId, target, generation);
+      if (outcome === "cancelled") {
+        throw new WorkspaceRelayError("CANCELLED", `task ${taskId} stopped before ${targetLabel(target)} attached`);
+      }
+      if (outcome !== "attached") {
+        throw new WorkspaceRelayError("PANEL_NOT_OPEN", `no ${targetLabel(target)} panel is attached to task ${taskId}`);
+      }
     }
+    return this.enqueueNow(taskId, target, method, params);
+  }
+
+  private async waitForAttachment(taskId: string, target: WorkspaceRelayTarget, generation: number): Promise<"attached" | "timeout" | "cancelled"> {
+    const deadline = Date.now() + this.attachTimeoutMs;
+    let nextPublish = 0;
+    for (;;) {
+      if ((this.cancelGeneration.get(taskId) ?? 0) !== generation) return "cancelled";
+      if (this.isAttached(taskId, target)) return "attached";
+      if (Date.now() >= deadline) return (this.cancelGeneration.get(taskId) ?? 0) !== generation ? "cancelled" : "timeout";
+      if (Date.now() >= nextPublish) {
+        const request = this.openRequests.get(taskId);
+        if (request) publishTaskEvent(taskId, { type: "workspace_open_request", target: request.target, path: request.path });
+        nextPublish = Date.now() + 250;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  }
+
+  private enqueueNow(
+    taskId: string,
+    target: WorkspaceRelayTarget,
+    method: string,
+    params: Record<string, unknown>,
+  ): Promise<unknown> {
     const command: WorkspaceRelayCommand = {
       id: `ws_${crypto.randomBytes(8).toString("hex")}`,
       taskId,
@@ -293,6 +343,7 @@ export class WorkspaceRelay {
 
   /** Reject every pending command for a task (called when the task stops). */
   cancelTask(taskId: string): void {
+    this.cancelGeneration.set(taskId, (this.cancelGeneration.get(taskId) ?? 0) + 1);
     const prefix = queuePrefix(taskId);
     for (const [key, task] of [...this.tasks]) {
       if (!key.startsWith(prefix)) continue;
@@ -350,6 +401,12 @@ export class WorkspaceRelay {
       timer,
     });
     const eventType = commandEventType(item.command.target);
+    log.info("relay_publish", {
+      taskId: item.command.taskId,
+      target: item.command.target,
+      method: item.command.method,
+      subscribers: subscriberCount(item.command.taskId),
+    });
     publishTaskEvent(
       item.command.taskId,
       // The event type depends on the target, which TypeScript cannot narrow
@@ -362,6 +419,20 @@ export class WorkspaceRelay {
         params: item.command.params,
       } as AgentEvent,
     );
+  }
+
+  /** Re-send commands still waiting for a panel. A subscriber that connects after the first publish would otherwise miss them. */
+  replayPending(taskId: string): void {
+    for (const pending of this.pending.values()) {
+      if (pending.command.taskId !== taskId) continue;
+      publishTaskEvent(pending.command.taskId, {
+        type: commandEventType(pending.command.target),
+        id: pending.command.id,
+        target: pending.command.target,
+        method: pending.command.method,
+        params: pending.command.params,
+      } as AgentEvent);
+    }
   }
 
   private timeoutCommand(id: string): void {

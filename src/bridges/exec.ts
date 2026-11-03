@@ -37,10 +37,12 @@ function spawnOnce(
   timeoutMs: number,
   signal?: AbortSignal,
   taskId?: string,
-): Promise<{ code: number | null; stdout: string; stderr: string; timedOut: boolean }> {
+  envOverrides?: Record<string, string>,
+): Promise<{ code: number | null; stdout: string; stdoutBuffer: Buffer; stderr: string; timedOut: boolean }> {
   return new Promise((resolve) => {
-    const child = spawn(exe, argv, { cwd, shell: false, windowsHide: true, env: { ...process.env } });
-    let stdout = "";
+    const child = spawn(exe, argv, { cwd, shell: false, windowsHide: true, env: { ...process.env, ...(envOverrides ?? {}) } });
+    const stdoutChunks: Buffer[] = [];
+    let stdoutBytes = 0;
     let stderr = "";
     let timedOut = false;
     let settled = false;
@@ -51,7 +53,8 @@ function spawnOnce(
       clearTimeout(timer);
       clearInterval(poll);
       signal?.removeEventListener("abort", onAbort);
-      resolve({ code, stdout, stderr: stderr + extraErr, timedOut });
+      const stdoutBuffer = Buffer.concat(stdoutChunks);
+      resolve({ code, stdout: stdoutBuffer.toString("utf8"), stdoutBuffer, stderr: stderr + extraErr, timedOut });
     };
     const timer = setTimeout(() => {
       timedOut = true;
@@ -64,7 +67,10 @@ function spawnOnce(
     }, 300);
     poll.unref?.();
     child.stdout.on("data", (d: Buffer) => {
-      if (stdout.length < MAX_CAPTURE) stdout += d.toString();
+      if (stdoutBytes < MAX_CAPTURE) {
+        stdoutChunks.push(d);
+        stdoutBytes += d.length;
+      }
     });
     child.stderr.on("data", (d: Buffer) => {
       if (stderr.length < MAX_CAPTURE) stderr += d.toString();
@@ -72,6 +78,50 @@ function spawnOnce(
     child.on("error", (err) => finish(null, String(err)));
     child.on("close", (code) => finish(code));
   });
+}
+
+export interface BridgeDaemon {
+  pid: number | null;
+  exePath: string;
+  stop: () => void;
+}
+
+/**
+ * Start a long-lived daemon through the same manifest/policy path as runBridge,
+ * but return immediately instead of waiting for the process to exit. The caller
+ * owns lifecycle and must call stop() (which uses the same tree-kill behavior).
+ */
+export async function runBridgeDetached(
+  ctx: Pick<ToolContext, "cfg" | "workspace" | "signal" | "taskId">,
+  bridgeId: string,
+  commandId: string,
+  args: Record<string, unknown>,
+): Promise<BridgeDaemon> {
+  const m = getManifest(bridgeId);
+  if (!m) throw new Error(`no bridge named ${bridgeId}`);
+  if (!isBridgeEnabled(ctx.cfg, m.id)) throw new Error(`bridge ${m.id} is disabled; enable it in Settings › App bridges`);
+  const cmd = m.commands.find((c) => c.id === commandId);
+  if (!cmd) throw new Error(`${m.id} has no command ${commandId}`);
+
+  for (const v of Object.values(args)) {
+    if (typeof v === "string" && v.includes("{{vault:")) throw new Error("vault references are not supported in bridge arguments");
+  }
+  const built = buildArgv(cmd, args, ctx.workspace);
+  if (!built.ok) throw new Error(built.error);
+
+  const found = await discover(m);
+  if (!found.exePath) throw new Error(`${m.name} is not installed`);
+
+  const line = [path.basename(found.exePath), ...built.argv.map((a) => (/\s/.test(a) ? `"${a}"` : a))].join(" ");
+  const risk = checkCommandRisk(line, { workingDir: ctx.workspace });
+  if (risk.level === "Catastrophic") throw new Error(`blocked by policy: ${risk.reason ?? "command risk is catastrophic"}`);
+  if (risk.level === "Confirm") throw new Error(`requires approval: ${risk.reason ?? "command blast radius is outside the workspace"}`);
+  const check = checkCommand(ctx.cfg, line);
+  if (!check.ok) throw new Error(`blocked by policy: ${check.reason ?? "denied"}`);
+
+  const cwd = resolveWrite(ctx.workspace, undefined);
+  const child = spawn(found.exePath, built.argv, { cwd, shell: false, windowsHide: true, env: { ...process.env, ...(cmd.env ?? {}) } });
+  return { pid: child.pid ?? null, exePath: found.exePath, stop: () => killTree(child) };
 }
 
 /**
@@ -114,6 +164,6 @@ export async function runBridge(
     return failure("cwd", err instanceof Error ? err.message : String(err));
   }
   const seconds = Math.min(cmd.timeoutSeconds ?? ctx.cfg.policy.maxCommandSeconds, ctx.cfg.policy.maxCommandSeconds, 900);
-  const res = await spawnOnce(found.exePath, built.argv, cwd, seconds * 1000, ctx.signal, ctx.taskId);
+  const res = await spawnOnce(found.exePath, built.argv, cwd, seconds * 1000, ctx.signal, ctx.taskId, cmd.env);
   return toEnvelope(cmd, res);
 }

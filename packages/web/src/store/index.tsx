@@ -23,6 +23,7 @@ import uiReducer, {
   setActivityIndicatorOpen,
   type UpdateState,
 } from './uiSlice';
+import appBuilderReducer from './appBuilderSlice';
 
 export type RootState = ReturnType<typeof store.getState>;
 export type AppDispatch = typeof store.dispatch;
@@ -35,6 +36,7 @@ export const store = configureStore({
     chat: chatReducer,
     project: projectReducer,
     ui: uiReducer,
+    appBuilder: appBuilderReducer,
   },
 });
 
@@ -47,6 +49,7 @@ export function makeStore() {
       chat: chatReducer,
       project: projectReducer,
       ui: uiReducer,
+    appBuilder: appBuilderReducer,
     },
   });
 }

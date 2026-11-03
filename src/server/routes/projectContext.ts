@@ -6,6 +6,7 @@
  * - /api/model-tiers                     tier -> concrete model ids + Flex state
  * - /api/model-tiers/flex (PUT)          store BYOK config; key sealed, never echoed
  * - /api/model-tiers/flex/key (DELETE)   remove the stored Flex key
+ * - /api/model (PUT)                     pick a REAL model from the directory
  * - /api/projects/:id/git                real branch of the project folder
  * - /api/projects/:id/folder (PUT)       set/clear the project folder
  * - /api/projects/:id/worktrees (POST)   git worktree add under the project dir
@@ -14,6 +15,7 @@
 import http from "node:http";
 import fs from "node:fs";
 import { MODEL_TIERS, flexConfig, resolveTierModel, setFlexConfig, clearFlexKey } from "../modelTiers.js";
+import { PROVIDER_PRESETS, activeModel, selectModel } from "../modelDirectory.js";
 import { readGitBranch, createWorktree } from "../worktrees.js";
 import { getProject, updateProject, getSchedule, updateSchedule } from "../db.js";
 import { loadConfig } from "../../config.js";
@@ -68,6 +70,20 @@ export async function handleProjectContextRoutes(
   }
   if (p === "/api/model-tiers/flex/key" && req.method === "DELETE") {
     sendJson(res, 200, { cleared: clearFlexKey(), flex: flexConfig() });
+    return true;
+  }
+
+  // ---- real model selection ----
+  if (p === "/api/model" && req.method === "PUT") {
+    let body: Record<string, unknown>;
+    try { body = await readJson(req); } catch (err) { return sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) }), true; }
+    const result = await selectModel(loadConfig(), { id: body.id, source: body.source });
+    if (!result.ok) sendJson(res, 400, result);
+    else sendJson(res, 200, { ...result, active: activeModel(loadConfig()) });
+    return true;
+  }
+  if (p === "/api/model-presets" && req.method === "GET") {
+    sendJson(res, 200, { presets: PROVIDER_PRESETS });
     return true;
   }
 

@@ -1,0 +1,22 @@
+rules:
+  - id: loam.php.eval-dynamic
+    message: eval with a non-literal argument; check whether input can reach it.
+    severity: WARNING
+    languages: [php]
+    patterns:
+      - pattern: eval($X)
+      - pattern-not: eval("...")
+  - id: loam.php.unserialize
+    message: unserialize on data that may be attacker controlled; use json_decode.
+    severity: WARNING
+    languages: [php]
+    pattern: unserialize($X)
+  - id: loam.php.shell-exec
+    message: command execution function called with a variable; escape with escapeshellarg or avoid the shell.
+    severity: WARNING
+    languages: [php]
+    pattern-either:
+      - pattern: system($X)
+      - pattern: exec($X)
+      - pattern: shell_exec($X)
+      - pattern: passthru($X)

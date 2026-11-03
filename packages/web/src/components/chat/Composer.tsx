@@ -11,19 +11,24 @@ import {
 } from 'react';
 import {
   ArrowUp, Plus, ShieldCheck, Laptop, FolderGit, Folder, GitBranch, Square, X, ChevronDown,
-  Mic, Github, Mail, Calendar, Loader2, Wrench, Plug, Bot, Check, Leaf,
+  Mic, Github, Mail, Calendar, Loader2, Wrench, Plug, Bot, Check, Leaf, FileText,
+  Settings2, Zap,
 } from 'lucide-react';
 import { VoiceIcon } from '@/components/home/VoiceIcon';
 import { useVoiceTranscribe } from '@/components/chat/useVoiceTranscribe';
 import { speak, stopSpeaking } from '@/services/speech';
 import clsx from 'clsx';
-import { t } from '@/i18n/t';
+import { t, getLocale, PRODUCT } from '@/i18n/t';
+import { ModelMenu, type AgentMode } from '@/components/model-menu';
+import { rememberedRunModel } from '@/services/modelTiersApi';
 import { IconButton } from '@/components/ui/Button';
 import { desktopApis } from '@/services/desktopApis';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
 import { fetchProjectBranch, type ProjectOption } from '@/services/projectContextApi';
 import { useRouter } from 'next/navigation';
 import { ModeChip, type ModeChipResolved } from './ModeChip';
+import { LazyLevelChip } from './LazyLevelChip';
+import { getAdvancedOpen, setAdvancedOpen, getComposerPrefs, setComposerPrefs, routeIntentApi } from './composerPrefs';
 import type { TaskMode } from '@shared/socket';
 import {
   EFFORT_OPTIONS,
@@ -39,7 +44,19 @@ export interface ComposerHandle {
   setText: (text: string) => void;
   setFiles: (files: File[]) => void;
   addFiles: (files: File[]) => void;
+  /** Phase-2 W5 voice chat: route a finalized transcript through the composer's
+   *  own submit path, so chips/extData ride exactly as with a typed message. */
+  submit: (text?: string) => void;
 }
+
+/**
+ * «تحدث مع ملفاتك» (Phase-2 W2): the preset message the button sends through
+ * the composer's EXISTING onSend path. The ask/build run carries the Knowledge
+ * Garden tools, so the agent filters this task's files into the garden
+ * (task_files_ingest) and answers from them only, with [seed:ID] citations.
+ */
+const CHAT_WITH_FILES_PROMPT =
+  'تحدث مع ملفاتي: فلتر ملفات هذه المهمة في حديقة المعرفة ثم أجب من ملفاتي فقط';
 
 interface ComposerProps {
   onSend: (text: string, mode: TaskMode, files: File[], extData?: Record<string, unknown>) => void | Promise<void>;
@@ -78,15 +95,27 @@ interface ComposerProps {
   worktreeEnabled?: boolean;
   /** Latest assistant reply text; enables the voice-mode TTS toggle. */
   assistantReply?: string;
+  /** Cap G §4.13.2: the Race chip — present when this task has an App project.
+   *  Off by default and turns off again after every send, so a race never
+   *  starts by accident. The estimate line is shown in the chip popover. */
+  race?: {
+    active: boolean;
+    onToggle: () => void;
+    branches: 2 | 3 | 4;
+    onBranches: (n: 2 | 3 | 4) => void;
+    extraCredits?: number;
+    maxTotalCredits?: number;
+  } | null;
 }
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
-  { onSend, onStop, onFirstInput, running, home, onAddFolder, defaultLoamMode, resolvedLoamMode, placeholder, approveForMe, onToggleApproveForMe, knowledgeOn, onToggleKnowledge, modelTier, outputType, effort, compareModels: initialCompareModels, abModels, projectId, worktreeEnabled, assistantReply }: ComposerProps,
+  { onSend, onStop, onFirstInput, running, home, onAddFolder, defaultLoamMode, resolvedLoamMode, placeholder, approveForMe, onToggleApproveForMe, knowledgeOn, onToggleKnowledge, modelTier, outputType, effort, compareModels: initialCompareModels, abModels, projectId, worktreeEnabled, assistantReply, race }: ComposerProps,
   ref: Ref<ComposerHandle>,
 ) {
   const router = useRouter();
   const [text, setText] = useState('');
-  const [mode, setMode] = useState<TaskMode>('standard');
+  // S15: the picked model tier persists across composers (loam.composer.prefs).
+  const [mode, setMode] = useState<TaskMode>(() => (getComposerPrefs().tier as TaskMode | undefined) ?? 'standard');
   const [files, setFiles] = useState<File[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -99,18 +128,39 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const [attachError, setAttachError] = useState<string | null>(null);
   const [connectedOAuth, setConnectedOAuth] = useState<string[]>([]);
   // Neo N10: output type and effort are composer controls, both defaulting to
-  // "let the agent decide" so a plain run is unchanged.
+  // "let the agent decide" so a plain run is unchanged. UX-W2: the choices
+  // persist in localStorage so the user sets them once.
+  const prefs = getComposerPrefs();
   const [selectedOutputType, setSelectedOutputType] = useState<OutputType>(
-    normalizeOutputType(outputType) ?? 'auto',
+    normalizeOutputType(outputType) ?? (prefs.outputType as OutputType | undefined) ?? 'auto',
   );
-  const [selectedEffort, setSelectedEffort] = useState<'fast' | 'max' | ''>(normalizeEffort(effort));
-  const [compareModels, setCompareModels] = useState<boolean>(initialCompareModels === true);
+  const [selectedEffort, setSelectedEffort] = useState<'fast' | 'max' | ''>(
+    normalizeEffort(effort) || (prefs.effort as 'fast' | 'max' | undefined) || '',
+  );
+  const [compareModels, setCompareModels] = useState<boolean>(initialCompareModels === true || prefs.compareModels === true);
+  // Model picker: map the task mode onto the menu's agent modes (flex is a
+  // settings destination, not a runnable tier until BYOK keys are configured).
+  const modelMode: AgentMode = mode === 'max' || mode === 'lite' ? mode : 'standard';
+  const handleModelSelect = (next: AgentMode) => {
+    const tier = next === 'flex' ? 'standard' : next;
+    setMode(tier);
+    setComposerPrefs({ tier });
+  };
+  // UX-W2 «صندوق واحد»: the advanced controls fold behind ⚙️ and the default
+  // send routes through the intent router when no explicit mode is picked.
+  const [advancedOpen, setAdvancedOpenState] = useState<boolean>(getAdvancedOpen());
+  const [autoMode, setAutoModeState] = useState<boolean>(prefs.autoMode !== false);
+  const [intentNote, setIntentNote] = useState<string | null>(null);
   // On the home screen there is no session yet, so the chips keep their own state
   // and ride the first message's extData instead of the per-task handlers.
   const [homeApprove, setHomeApprove] = useState(false);
   const [homeKnowledge, setHomeKnowledge] = useState(false);
   const approveChipOn = onToggleApproveForMe ? approveForMe === true : homeApprove;
   const knowledgeChipOn = onToggleKnowledge ? knowledgeOn === true : homeKnowledge;
+  // «تحدث مع ملفاتك»: the preset needs the kb_* tools, which ship in the ask and
+  // build modes; without a resolved mode the button stays available anyway.
+  const activeLoamModeId = resolvedLoamMode?.mode ?? selectedLoamMode;
+  const chatWithFilesVisible = !activeLoamModeId || activeLoamModeId === 'ask' || activeLoamModeId === 'build';
   const fileRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -155,6 +205,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     setText: (v) => setText(v),
     setFiles: (v) => setFiles(v),
     addFiles: (incoming) => setFiles((prev) => [...prev, ...incoming]),
+    submit: (v) => { void submit(v); },
   }));
 
   useEffect(() => {
@@ -225,24 +276,43 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     return () => { mounted = false; };
   }, [menuOpen]);
 
-  const submit = async () => {
-    if (!canSend) return;
+  const submit = async (overrideText?: string, opts?: { skipIntentRouting?: boolean }) => {
+    const outgoing = (overrideText ?? text).trim();
+    if (!outgoing && files.length === 0) return;
     const extData: Record<string, unknown> = {};
-    if (selectedLoamMode) extData.loamMode = selectedLoamMode;
+    // UX-W2 «صندوق واحد»: no explicit Loam mode + auto mode on + a typed brief
+    // (preset buttons carry their own explicit intent) → the intent router
+    // picks the mode and we surface its one-line Arabic explanation.
+    let routedMode: string | undefined;
+    if (!overrideText && !opts?.skipIntentRouting && !selectedLoamMode && autoMode && outgoing) {
+      const routed = await routeIntentApi(outgoing);
+      if (routed) {
+        routedMode = routed.mode;
+        setIntentNote(routed.reason);
+        window.setTimeout(() => setIntentNote((current) => (current === routed.reason ? null : current)), 8000);
+      }
+    }
+    const effectiveLoamMode = selectedLoamMode ?? routedMode;
+    if (effectiveLoamMode) extData.loamMode = effectiveLoamMode;
     if (attachedSkills.length > 0) extData.skills = attachedSkills;
     if (attachedConnectors.length > 0) extData.connectors = attachedConnectors;
-    if (modelTier) extData.modelTier = modelTier;
+    const runModel = rememberedRunModel();
+    if (runModel) extData.runModel = runModel;
+    else if (modelTier) extData.modelTier = modelTier;
     if (projectId) extData.projectId = projectId;
     if (worktreeEnabled) extData.worktreeEnabled = true;
     if (!onToggleApproveForMe && homeApprove) extData.approveForMe = true;
     if (!onToggleKnowledge && homeKnowledge) extData.knowledge = true;
+    // Cap G §4.13.2: the chip turns off again after every send, so a race never
+    // starts by accident on the next message.
+    if (race?.active) extData.appRaceBranches = race.branches;
     Object.assign(extData, routingExtData({
       outputType: selectedOutputType,
       effort: selectedEffort,
       compareModels,
       abModels,
     }));
-    await onSend(text.trim(), mode, files, Object.keys(extData).length > 0 ? extData : undefined);
+    await onSend(outgoing, mode, files, Object.keys(extData).length > 0 ? extData : undefined);
     setText('');
     setFiles([]);
     setMenuOpen(false);
@@ -251,6 +321,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     setSelectedLoamMode(defaultLoamMode);
     setSelectedOutputType(normalizeOutputType(outputType) ?? 'auto');
     setSelectedEffort(normalizeEffort(effort));
+  };
+
+  /**
+   * «تحدث مع ملفاتك»: send the preset garden prompt through the same submit
+   * path a typed message takes — no separate transport, so extData (mode,
+   * knowledge chip, routing) ride along exactly as with any other message.
+   */
+  const sendChatWithFiles = () => {
+    void submit(CHAT_WITH_FILES_PROMPT);
   };
 
   const onKey = async (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -271,8 +350,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   };
 
   const addFiles = (incoming: FileList | null) => {
-    if (!incoming) return;
-    setFiles((prev) => [...prev, ...Array.from(incoming)]);
+    if (!incoming || incoming.length === 0) return;
+    const picked = Array.from(incoming);
+    setFiles((prev) => [...prev, ...picked]);
   };
 
   const removeFile = (target: File) => {
@@ -327,10 +407,19 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       onDragLeave={() => setDragOver(false)}
       onDrop={handleDrop}
       className={clsx(
-        'rounded-composer bg-bg-menu p-3 border border-[#e5e7eb] dark:border-white/[0.08] shadow-card transition-colors',
-        dragOver && 'border-[#0081f2] dark:border-[#1a93fe] bg-[var(--fill-blue)]',
+        'rounded-composer bg-bg-menu p-3 border border-border-composer shadow-card transition-colors duration-fast',
+        dragOver && 'border-icon-blue bg-[var(--fill-blue)]',
       )}
     >
+      {intentNote && (
+        <div role="status" data-testid="composer-intent-note" className="mb-1 flex items-center gap-2 rounded-control border border-border-light bg-fill-tsp px-3 py-1.5 text-xs text-text-secondary">
+          <Zap className="size-3.5 shrink-0 text-icon-blue" aria-hidden />
+          <span className="min-w-0 flex-1 truncate" dir="rtl">{intentNote}</span>
+          <button type="button" onClick={() => setIntentNote(null)} aria-label={t('Dismiss')} className="text-text-tertiary hover:text-text-primary">
+            <X className="size-3.5" />
+          </button>
+        </div>
+      )}
       <textarea
         ref={textareaRef}
         value={text}
@@ -397,7 +486,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           ))}
         </ul>
       )}
-      <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1">
+      <div className="mt-1 flex items-center gap-1.5">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1">
         {home ? (
           <div className="relative flex items-center gap-1" ref={menuRef}>
             <button
@@ -419,7 +509,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               <ChevronDown className="size-3" />
             </button>
             {menuOpen && (
-              <div className="absolute bottom-full start-0 z-50 mb-1 min-w-[200px] max-w-[calc(100vw-32px)] max-h-[60vh] overflow-y-auto rounded-card border border-border-main bg-bg-menu p-1 shadow-lg">
+              <div className="absolute bottom-full start-0 z-50 mb-1 min-w-[200px] max-h-[60dvh] max-w-[min(18rem,calc(100dvw-2rem))] overflow-y-auto rounded-card border border-border-main bg-bg-menu p-1 shadow-lg">
                 <button
                   type="button"
                   onClick={() => { fileRef.current?.click(); setMenuOpen(false); }}
@@ -516,7 +606,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               <ChevronDown className="size-3" />
             </IconButton>
             {menuOpen && (
-              <div className="absolute bottom-full start-0 z-50 mb-1 min-w-[200px] max-w-[calc(100vw-32px)] max-h-[60vh] overflow-y-auto rounded-card border border-border-main bg-bg-menu p-1 shadow-lg">
+              <div className="absolute bottom-full start-0 z-50 mb-1 min-w-[200px] max-h-[60dvh] max-w-[min(18rem,calc(100dvw-2rem))] overflow-y-auto rounded-card border border-border-main bg-bg-menu p-1 shadow-lg">
                 <button
                   type="button"
                   onClick={() => { fileRef.current?.click(); setMenuOpen(false); }}
@@ -643,7 +733,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           onClick={onToggleApproveForMe ?? (() => setHomeApprove((v) => !v))}
           aria-pressed={approveChipOn}
           className={clsx(
-            'hidden items-center gap-1 rounded-full border px-2 py-1 text-xs sm:flex',
+            'flex items-center gap-1 rounded-full border px-2 py-1 text-xs',
             approveChipOn ? 'border-icon-blue bg-fill-tsp text-icon-blue' : 'border-border-main text-text-secondary hover:bg-fill-hover',
           )}
         >
@@ -656,30 +746,84 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           aria-pressed={knowledgeChipOn}
           title={t('Let this run read your Knowledge Garden sources')}
           className={clsx(
-            'hidden items-center gap-1 rounded-full border px-2 py-1 text-xs sm:flex',
+            'flex items-center gap-1 rounded-full border px-2 py-1 text-xs',
             knowledgeChipOn ? 'border-icon-blue bg-fill-tsp text-icon-blue' : 'border-border-main text-text-secondary hover:bg-fill-hover',
           )}
         >
           <Leaf className="size-3.5" /> {t('Knowledge Garden')}
         </button>
 
-        <select
-          value={mode}
-          onChange={(e) => setMode(e.target.value as TaskMode)}
-          className="h-row-sm rounded-control bg-transparent px-2 text-sm text-text-secondary outline-none"
-        >
-          <option value="standard">{t('Standard')}</option>
-          <option value="lite">{t('Lite')}</option>
-          <option value="max">{t('Max')}</option>
-        </select>
+        {/* «تحدث مع ملفاتك» (Phase-2 W2): one tap sends the garden preset through
+            the same onSend path as a typed message. Shown for the core ask/build
+            modes (which carry the kb_* tools by default); when no Loam mode is
+            known yet it stays visible so a fresh composer still offers it. */}
+        {chatWithFilesVisible && (
+          <button
+            type="button"
+            onClick={sendChatWithFiles}
+            disabled={running}
+            data-testid="chat-with-files"
+            title={t("Filter this task's files into the Knowledge Garden, then answer from my files only")}
+            className="flex items-center gap-1 rounded-full border border-border-main px-2 py-1 text-xs text-text-secondary transition-colors hover:bg-fill-hover disabled:opacity-50"
+          >
+            <FileText className="size-3.5" /> {t('Chat with your files')}
+          </button>
+        )}
+
+        {race && (
+          <span className="relative flex items-center gap-1">
+            <button
+              type="button"
+              onClick={race.onToggle}
+              aria-pressed={race.active}
+              data-testid="appbuilder-race-chip"
+              title={t('Run the same prompt on several branches, then pick the best one')}
+              className={clsx(
+                'flex items-center gap-1 rounded-full border px-2 py-1 text-xs',
+                race.active ? 'border-icon-blue bg-fill-tsp text-icon-blue' : 'border-border-main text-text-secondary hover:bg-fill-hover',
+              )}
+            >
+              <GitBranch className="size-3.5" aria-hidden /> {t('Compare branches')}
+            </button>
+            {race.active && (
+              <span className="absolute top-full z-20 mt-1 flex items-center gap-2 rounded-card border border-border-main bg-bg-menu p-2 text-[11px] shadow-lg" data-testid="appbuilder-race-popover">
+                <select
+                  value={race.branches}
+                  onChange={(e) => race.onBranches(Number(e.target.value) as 2 | 3 | 4)}
+                  aria-label={t('Branches')}
+                  className="rounded border border-border-main bg-transparent px-1 py-0.5"
+                >
+                  <option value={2}>2</option>
+                  <option value={3}>3</option>
+                  <option value={4}>4</option>
+                </select>
+                <span className="text-text-secondary" dir="rtl">
+                  {race.extraCredits !== undefined
+                    ? `مقارنة الفروع: نحو +${race.extraCredits} رصيد${race.maxTotalCredits !== undefined ? ` (بحد أقصى ${race.maxTotalCredits} إجمالًا)` : ''}`
+                    : 'جارٍ حساب التقدير…'}
+                </span>
+              </span>
+            )}
+          </span>
+        )}
+
+        {/* Model picker (BUILD_SPEC §5.9 S15): always visible in the composer
+            bar — the tier travels with the send as the task mode. */}
+        <ModelMenu
+          currentMode={modelMode}
+          product={PRODUCT}
+          locale={getLocale()}
+          onSelect={handleModelSelect}
+        />
 
         {/* Neo N10: output type narrows the tool set and the routing map; effort
             picks the model tier behind the run. Both default to "decide for me". */}
-        <label className="hidden items-center gap-1 text-xs text-text-tertiary sm:flex">
+        {advancedOpen && (
+        <label className="flex items-center gap-1 text-xs text-text-tertiary">
           <span className="sr-only">{t('Output type')}</span>
           <select
             value={selectedOutputType}
-            onChange={(e) => setSelectedOutputType(e.target.value as OutputType)}
+            onChange={(e) => { const next = e.target.value as OutputType; setSelectedOutputType(next); setComposerPrefs({ outputType: next }); }}
             aria-label={t('Output type')}
             title={t('Output type')}
             className="h-row-sm rounded-control bg-transparent px-2 text-sm text-text-secondary outline-none"
@@ -689,12 +833,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             ))}
           </select>
         </label>
+        )}
 
-        <label className="hidden items-center gap-1 text-xs text-text-tertiary sm:flex">
+        {advancedOpen && (
+        <label className="flex items-center gap-1 text-xs text-text-tertiary">
           <span className="sr-only">{t('Effort')}</span>
           <select
             value={selectedEffort}
-            onChange={(e) => setSelectedEffort(e.target.value as 'fast' | 'max' | '')}
+            onChange={(e) => { const next = e.target.value as 'fast' | 'max' | ''; setSelectedEffort(next); setComposerPrefs({ effort: next }); }}
             aria-label={t('Effort')}
             title={t('Effort')}
             className="h-row-sm rounded-control bg-transparent px-2 text-sm text-text-secondary outline-none"
@@ -704,15 +850,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             ))}
           </select>
         </label>
+        )}
 
-        {abModels && abModels.length > 1 && (
+        {advancedOpen && abModels && abModels.length > 1 && (
           <button
             type="button"
-            onClick={() => setCompareModels((v) => !v)}
+            onClick={() => { const next = !compareModels; setCompareModels(next); setComposerPrefs({ compareModels: next }); }}
             aria-pressed={compareModels}
             title={t('Compare models (A/B)')}
             className={clsx(
-              'hidden items-center gap-1 rounded-full border px-2 py-1 text-xs sm:flex',
+              'flex items-center gap-1 rounded-full border px-2 py-1 text-xs',
               compareModels
                 ? 'border-icon-blue bg-fill-tsp text-icon-blue'
                 : 'border-border-main text-text-secondary hover:bg-fill-hover',
@@ -725,11 +872,44 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           </button>
         )}
 
+        {/* UX-W2 «صندوق واحد»: Auto chip (intent routing) + ⚙️ folds the
+            advanced controls. The mode chip stays visible as the indicator. */}
+        <button
+          type="button"
+          onClick={() => { const next = !autoMode; setAutoModeState(next); setComposerPrefs({ autoMode: next }); }}
+          aria-pressed={autoMode}
+          data-testid="composer-auto-mode"
+          title={t('Auto: Loam picks the working mode from your request')}
+          className={clsx(
+            'flex items-center gap-1 rounded-full border px-2 py-1 text-xs',
+            autoMode ? 'border-icon-blue bg-fill-tsp text-icon-blue' : 'border-border-main text-text-secondary hover:bg-fill-hover',
+          )}
+        >
+          <Zap className="size-3.5" aria-hidden /> {t('Auto')}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => { const next = !advancedOpen; setAdvancedOpenState(next); setAdvancedOpen(next); }}
+          aria-expanded={advancedOpen}
+          aria-label={t('Advanced options')}
+          title={t('Advanced options')}
+          data-testid="composer-advanced-toggle"
+          className={clsx(
+            'flex h-8 w-8 items-center justify-center rounded-full border transition-colors',
+            advancedOpen ? 'border-icon-blue bg-fill-tsp text-icon-blue' : 'border-border-main text-text-secondary hover:bg-fill-hover',
+          )}
+        >
+          <Settings2 className="size-4" />
+        </button>
+
         <ModeChip
           resolved={resolvedLoamMode}
           value={selectedLoamMode}
           onChange={setSelectedLoamMode}
         />
+
+        <LazyLevelChip modeId={activeLoamModeId} />
 
         {!home && (
           <span className="ms-2 flex items-center gap-1 text-xs text-text-secondary">
@@ -742,7 +922,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         <button
           type="button"
           className={clsx(
-            'hidden h-8 w-8 items-center justify-center rounded-full border border-border-main transition-colors hover:bg-fill-hover sm:flex',
+            'flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border-main transition-colors hover:bg-fill-hover',
             voiceModeOn ? 'bg-fill-hover text-text-primary' : 'text-text-secondary',
           )}
           aria-label={t(voiceModeOn ? 'Stop voice mode' : 'Voice mode')}
@@ -755,7 +935,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         <button
           type="button"
           className={clsx(
-            'hidden h-8 w-8 items-center justify-center rounded-full border border-border-main transition-colors hover:bg-fill-hover sm:flex',
+            'flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border-main transition-colors hover:bg-fill-hover',
             voice.state !== 'idle' && 'bg-fill-hover text-text-primary',
             voice.state === 'recording' && 'text-function-error',
           )}
@@ -766,28 +946,34 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           {voice.state === 'transcribing' ? <Loader2 className="size-4 animate-spin" /> : <Mic className="size-4" />}
         </button>
         {voice.error && (
-          <span role="alert" title={voice.error} className="hidden max-w-[10rem] truncate text-xs text-function-error sm:inline">
+          <span role="alert" title={voice.error} className="max-w-full truncate text-xs text-function-error">
             {voice.error}
           </span>
         )}
 
+        </div>
         {running
           ? (
-            <IconButton
-              label={t('Stop')}
+            <button
+              type="button"
               onClick={onStop}
-              className="rounded-full bg-text-primary text-text-onblack hover:opacity-90"
+              data-testid="composer-stop"
+              aria-label={t('Stop task')}
+              title={t('Stop task')}
+              className="flex h-8 shrink-0 items-center gap-1 rounded-full bg-[var(--function-error)] px-3 text-xs font-medium text-white hover:opacity-90"
             >
-              <Square className="size-4 fill-current" />
-            </IconButton>
+              <Square className="size-3.5 fill-current" aria-hidden />
+              {t('Stop')}
+            </button>
           )
           : (
             <IconButton
-              label={t('Send')}
+              label={race?.active ? t('Send as race') : t('Send')}
               disabled={!canSend}
-              onClick={submit}
+              onClick={() => { void submit(); }}
+              data-testid={race?.active ? 'appbuilder-send-as-race' : undefined}
               className={clsx(
-                'rounded-full',
+                'shrink-0 rounded-full',
                 canSend ? 'bg-text-primary text-text-onblack hover:opacity-90' : 'bg-fill-tsp text-text-secondary',
               )}
             >
@@ -910,7 +1096,7 @@ export function ComposerContextBar({
         {menuOpen && (
           <div
             role="menu"
-            className="absolute bottom-full left-0 z-30 mb-1 min-w-[220px] max-w-[280px] rounded-card border border-border-main bg-bg-menu p-1 shadow-lg"
+            className="absolute bottom-full start-0 z-30 mb-1 min-w-[220px] max-w-[min(18rem,calc(100dvw-2rem))] rounded-card border border-border-main bg-bg-menu p-1 shadow-lg"
           >
             {(projects ?? []).length === 0 && (
               <p className="px-2 py-1.5 text-xs text-text-tertiary">{t('No projects yet. Create one in Projects.')}</p>
@@ -921,7 +1107,7 @@ export function ComposerContextBar({
                 type="button"
                 role="menuitem"
                 onClick={() => { setMenuOpen(false); onSelectProject?.(p); }}
-                className="flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-left text-xs hover:bg-fill-hover"
+                className="flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-start text-xs hover:bg-fill-hover"
               >
                 <FolderGit className="size-3.5 shrink-0 text-text-tertiary" />
                 <span className="min-w-0 flex-1 truncate">{p.name}</span>
@@ -933,7 +1119,7 @@ export function ComposerContextBar({
               type="button"
               role="menuitem"
               onClick={() => { setMenuOpen(false); onChooseProject?.(); }}
-              className="flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-left text-xs hover:bg-fill-hover"
+              className="flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-start text-xs hover:bg-fill-hover"
             >
               <Folder className="size-3.5 shrink-0 text-text-tertiary" />
               {t('Use a folder')}
@@ -943,7 +1129,7 @@ export function ComposerContextBar({
                 type="button"
                 role="menuitem"
                 onClick={() => { setMenuOpen(false); onSelectProject?.(null); }}
-                className="flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-left text-xs hover:bg-fill-hover"
+                className="flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-start text-xs hover:bg-fill-hover"
               >
                 <X className="size-3.5 shrink-0 text-text-tertiary" />
                 {t('Clear project')}

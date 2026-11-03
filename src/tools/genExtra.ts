@@ -11,10 +11,14 @@
  * peak} shape consumed by the auto-video planner (src/creative/auto.ts), so a
  * storyboard can be handed straight to the autoVideo pipeline.
  */
+import fs from "node:fs";
+import path from "node:path";
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { str, num } from "./registry.js";
 import type { GenProvider, GenProviders } from "../creative/genProviders.js";
 import type { Scene, TranscriptSegment } from "../creative/auto.js";
+import { taskPath } from "../server/taskWorkspace.js";
+import { buildGlb, sceneFromPrompt, sceneTriangles } from "../creative/local3d.js";
 
 /** Error code for a graceful "provider not configured" card. */
 export const PROVIDER_NOT_CONFIGURED = "provider_not_configured";
@@ -261,6 +265,41 @@ export function createGenExtraTools(deps: GenExtraDeps = {}): Tool[] {
       },
     },
     {
+      name: "gen_3d_from_text",
+      description:
+        "Generate a 3D model (.glb) from a text description entirely on-device — a deterministic procedural scene built from primitives (houses, trees, cars, robots, towers/city skylines, mountains, spheres/cubes/cones, desert/snow/night palettes; '3 trees' style counts work). Always available, no key needed. For photoreal models chain design_image_generate then gen_3d_from_image instead.",
+      parameters: {
+        type: "object",
+        properties: {
+          prompt: { type: "string", description: "What to build, in plain words (Arabic or English)." },
+        },
+        required: ["prompt"],
+      },
+      async run(args, ctx): Promise<ToolResult> {
+        const prompt = str(args, "prompt").trim();
+        if (!prompt) return { ok: false, content: "gen_3d_from_text requires prompt" };
+        const scene = sceneFromPrompt(prompt);
+        const glb = buildGlb(scene);
+        const slug = prompt.toLowerCase().replace(/[^a-z0-9\u0600-\u06ff]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "scene";
+        const rel = `uploads/gen-3d-text-${slug}-${Date.now()}.glb`;
+        const target = taskPath(ctx.workspace, rel);
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.writeFileSync(target, glb);
+        return {
+          ok: true,
+          content: JSON.stringify({
+            tool: "gen_3d_from_text",
+            provider: "local-procedural",
+            path: rel,
+            label: scene.label,
+            parts: scene.parts.length,
+            triangles: sceneTriangles(scene),
+            bytes: glb.length,
+          }),
+        };
+      },
+    },
+    {
       name: "gen_music",
       description:
         "Generate a music clip from a text prompt using the configured music provider. Returns the audio URL (or a base64 length when the provider returns inline audio). When no provider is configured the tool returns a clear not-configured card.",
@@ -434,6 +473,7 @@ export function createGenExtraTools(deps: GenExtraDeps = {}): Tool[] {
 
 export const GEN_EXTRA_TOOL_NAMES = [
   "gen_3d_from_image",
+  "gen_3d_from_text",
   "gen_music",
   "generate_storyboard",
   "solve_logic",

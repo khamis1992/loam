@@ -73,9 +73,39 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0.01ms;
+    --motion-medium: 0.01ms;
+    --motion-slow: 0.01ms;
+  }
   .agent-avatar-dot,
   .agent-avatar-typing,
-  .typing-dot {
+  .typing-dot,
+  .status-active-dot,
+  .dock-thumb-in {
     animation: none;
   }
+}
+
+/* M5: pulsing active-state dot (plan steps / live indicators) */
+@keyframes status-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgb(var(--icon-blue-rgb) / 35%); }
+  50% { opacity: 0.8; box-shadow: 0 0 0 6px rgb(var(--icon-blue-rgb) / 0%); }
+}
+.status-active-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: var(--status-active);
+  animation: status-pulse 1.6s var(--motion-ease-in-out, ease-in-out) infinite;
+}
+
+/* H1: dock thumbnail crossfade — new frame fades in over the previous one */
+@keyframes dock-thumb-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.dock-thumb-in {
+  animation: dock-thumb-in var(--motion-slow) var(--motion-ease-out, ease-out) both;
 }

@@ -12,6 +12,7 @@ import { throwIfCancelled } from "../server/runControl.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import type { Emit } from "./events.js";
 import { needsAppVerification, verifyApplication, type AppEvidence } from "./appVerification.js";
+import { isSlideDeckRequest } from "../modes/outputTypeMap.js";
 import { AcceptanceGuard } from "./acceptanceGuard.js";
 import { needsCreativeVerification, verifyCreative } from "./creativeVerification.js";
 import { authorIndependentAcceptance, IndependentAcceptanceGuard, independentRequirements, IndependentAcceptanceUnavailable } from "./independentAcceptance.js";
@@ -310,7 +311,7 @@ export async function verifyFinal(o: FinalVerifyOptions): Promise<VerdictOutcome
   const guard = o.acceptanceGuard ?? new AcceptanceGuard(undefined, o.request);
   o = { ...o, acceptanceGuard: guard };
   let auditUsage: Usage = { promptTokens: 0, completionTokens: 0, durationMs: 0 };
-  if (needsAppVerification(o.cfg.workspace, o.trace)) {
+  if (!isSlideDeckRequest(o.request) && needsAppVerification(o.cfg.workspace, o.trace)) {
     try {
       const file = resolveRead(o.cfg.workspace, 'app-verification.json', false);
       if (fs.existsSync(file)) {

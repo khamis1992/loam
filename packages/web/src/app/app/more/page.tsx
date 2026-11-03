@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Settings, Keyboard, CreditCard, HelpCircle, FileText } from 'lucide-react';
+import { ArrowLeft, Settings, HelpCircle, FileText } from 'lucide-react';
 import { t } from '@/i18n/t';
 import { openSettings } from '@/store';
 import { useAppDispatch } from '@/store';
@@ -12,8 +12,6 @@ export default function MorePage() {
 
   const links = [
     { label: t('Settings'), icon: Settings, action: 'settings' },
-    { label: t('Keyboard shortcuts'), icon: Keyboard, href: '/app/shortcuts' },
-    { label: t('Usage & Billing'), icon: CreditCard, href: '/app/usage' },
     { label: t('Docs'), icon: FileText, href: '/app/help' },
     { label: t('Get help'), icon: HelpCircle, href: '/app/help' },
   ];

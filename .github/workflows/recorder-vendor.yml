@@ -1,0 +1,41 @@
+# Loam Recorder R0: vendor build of the pinned upstream (scripts/vendor/recorder).
+# Manual only; never part of Loam's normal install or release. Produces
+# loam-recorder-<sha>.zip (renderer dist + win32-x64 native bin) and its sha256
+# as a workflow artifact. Copy the sha256 into scripts/vendor/recorder/manifest.json
+# in a reviewed commit (R1 fetch-recorder.mjs verifies it).
+name: recorder-vendor
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.1
+
+      - name: Rust toolchain (compositor addon)
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      - name: Pipeline unit tests
+        run: node --test scripts/vendor/__tests__/recorderVendor.test.mjs
+
+      - name: Vendor build (ignore-scripts, removals, gates, audit, zip)
+        run: node scripts/vendor/recorder/build-recorder.mjs --work ${{ runner.temp }}/recorder --out ${{ runner.temp }}/recorder/out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: loam-recorder-8ecc76b
+          path: |
+            ${{ runner.temp }}/recorder/out/*.zip
+            ${{ runner.temp }}/recorder/out/*.sha256
+            ${{ runner.temp }}/recorder/out/audit-omit-dev.json
+          if-no-files-found: error

@@ -4,16 +4,16 @@ import { recordWikiSession } from "./wiki/hooks.js";
 import { ensureTaskWorkspace, isManagedTaskWorkspace } from "./server/taskWorkspace.js";
 import { BLUEPRINT_FILE, bootTaskFromSnapshot } from "./tools/envSnapshot.js";
 import path from "node:path";
-import { loadConfig, ROOT, DATA_DIR } from "./config.js";
-import { setLocalAuthUserDataDir } from "./security/localAuth.js";
+import { loadConfig, ROOT } from "./config.js";
 import { buildRuntime } from "./setup/runtime.js";
+import { initializeStartup } from "./setup/startup.js";
 import { type ToolTraceItem } from "./agent/reflect.js";
-import { loadPending, writeGate } from "./server/pending.js";
-import { getSettings, loadSettings } from "./server/settings.js";
+import { writeGate } from "./server/pending.js";
+import { getSettings } from "./server/settings.js";
 import { createRunSignal, clearRunSignal, isCancelledError, cancelRunSignal, listRunningSignals, activateRunSignal } from "./server/runControl.js";
-import { agentSystemSuffix, getAgent, loadAgents } from "./server/agents.js";
+import { agentSystemSuffix, getAgent } from "./server/agents.js";
 import { getWorkMode, normalizeWorkMode, resolveCompanionCapabilities, COMPANION_DYNAMIC_TOOL_NAMES } from "./server/companionGateway.js";
-import { deviceManager, getDeviceByAgent, loadCompanionDevices, type CompanionDeviceRecord } from "./server/companionDevices.js";
+import { deviceManager, getDeviceByAgent, type CompanionDeviceRecord } from "./server/companionDevices.js";
 import { createDeviceTools } from "./tools/deviceTools.js";
 import { createCompanionMemoryTools } from "./tools/companionMemoryTools.js";
 import { memoryContext, setMemoryEmbedder } from "./server/companionMemory.js";
@@ -23,38 +23,14 @@ import { managedSessions } from "./server/managedSessions.js";
 import { createApproval, waitForDecision } from "./server/approvals.js";
 import { approvalStableKey, getReplayDecision, matchApprovalRule, saveApprovalDecision, taskApprovalAuto, taskSandboxMode, taskPermissionMode } from "./server/approvalRules.js";
 import { resolveSandboxPolicy } from "./policy/riskTier.js";
+import { createRegistryRunClient } from "./models/registry/registryClient.js";
+import { containerModeEnabled, removeContainer } from "./sandbox/container.js";
 import { DEFAULT_PERMISSION_MODE, isPlanMode } from "./policy/permissionModes.js";
 import type { Tool } from "./tools/registry.js";
-import { createScratchpadTools } from "./tools/scratchpadTools.js";
-import { createEnvironmentIssueTools } from "./tools/environmentIssueTools.js";
-import { createDeepResearchTools } from "./tools/deepResearch.js";
-import { createBoardTools } from "./tools/boardTools.js";
-import { createInstructionHistoryTools } from "./tools/instructionTools.js";
-import { createAgentSpawnTools } from "./tools/agentSpawnTools.js";
-import { createBrowserOperatorTools } from "./tools/browserOperator.js";
 import { suggestSkillsAfterSession } from "./tools/skillSuggest.js";
-import { createWideResearchTool } from "./tools/wideResearch.js";
-import { createFindAndEditTools } from "./tools/findAndEdit.js";
-import { createGroupTools } from "./tools/groupTools.js";
-import { createBackendScaffoldTools } from "./tools/backendScaffold.js";
-import { createWebScaffoldTools } from "./tools/webScaffold.js";
-import { createDesignStudioTools } from "./tools/designStudio.js";
-import { createPlaybookTools } from "./tools/playbookTools.js";
-import { createOfficeEditTools } from "./tools/officeEditAgent.js";
-import { createVideoEditTools } from "./tools/videoEditAgent.js";
-import { createVideoStudioTools } from "./tools/videoStudio.js";
-import { createDeployTools } from "./tools/deploy.js";
-import { createDesignExploreTools } from "./tools/designExplore.js";
-import { createDesignLintTools } from "./tools/designLint.js";
-import { createDesignAssetsTools } from "./tools/designAssets.js";
-import { createDesignBriefTools } from "./tools/designBrief.js";
-import { createDesignAutofixTools } from "./tools/designAutofix.js";
-import { createUiExamplesTools } from "./tools/uiExamples.js";
-import { createDesignCritiqueTools } from "./tools/designCritique.js";
-import { createConnectorTools } from "./tools/connectorTools.js";
-import { createWorkflowTools } from "./tools/workflow.js";
-import { applyPlanApprovalGate, applyPlanModeGate, createPlanTools } from "./tools/planTools.js";
-import { applyAskUserGate, createAskUserTools } from "./tools/askUserTools.js";
+import { registerRuntimeTools } from "./setup/registerTools.js";
+import { applyPlanApprovalGate, applyPlanModeGate } from "./tools/planTools.js";
+import { applyAskUserGate } from "./tools/askUserTools.js";
 import { connectedConnectorToolNames } from "./server/connectors/index.js";
 import { mergeAlwaysOnTools } from "./server/runTools.js";
 import { applyKnowledgeGate } from "./server/knowledgeTools.js";
@@ -63,11 +39,14 @@ import { SIDE_CHAT_READ_ONLY_TOOLS } from "./agent/sideChat.js";
 import { CODEMODE_TOOL, createCodemodeTool } from "./codemode/index.js";
 import { OllamaEmbedder } from "./memory/embeddings.js";
 import { publishTaskEvent } from "./server/streams.js";
+import { chatCommandPrompt, lazyLevelAnnouncement, parseChatCommand, setSessionLevel } from "./agent/lazySenior.js";
 import { videoStudioRelay } from "./server/videoStudioRelay.js";
 import { formatIssues, scanEncoding } from "./scripts/check-encoding.js";
-import { runAgent } from "./agent/loop.js";
+import { isBudgetStopError, runAgent } from "./agent/loop.js";
 import { isOutputType, modelAbChain, normalizeEffort, type EffortLevel } from "./llm/router.js";
 import { runOrchestratedAgent, type VerdictRecord } from "./agent/orchestrator.js";
+import { createOrchestrationCore } from "./orchestration/core.js";
+import { recordCheckpoint } from "./orchestration/public.js";
 import { writeCheckpoint } from "./agent/checkpointLog.js";
 import type { AgentEvent, Emit } from "./agent/events.js";
 import { applyRunEvent, beginRun, recallGraphHandle } from "./agent/runGraphAdapter.js";
@@ -78,7 +57,7 @@ import { markLegalSession } from "./legal/security/protection.js";
 import { flexCredentials } from "./server/modelTiers.js";
 import { startServer, type RunTaskOptions } from "./server/http.js";
 import { logMissingCraftDists } from "./server/craftStatus.js";
-import { appendMessage, appendStep, createTask, getProject, getTask, loadDb, setTaskStatus, listSchedules, setTaskDelegator, getSchedule } from "./server/db.js";
+import { appendMessage, appendStep, createTask, getProject, getTask, setTaskStatus, listSchedules, setTaskDelegator, getSchedule } from "./server/db.js";
 import { sendRoundEmailWithApproval } from "./server/roundNotifications.js";
 import { conversationHistory } from "./agent/history.js";
 import { startScheduler } from "./server/scheduler.js";
@@ -92,19 +71,15 @@ import { getLoamMode } from "./modes/catalog.js";
 import { closeBrowser, closeBrowserSession, setBrowserSessionResolver } from "./tools/browser.js";
 import { setTaskMode } from "./server/db.js";
 import { log } from "./log.js";
-import { recoverInterruptedTasks, getSavedRun, saveRun, queueTaskRun, completeTaskRun, closeDb } from "./server/db.js";
+import { getSavedRun, saveRun, queueTaskRun, completeTaskRun, closeDb } from "./server/db.js";
 import { startProtocolAdapter } from "./protocol/adapter.js";
 import { executionQueue } from "./server/executionQueue.js";
 import { requiresReplayConfirmation, type SavedRun } from "./server/recovery.js";
 // O6b: opt-in startup auto-resume (LOAM_AUTO_RESUME=1). Off by default, and
 // still refuses any checkpoint that is in flight.
 import { autoResumeInterruptedTasks } from "./server/autoResume.js";
-import { acquireRuntimeLease, releaseRuntimeLease, backupDatabase } from "./server/sqliteStore.js";
-import {
-  admitAllPending,
-  admitPending as admitPendingInputs,
-  hasPending,
-} from "./server/inputQueue.js";
+import { releaseRuntimeLease } from "./server/sqliteStore.js";
+import { admitPending as admitPendingInputs, hasPending } from "./server/inputQueue.js";
 import { claimRunLease, releaseRunLease, startLeaseHeartbeat, type LeaseHeartbeat, type RunLease } from "./server/runLease.js";
 import { recordTaskUsage } from "./server/credits.js";
 // H5: inject relevant learned lessons into the task's system prompt (BUILD_SPEC §6.5).
@@ -143,28 +118,9 @@ function missionBudgetFor(cfg: ReturnType<typeof loadConfig>, carried?: MissionC
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
-  setLocalAuthUserDataDir(process.env.LOAM_LOCAL_TOKEN_DIR || DATA_DIR);
-  loadDb();
-  acquireRuntimeLease();
-  backupDatabase();
-  const recovered = recoverInterruptedTasks();
-  if (recovered) log.info(`recovery: ${recovered} interrupted task(s) awaiting resume`);
-  // O6: messages that arrived while the process was down become durable `input`
-  // events now, even if their task is never resumed. Admitting twice is safe
-  // because the append is keyed by the input id.
-  const admittedInputs = admitAllPending();
-  if (admittedInputs.length > 0) log.info(`recovery: admitted ${admittedInputs.length} queued message(s)`);
-  const bootSettings = loadSettings();
-  const envRoot = process.env.LOAM_ROOT || process.env.MANUS_LOCAL_ROOT;
-  if (!envRoot && bootSettings.workspace && fs.existsSync(bootSettings.workspace) && fs.statSync(bootSettings.workspace).isDirectory()) {
-    cfg.workspace = path.resolve(bootSettings.workspace);
-  } else {
-    cfg.workspace = path.resolve(cfg.workspace);
-  }
-  fs.mkdirSync(cfg.workspace, { recursive: true });
-  loadPending();
-  loadAgents();
-  loadCompanionDevices();
+  const startup = initializeStartup(cfg);
+  if (startup.recovered) log.info(`recovery: ${startup.recovered} interrupted task(s) awaiting resume`);
+  if (startup.admittedInputs > 0) log.info(`recovery: admitted ${startup.admittedInputs} queued message(s)`);
   // Browser isolation (section 7): every companion browses in its OWN persistent
   // session (profile under DATA_DIR/browser-profiles/agent-<id>); anonymous runs
   // get ephemeral per-task sessions instead of one shared context.
@@ -188,35 +144,7 @@ async function main(): Promise<void> {
   }
 
   const rt = await buildRuntime(cfg);
-  rt.registry.registerAll(createScratchpadTools());
-  rt.registry.registerAll(createEnvironmentIssueTools());
-  rt.registry.registerAll(createBoardTools());
-  rt.registry.registerAll(createInstructionHistoryTools());
-  rt.registry.registerAll(createAgentSpawnTools());
-  rt.registry.registerAll(createBrowserOperatorTools());
-  rt.registry.registerAll(createDeepResearchTools());
-  rt.registry.register(createWideResearchTool({ ollama: rt.ollama, parentRegistry: rt.registry }));
-  rt.registry.registerAll(createFindAndEditTools({ ollama: rt.ollama }));
-  rt.registry.registerAll(createGroupTools());
-  rt.registry.registerAll(createBackendScaffoldTools());
-  rt.registry.registerAll(createWebScaffoldTools());
-  rt.registry.registerAll(createDesignStudioTools());
-  rt.registry.registerAll(createPlaybookTools({ ollama: rt.ollama }));
-  rt.registry.registerAll(createOfficeEditTools());
-  rt.registry.registerAll(createVideoEditTools());
-  rt.registry.registerAll(createVideoStudioTools({ relay: videoStudioRelay }));
-  rt.registry.registerAll(createDeployTools({ workspace: cfg.workspace, preview: rt.preview }));
-  rt.registry.registerAll(createDesignExploreTools());
-  rt.registry.registerAll(createDesignLintTools());
-  rt.registry.registerAll(createDesignAssetsTools());
-  rt.registry.registerAll(createDesignBriefTools({ ollama: rt.ollama }));
-  rt.registry.registerAll(createDesignAutofixTools());
-  rt.registry.registerAll(createUiExamplesTools());
-  rt.registry.registerAll(createDesignCritiqueTools(rt.preview, { ollama: rt.ollama }));
-  rt.registry.registerAll(createConnectorTools());
-  rt.registry.registerAll(createWorkflowTools({ ollama: rt.ollama, registry: rt.registry }));
-  rt.registry.registerAll(createPlanTools());
-  rt.registry.registerAll(createAskUserTools());
+  registerRuntimeTools(rt);
   const { ollama, registry, memory, mcp } = rt;
 
   // D19 session runtime: one manager owns both the sleep lifecycle and the
@@ -227,6 +155,10 @@ async function main(): Promise<void> {
     idleMinutes: cfg.session?.idleMinutes || DEFAULT_IDLE_MINUTES,
     stepLimit: cfg.session?.stepLimit || DEFAULT_STEP_LIMIT,
     tokenLimit: cfg.session?.tokenLimit || DEFAULT_TOKEN_LIMIT,
+    // Dynamic budget: a tokenLimit that differs from the shipped default was
+    // set deliberately in the config file, so it outranks the model-class
+    // default (an identical value is indistinguishable from "not set").
+    tokenLimitConfigured: typeof cfg.session?.tokenLimit === "number" && cfg.session.tokenLimit !== DEFAULT_TOKEN_LIMIT,
   });
   sessionRuntime.start();
 
@@ -364,12 +296,20 @@ async function main(): Promise<void> {
     if (legalPlan && rt.legal) rt.legal.runModels.set(task, legalPlan.model);
     // Option 18 Flex: when the chosen model is the vault-backed flex model, run through the
     // user's own base URL/key with a run-scoped client. The key never leaves this boundary.
-    const flexCreds = opts.model && opts.model.trim().length > 0 ? flexCredentials() : null;
-    const flexModelId = flexCreds ? (flexCreds.model.endsWith(":cloud") ? flexCreds.model : `${flexCreds.model}:cloud`) : "";
+    const flexCreds = flexCredentials();
+    const flexModelId = flexCreds?.model ? (flexCreds.model.endsWith(":cloud") ? flexCreds.model : `${flexCreds.model}:cloud`) : "";
+    // Registry native-protocol pick (Anthropic/Gemini via the model picker):
+    // the `registry:<provider>/<model>` ref resolves to the provider's own
+    // adapter with its vault/env credential — the run pipeline speaks the
+    // internal ChatOptions/ChatResult either way. Precedence: explicit pick
+    // over Flex over the default client.
+    const registryRun = legalPlan ? null : await createRegistryRunClient(effectiveCfg.model);
     // A legal run never uses the runtime FailoverClient: a plain loopback client with no cloud config.
     const runOllama = legalPlan
       ? new OllamaClient(cfg.ollamaUrl)
-      : flexCreds && effectiveCfg.model === flexModelId ? new OllamaClient(cfg.ollamaUrl, { baseUrl: flexCreds.baseUrl, apiKey: flexCreds.apiKey }) : ollama;
+      : registryRun ? registryRun.client
+      : flexCreds && flexModelId && effectiveCfg.model === flexModelId ? new OllamaClient(cfg.ollamaUrl, { baseUrl: flexCreds.baseUrl, apiKey: flexCreds.apiKey }) : ollama;
+    if (registryRun) log.info(`run ${task}: registry primary ${registryRun.label} (${registryRun.ref})`);
 
     // Loam task controls: explicit mode and execution effort.
     const effortBudgets: Record<string, number> = { max: 80, high: 64, medium: 40, low: 16 };
@@ -557,7 +497,12 @@ async function main(): Promise<void> {
         : baseRunAllow;
       // N3 Knowledge Garden: kb_* tools stay registered (the companion gateway
       // advertises them) but only reach the model when the run's garden is on.
-      const knowledgeRunAllow = applyKnowledgeGate(runAllow, opts.savedRun.knowledge === true);
+      // «تحدث مع ملفاتك» (Phase-2 W2): in the core ask/build modes the garden
+      // is on by default via the settings flag `knowledgeRag` (default ON);
+      // every other mode keeps the explicit per-run opt-in toggle.
+      const knowledgeDefaultOn =
+        (effectiveMode === "ask" || effectiveMode === "build") && getSettings().knowledgeRag !== false;
+      const knowledgeRunAllow = applyKnowledgeGate(runAllow, opts.savedRun.knowledge === true || knowledgeDefaultOn);
       const runAllowSet = new Set(knowledgeRunAllow);
       // N16: recall/recall_status are always-on names (runTools.ts) but the
       // run-scoped instances above are the ones that can attach a hit to THIS
@@ -674,12 +619,36 @@ async function main(): Promise<void> {
       // for the duration of the run, so the badge, the raise endpoint and the
       // run all consult one object and a raise takes effect on the next resume.
       if (missionBudget) sessionRuntime.adoptBudget(task, missionBudget);
+      // lazy-senior (Ponytail BUILD_SPEC P2/P3): run-funnel slash commands.
+      // /lazy <level> is answered inline — it sets this session's
+      // coding-discipline level and closes the run with no model call.
+      // /review and /audit rewrite into their skill-driven procedures; the
+      // audit runs on a read-only ask-mode toolset (mode-catalog enforced).
+      const lazyCommand = parseChatCommand(effectivePrompt);
+      if (lazyCommand?.kind === "lazy") {
+        setSessionLevel(task, lazyCommand.level);
+        const text = lazyLevelAnnouncement(lazyCommand.level);
+        wrappedEmit({ type: "assistant_message", text });
+        const doneEvt = { type: "done" as const, text, steps: 0, model: "loam" };
+        completeTaskRun(task, text, "loam", opts.lease);
+        appendStep(task, { at: new Date().toISOString(), type: doneEvt.type, data: doneEvt });
+        emit(doneEvt);
+        publishTaskEvent(task, doneEvt);
+        recordTelemetry("done", { model: "loam", steps: 0, usage: { promptTokens: 0, completionTokens: 0 } });
+        return { taskId: task, text };
+      }
+      // After the early return above, lazyCommand (when set) is review|audit.
+      const commandPrompt = lazyCommand ? chatCommandPrompt(lazyCommand) : effectivePrompt;
       const agentOpts = {
         cfg: effectiveCfg,
         ollama: runOllama,
         tools: agentTools,
+        // lazy-audit (P3): /audit runs strictly read-only through the mode
+        // catalog's ask toolset instead of the run's full grant.
+        ...(lazyCommand?.kind === "audit" ? { tools: agentTools.forMode("ask") } : {}),
         emit: wrappedEmit,
-        prompt: effectivePrompt,
+        loamMode: lazyCommand?.kind === "audit" ? "ask" : effectiveMode,
+        prompt: commandPrompt,
         history,
         memories,
         ...(suffix ? { systemSuffix: suffix } : {}),
@@ -700,7 +669,9 @@ async function main(): Promise<void> {
           : {}),
         // D19 compute budget: shared with the UI badge so the counters and the
         // badge always agree, and the run stops when the ceiling is hit.
-        budget: sessionRuntime.getBudget(task),
+        // Dynamic sizing first: scale the token ceiling to this run's model
+        // class (local = free tokens, `:cloud` = paid) before the run reads it.
+        budget: sessionRuntime.applyModelDefaults(task, quickEditRoute.model ?? effectiveCfg.model),
         // O5: the durable event log is keyed by the task id (the protocol store
         // binds a session to its task, and `session_events` outlives the JSON
         // session cache). Setting this makes every tool call in this run append a
@@ -721,8 +692,14 @@ async function main(): Promise<void> {
           },
         } : {}),
       };
+      // Orchestration Core §4.0.3: one Core per run (root span loam.run) for
+      // orchestrated runs; plain runAgent runs keep today's behaviour untouched.
+      const core = opts.savedRun.orchestrated ? createOrchestrationCore(effectiveCfg, ollama, task, task) : undefined;
+      if (core) emit({ type: "trace_started", traceId: core.runSpan.context.traceId, traceparent: core.traceparentEnv().TRACEPARENT ?? "" });
+      try {
       const result = opts.savedRun.orchestrated ? await runOrchestratedAgent({
         ...agentOpts, verdicts: verdicts as VerdictRecord[], resume: opts.savedRun.checkpoint, lifecycleHooks: true,
+        ...(core ? { core } : {}),
         saveCheckpoint: (checkpoint) => {
           // O5: mirror the checkpoint into the durable append-only log and stamp it
           // with the sequence it received. The stamp is what ties a resumed run to
@@ -730,6 +707,7 @@ async function main(): Promise<void> {
           // whether a tool call started without ever reaching a terminal row.
           checkpoint.logSeq = writeCheckpoint(task, checkpoint, task);
           checkpoint.logSessionId = task;
+          if (core) recordCheckpoint(core, task, task, checkpoint, checkpoint.logSeq);
           opts.savedRun.checkpoint = checkpoint;
           saveRun(task, opts.savedRun, opts.lease);
         },
@@ -751,6 +729,14 @@ async function main(): Promise<void> {
       completeTaskRun(task, result.text, result.model, opts.lease);
       if (!legalRun) recordWikiSession(effectiveCfg, task);
       recordTaskUsage(task, result.usage); // OPD #9: one mock usage entry per completed task
+      // lazy-senior P4 metrics band: persist the token usage as a run step so
+      // GET /api/tasks/:id/metrics can show tokens in/out next to the file and
+      // check metrics derived from the same step log.
+      appendStep(task, {
+        at: new Date().toISOString(),
+        type: "usage",
+        data: { promptTokens: result.usage.promptTokens, completionTokens: result.usage.completionTokens, model: result.model },
+      });
       if (doneEvent) {
         appendStep(task, { at: new Date().toISOString(), type: doneEvent.type, data: doneEvent });
         emit(doneEvent);
@@ -806,6 +792,13 @@ async function main(): Promise<void> {
         });
       }
       return { taskId: task, text: result.text };
+      } finally {
+        core?.runSpan.end("ok");
+        // Per-task isolation: the container dies with the run (a resume makes a
+        // fresh one from the same workspace). Fire-and-forget — teardown must
+        // never mask the task's own result.
+        if (containerModeEnabled(effectiveCfg)) void removeContainer(task);
+      }
     } catch (err) {
       if (getTask(task)?.status === "done") {
         log.warn(`post-completion bookkeeping failed for ${task}: ${String(err)}`);
@@ -852,8 +845,14 @@ async function main(): Promise<void> {
       }
       if (statusWritten) {
         if (!legalRun) recordWikiSession(effectiveCfg, task);
-        publishTaskEvent(task, cancelled ? { type: "cancelled" } : { type: "error", message });
-        wrappedEmit({ type: "error", message: cancelled ? "⏹ أُوقفت المهمة بناءً على طلبك" : message });
+        if (cancelled) {
+          publishTaskEvent(task, { type: "cancelled" });
+          wrappedEmit({ type: "error", message: "⏹ أُوقفت المهمة بناءً على طلبك" });
+        } else if (!isBudgetStopError(err)) {
+          // wrappedEmit already publishes. A budget stop was emitted by the
+          // loop before the throw, so publishing it here would show it twice.
+          wrappedEmit({ type: "error", message });
+        }
       }
       recordTelemetry("error", { model: effectiveCfg.model, steps: 0, usage: { promptTokens: 0, completionTokens: 0 }, error: cancelled ? "cancelled by user" : message });
       // Turn boundary on failure/cancel too: fsync whatever was logged so far.
@@ -1055,7 +1054,8 @@ async function main(): Promise<void> {
     ...(rt.legal ? { legal: rt.legal } : {}),
     screenLive: rt.screenLive,
     preview: rt.preview,
-    mcp,
+    codeGraph: rt.codeGraph,
+  mcp,
   });
 
   // O6b: opt-in startup auto-resume. `recoverInterruptedTasks` above already

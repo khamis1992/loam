@@ -1,0 +1,50 @@
+{
+  "id": "php-2026-10-21",
+  "product": "php",
+  "title": "PHP2Shell — CVE-2026-109618 / CVE-2026-109619",
+  "published": "2026-10-21",
+  "sourceUrls": [
+    "https://www.php.net/archive/2026.php#2026-10-21-5",
+    "https://thephp.foundation/blog/2026/10/21/todays-php-security-release-and-how-were-strengthening-php-security/",
+    "https://www.kb.cert.org/vuls/id/763488",
+    "https://github.com/advisories/GHSA-w8hw-w9fx-j79w",
+    "https://github.com/advisories/GHSA-6wmf-4rv5-p3rp"
+  ],
+  "cves": [
+    { "id": "CVE-2026-109618", "ghsa": "GHSA-w8hw-w9fx-j79w", "severity": "critical", "cvssV4": 9.2, "summary": "RCE via OOM corruption" },
+    { "id": "CVE-2026-109619", "ghsa": "GHSA-6wmf-4rv5-p3rp", "severity": "critical", "cvssV4": 9.2, "summary": "RCE via stale global state / use-after-free" }
+  ],
+  "lines": [
+    { "line": "8.5", "status": "supported", "fixed": "8.5.12" },
+    { "line": "8.4", "status": "supported", "fixed": "8.4.27" },
+    { "line": "8.3", "status": "supported", "fixed": "8.3.36" },
+    { "line": "8.2", "status": "supported", "fixed": "8.2.35" },
+    { "line": "8.1", "status": "eol-upstream", "fixed": null, "upgradePath": ["8.2.35", "8.3.36"], "sourceBackportsAvailable": true },
+    { "line": "8.0", "status": "eol-upstream", "fixed": null, "upgradePath": ["8.2.35"], "sourceBackportsAvailable": true },
+    { "line": "7.4", "status": "eol-upstream", "fixed": null, "upgradePath": ["8.2.35"], "sourceBackportsAvailable": true }
+  ],
+  "knownBackports": [
+    { "distro": "debian", "suite": "bookworm", "package": "php8.2", "release": "8.2.35-1~deb12u1" },
+    { "distro": "ubuntu", "suite": "noble", "package": "php8.3", "release": "8.3.6-0ubuntu0.24.04.13" },
+    { "distro": "ubuntu", "suite": "jammy", "package": "php8.1", "release": "8.1.2-1ubuntu2.28" }
+  ],
+  "sourceTarballSha256": {
+    "8.4.27.tar.xz": "dcf93923b0e38e0d5252b25b796520b5a47761a08b3488b6d0b5d1115764d3f0"
+  },
+  "sapisAtRisk": ["mod_php", "fpm", "php-cgi", "FrankenPHP", "LiteSpeed", "php -S (not for production)"],
+  "mitigations": [
+    { "id": "upload-progress-off", "summary": "session.upload_progress.enabled=0 in php.ini or FPM pool (not ini_set / .user.ini); restart every worker", "isFix": false },
+    { "id": "fatal-backtraces-off-85", "summary": "On 8.5: fatal_error_backtraces=0", "isFix": false },
+    { "id": "post-max-size", "summary": "post_max_size 8M without uploads, or 32M with uploads", "isFix": false },
+    { "id": "proxy-limits", "summary": "Proxy limits on body size, field count, multipart part count, header count and nesting depth", "isFix": false },
+    { "id": "memory-limit-with-cgroup", "summary": "memory_limit=-1 combined with a container/cgroup memory limit", "isFix": false }
+  ],
+  "forbiddenMitigations": ["RLIMIT_AS", "RLIMIT_DATA"],
+  "forbidden": [
+    "Do not present a mitigation as a fix",
+    "Do not use RLIMIT_AS or RLIMIT_DATA as a mitigation",
+    "Do not change the SAPI, base distribution, image flavor, extensions, or build flags without saying so",
+    "Do not guess image tags, digests, or package versions"
+  ],
+  "notes": "An unverified claim that the 8.5.12 fix is incomplete circulated on oss-security; check the PHP advisories before rollout. remirepo.net had no same-day update — prefer distro packages or source builds."
+}

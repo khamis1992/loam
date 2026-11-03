@@ -108,7 +108,7 @@ describe("videoStudioRelay", () => {
   });
 
   it("rejects with PANEL_NOT_OPEN when no client is subscribed", async () => {
-    const relay = new VideoStudioRelay();
+    const relay = new VideoStudioRelay({ attachTimeoutMs: 0 });
     await assert.rejects(
       relay.enqueue("t1", "film", "inspect"),
       (err: unknown) => err instanceof Error && (err as { code?: string }).code === "PANEL_NOT_OPEN",

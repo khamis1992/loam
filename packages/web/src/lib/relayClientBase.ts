@@ -63,6 +63,10 @@ export interface RelayClientBaseOptions<TTarget extends string = RelayTarget> {
   onError?: (error: unknown) => void;
   /** Called for every open request the stream carries (cr-03 auto-open). */
   onOpenRequest?: (request: RelayOpenRequest) => void;
+  /** Editor targets this connection can drive. Sent as `?targets=` so the server attaches per target. */
+  targets?: readonly string[];
+  /** Listen for open requests without executing commands or claiming a target. */
+  observeOnly?: boolean;
 }
 
 /**
@@ -81,6 +85,8 @@ export class RelayClientBase<TTarget extends string = RelayTarget> {
   private readonly reconnectDelayMs: number;
   private readonly onError: ((error: unknown) => void) | undefined;
   private readonly onOpenRequest: ((request: RelayOpenRequest) => void) | undefined;
+  private readonly targets: readonly string[];
+  private readonly observeOnly: boolean;
 
   private running = false;
   private stopped = true;
@@ -95,11 +101,14 @@ export class RelayClientBase<TTarget extends string = RelayTarget> {
     this.resultPath = options.resultPath;
     this.apiBase = options.apiBase ?? defaultApiBase();
     this.headers = options.headers;
-    this.fetchFn = options.fetchFn ?? fetch;
+    // A detached Window.fetch throws "Illegal invocation", so the default stays a direct call.
+    this.fetchFn = options.fetchFn ?? ((input, init) => fetch(input, init));
     this.autoReconnect = options.autoReconnect ?? true;
     this.reconnectDelayMs = options.reconnectDelayMs ?? 1_000;
     this.onError = options.onError;
     this.onOpenRequest = options.onOpenRequest;
+    this.targets = options.targets ?? [];
+    this.observeOnly = options.observeOnly ?? false;
   }
 
   /** True while the stream is connected (or waiting to reconnect). */
@@ -130,7 +139,12 @@ export class RelayClientBase<TTarget extends string = RelayTarget> {
     this.abort = new AbortController();
     let res: Response;
     try {
-      res = await this.fetchFn(`${this.apiBase}/api/tasks/${encodeURIComponent(this.taskId)}/stream`, {
+      const targets = this.observeOnly
+        ? '?targets='
+        : this.targets.length > 0
+          ? `?targets=${encodeURIComponent(this.targets.join(','))}`
+          : '';
+      res = await this.fetchFn(`${this.apiBase}/api/tasks/${encodeURIComponent(this.taskId)}/stream${targets}`, {
         headers: await this.resolveHeaders(),
         signal: this.abort.signal,
       });
@@ -224,6 +238,7 @@ export class RelayClientBase<TTarget extends string = RelayTarget> {
   }
 
   private async execute(command: RelayCommand<TTarget>): Promise<void> {
+    if (this.observeOnly) return;
     let ok = true;
     let result: unknown;
     let error: string | undefined;

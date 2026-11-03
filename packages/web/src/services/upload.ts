@@ -53,7 +53,6 @@ export async function putFile(uploadUrl: string, file: Blob, contentType: string
     method: 'PUT',
     headers: { 'content-type': contentType },
     body: file,
-    keepalive: true,
   });
   let res = await attempt();
   if (!res.ok && res.status >= 500) {

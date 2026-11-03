@@ -69,3 +69,115 @@ export async function removeFlexKey(): Promise<{ flex?: FlexConfig; error?: stri
     return { error: err instanceof Error ? err.message : String(err) };
   }
 }
+
+// ---- real model directory (cloud / Ollama / local) ----
+
+/** One selectable model as reported by GET /api/models. */
+export interface ModelEntry {
+  id: string;
+  /** Legacy-compatible name field (old consumers read `.name`). */
+  name: string;
+  source: string;
+  kind: 'ollama' | 'openai-compatible';
+}
+
+export interface ModelSource {
+  source: string;
+  label: string;
+  kind: 'ollama' | 'openai-compatible';
+  baseUrl?: string;
+  error?: string;
+  count: number;
+}
+
+export interface ProviderPreset {
+  id: string;
+  label: string;
+  baseUrl: string;
+  keyEnv: string;
+  setupAr: string;
+}
+
+export interface ModelDirectory {
+  models: ModelEntry[];
+  sources: ModelSource[];
+  presets: ProviderPreset[];
+  active: { model: string; settingsModel: string; flex: FlexConfig };
+}
+
+/**
+ * GET /api/models — the aggregated directory (Ollama + Flex + cloud +
+ * failover providers, probed live). Returns null when unreachable so the menu
+ * keeps its tiers-only shape instead of breaking.
+ */
+export async function fetchModelDirectory(): Promise<ModelDirectory | null> {
+  try {
+    const res = await fetch(`${getApiBase()}/api/models`, { headers: await getApiHeaders() });
+    if (!res.ok) return null;
+    const data = (await res.json()) as Partial<ModelDirectory>;
+    if (!Array.isArray(data.models)) return null;
+    return {
+      models: data.models,
+      sources: data.sources ?? [],
+      presets: data.presets ?? [],
+      active: data.active ?? { model: '', settingsModel: '', flex: { baseUrl: '', model: '', hasKey: false } },
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * PUT /api/model — apply a real-model pick: local models go to the standard
+ * slot, cloud/provider models route through Flex. The tier the UI should
+ * switch to comes back in `tier`.
+ */
+const RUN_MODEL_KEY = 'loam-run-model';
+
+/** Remember the concrete model id the next message must run. */
+export function rememberRunModel(model: string): void {
+  try {
+    sessionStorage.setItem(RUN_MODEL_KEY, model);
+    window.dispatchEvent(new Event('loam-run-model'));
+  } catch {
+    /* session storage can be blocked; the server settings still hold the pick */
+  }
+}
+
+export function rememberedRunModel(): string {
+  try {
+    return sessionStorage.getItem(RUN_MODEL_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+/** Label for a run id: drop the registry prefix and the cloud marker. */
+export function displayModelId(model: string): string {
+  const bare = model.startsWith('registry:') ? model.slice(model.lastIndexOf('/') + 1) : model;
+  return bare.endsWith(':cloud') ? bare.slice(0, -':cloud'.length) : bare;
+}
+
+export async function selectModel(input: { id: string; source: string }): Promise<
+  | { ok: true; tier: 'standard' | 'flex'; model: string; needsKey: boolean; active: ModelDirectory['active'] }
+  | { error: string }
+> {
+  try {
+    const res = await fetch(`${getApiBase()}/api/model`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', ...(await getApiHeaders()) },
+      body: JSON.stringify(input),
+    });
+    const data = (await res.json().catch(() => ({}))) as { error?: string; tier?: 'standard' | 'flex'; model?: string; needsKey?: boolean; active?: ModelDirectory['active'] };
+    if (!res.ok) return { error: data.error ?? `status ${res.status}` };
+    return {
+      ok: true,
+      tier: data.tier ?? 'standard',
+      model: data.model ?? input.id,
+      needsKey: data.needsKey === true,
+      active: data.active ?? { model: '', settingsModel: '', flex: { baseUrl: '', model: '', hasKey: false } },
+    };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+}

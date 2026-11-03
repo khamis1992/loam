@@ -72,6 +72,8 @@ export interface UserMessage extends Base {
     worktreeEnabled?: boolean;
     /** Option 18: composer model tier ("max" | "standard" | "lite" | "flex"). */
     modelTier?: string;
+    /** Concrete model id chosen in the picker. Wins over modelTier. */
+    runModel?: string;
     /** Neo N3: opt this run into the user's Knowledge Garden (kb_* tools). */
     knowledge?: boolean;
     /** Neo N10: composer output type (auto|text|image|video|slides|website). */
@@ -455,6 +457,12 @@ export interface AskUserResolvedEvent extends ChatEventBase {
   };
 }
 
+export interface SecondLookEvent extends ChatEventBase {
+  type: 'secondLook';
+  verdict: 'findings' | 'lgtm' | 'error' | 'skipped';
+  findings?: string;
+}
+
 export type ChatEvent =
   | ChatMessageEvent
   | ChatDeltaEvent
@@ -487,6 +495,7 @@ export type ChatEvent =
   | AskUserRequestedEvent
   | AskUserResolvedEvent
   | RecipeUpdateEvent
-  | RecipeRestartEvent;
+  | RecipeRestartEvent
+  | SecondLookEvent;
 
 export type ServerMessage = ServerEnvelope | { type: 'session_write_access'; sessionId: string; writable: boolean };

@@ -48,10 +48,11 @@ describe("deploy_app tool exposure and behavior", () => {
     }
   });
 
-  it("deploy_app is part of the always-on run tool set", () => {
-    assert.ok(ALWAYS_ON_TOOLS.includes("deploy_app"), "deploy_app in ALWAYS_ON_TOOLS");
+  it("deploy_app is a build-mode tool, not always-on", () => {
+    assert.ok(!ALWAYS_ON_TOOLS.includes("deploy_app"), "deploy_app stays off the always-on list");
+    assert.ok(!ALWAYS_ON_TOOLS.includes("export_build"), "export_build stays off the always-on list");
     const merged = mergeAlwaysOnTools({
-      resolvedAllow: [],
+      resolvedAllow: ["deploy_app", "export_build"],
       registeredTools: ["deploy_app", "export_build"],
       disabledTools: [],
     });

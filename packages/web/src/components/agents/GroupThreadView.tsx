@@ -178,7 +178,7 @@ export function GroupThreadView({ group, agents, onToggleInfo, infoOpen, onGroup
                       <div className="mt-1 flex items-start gap-1.5 rounded-control bg-fill-tsp px-2 py-1 text-[11px] text-text-secondary">
                         <ArrowRightLeft className="mt-0.5 size-3 shrink-0" />
                         <span>
-                          {t('Handoff to {name}', { name: handoff.name })}
+                          {t('Transferred to {name}', { name: handoff.name })}
                           {message.handoffNote ? ` — ${message.handoffNote}` : ''}
                         </span>
                       </div>

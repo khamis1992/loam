@@ -1,0 +1,49 @@
+{
+  "id": "gitlab-2026-10-21",
+  "product": "gitlab-self-managed",
+  "title": "GitLab CVE-2026-110264 critical patch (Onigmo integer overflow RCE)",
+  "published": "2026-10-21",
+  "sourceUrls": [
+    "https://docs.gitlab.com/releases/patches/patch-release-gitlab-19-5-1-released/",
+    "https://nvd.nist.gov/vuln/detail/cve-2026-110264"
+  ],
+  "cves": [
+    { "id": "CVE-2026-110264", "severity": "critical", "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H", "cvssScore": 10.0, "summary": "Unauthenticated RCE via Onigmo regex compiler integer overflow" },
+    { "id": "CVE-2026-97229", "severity": "critical", "cvssScore": 10.0, "summary": "Included from the October 8 fix (19.4.2 / 19.3.5 / 19.2.8)", "includedVia": "same patch release" }
+  ],
+  "lines": [
+    { "line": "19.5", "status": "supported", "fixed": "19.5.1", "chart": "10.5.1" },
+    { "line": "19.4", "status": "supported", "fixed": "19.4.3" },
+    { "line": "19.3", "status": "supported", "fixed": "19.3.6" },
+    { "line": "19.2", "status": "supported", "fixed": "19.2.9" },
+    { "line": "19.1", "status": "supported", "fixed": "19.1.9" },
+    { "line": "19.0", "status": "supported", "fixed": "19.0.10" },
+    { "line": "18.11", "status": "supported", "fixed": "18.11.13", "chart": "9.11.14" }
+  ],
+  "affectedFrom": "7.0",
+  "scope": "self-managed only; GitLab.com and GitLab Dedicated already patched",
+  "upgradePathTool": "https://gitlab-com.gitlab.io/support/toolbox/upgrade-path/",
+  "chartMappingUrl": "https://docs.gitlab.com/charts/installation/version_mappings/",
+  "imageTags": {
+    "ee": "gitlab/gitlab-ee:<ver>-ee.0",
+    "ce": "gitlab/gitlab-ce:<ver>-ce.0"
+  },
+  "postDeployChecklist": [
+    "gitlab-rake gitlab:env:info shows the fixed version",
+    "gitlab-rake gitlab:check",
+    "gitlab-ctl status (or pod readiness on Helm)",
+    "Background migrations completed",
+    "Web, Git over SSH and HTTPS, and CI runners working"
+  ],
+  "threatDetections": [
+    "Onigmo native worker crash",
+    "Org mode render error burst"
+  ],
+  "outOfScope": ["GitLab Runner", "GitLab Agent"],
+  "forbidden": [
+    "Do not skip required upgrade-path stops or tell the user to skip migrations",
+    "Do not change the edition (CE<->EE) or deployment type",
+    "Do not run commands against a production GitLab instance",
+    "Do not guess image tags, chart versions, or package versions"
+  ]
+}

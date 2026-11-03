@@ -7,6 +7,10 @@ import {
   type ChatOptions,
   type ChatResult,
 } from "../ollama.js";
+import { createAdapter } from "../models/adapters/index.js";
+import { compileChain, type CompiledProvider } from "../models/registry/compile.js";
+import { getRegistry } from "../models/registry/init.js";
+import { resolveProviderApiKey } from "../models/registry/registryClient.js";
 import { log } from "../log.js";
 import { CancelledError, isCancelledError } from "../server/runControl.js";
 
@@ -14,7 +18,7 @@ import { CancelledError, isCancelledError } from "../server/runControl.js";
  *  var holding the key — never the key itself. */
 export interface FailoverProvider {
   id: string;
-  kind: "ollama" | "openai-compatible";
+  kind: "ollama" | "openai-compatible" | "anthropic" | "google-gemini";
   baseUrl: string;
   model: string;
   apiKeyEnv: string;
@@ -231,13 +235,34 @@ export class JsonCooldownStore implements CooldownStore {
   }
 }
 
-/** Build the client used to talk to one provider. */
+/** Build the client used to talk to one provider. Native protocols
+ *  (anthropic/google-gemini, compiled from the model registry) get their own
+ *  adapters — routing them through the OpenAI-compatible client would send
+ *  the wrong wire format. Vault-credentialed registry providers resolve their
+ *  key through the async run path (registryClient) — here the env var is the
+ *  synchronous source, matching the rest of the chain. */
 export function createProviderClient(
   p: FailoverProvider,
   env: Record<string, string | undefined> = process.env,
+  resolvedKey?: string,
 ): ProviderClient {
+  const compiled = (p as CompiledProvider).providerRef ? (p as CompiledProvider) : null;
+  const envKey = p.apiKeyEnv ? (env[p.apiKeyEnv] ?? "").trim() : "";
+  const apiKey = (resolvedKey ?? envKey).trim();
+  const authHeader = compiled?.providerRef.auth.type === "header" ? compiled.providerRef.auth.header : undefined;
+  const timeoutMs = compiled?.providerRef.timeoutMs ?? 180_000;
   if (p.kind === "ollama") return new OllamaClient(p.baseUrl);
-  const apiKey = p.apiKeyEnv ? (env[p.apiKeyEnv] ?? "").trim() : "";
+  if (p.kind === "anthropic" || p.kind === "google-gemini" || compiled) {
+    const adapter = createAdapter(p.kind, {
+      baseUrl: p.baseUrl,
+      ...(apiKey ? { apiKey } : {}),
+      ...(authHeader ? { authHeader } : {}),
+      ...(compiled && Object.keys(compiled.providerRef.extraHeaders).length > 0 ? { extraHeaders: compiled.providerRef.extraHeaders } : {}),
+      timeoutMs,
+    });
+    const remoteId = p.model;
+    return { chat: (options: ChatOptions) => adapter.chat({ ...options, model: remoteId }) };
+  }
   return new OllamaClient(p.baseUrl, { baseUrl: p.baseUrl, apiKey: apiKey || undefined });
 }
 
@@ -252,6 +277,12 @@ export function hasUsableKey(
   p: FailoverProvider,
   env: Record<string, string | undefined> = process.env,
 ): boolean {
+  const auth = (p as CompiledProvider).providerRef?.auth;
+  if (auth) {
+    if (auth.type === "none") return true;
+    if (auth.type === "env") return Boolean((env[auth.envVar] ?? "").trim());
+    return auth.credentialId.trim().length > 0;
+  }
   if (p.kind !== "openai-compatible") return true;
   const key = p.apiKeyEnv ? (env[p.apiKeyEnv] ?? "").trim() : "";
   return key.length > 0;
@@ -421,13 +452,57 @@ export class FailoverClient extends OllamaClient {
   }
 
   override async chat(options: ChatOptions): Promise<ChatResult> {
-    return chatWithFailover({ providers: this.providers, chat: options, store: this.store });
+    const keys = new Map<string, string>();
+    for (const provider of this.providers) {
+      const compiled = provider as CompiledProvider;
+      if (!compiled.providerRef || compiled.providerRef.auth.type === "none") continue;
+      const key = await resolveProviderApiKey(compiled.providerRef);
+      if (key) keys.set(providerKey(provider), key);
+    }
+    return chatWithFailover({
+      providers: this.providers,
+      chat: options,
+      store: this.store,
+      createClient: (provider) => createProviderClient(provider, process.env, keys.get(providerKey(provider))),
+    });
   }
 }
 
 export function createFailoverClient(cfg: {
   failover?: { providers?: FailoverProvider[] };
 }): FailoverClient | null {
-  if (!cfg.failover?.providers?.length) return null;
-  return new FailoverClient(cfg.failover.providers);
+  // Try legacy config first
+  if (cfg.failover?.providers?.length) {
+    return new FailoverClient(cfg.failover.providers);
+  }
+  
+  // Fallback to registry
+  try {
+    const providers = loadProvidersFromRegistry();
+    if (providers.length > 0) {
+      log.info(`[failover] Loaded ${providers.length} providers from registry`);
+      return new FailoverClient(providers);
+    }
+  } catch (error) {
+    log.warn(`[failover] Failed to load registry providers: ${error}`);
+  }
+  
+  return null;
+}
+
+/**
+ * Load providers from model registry.
+ * Converts registry format to FailoverProvider format.
+ */
+function loadProvidersFromRegistry(): FailoverProvider[] {
+  try {
+    const registry = getRegistry();
+    if (!registry) return [];
+    const compiled = compileChain(registry, "default");
+    if (compiled.length > 0) return compiled;
+    return compileChain({ ...registry, chains: [] });
+  } catch (error) {
+    log.error(`[failover] Registry load failed: ${error}`);
+    return [];
+  }
 }

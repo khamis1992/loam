@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { PROVIDER_TOKEN_ENV, deployStaticTo, type CloudTarget, type StaticDeployOutcome } from "./staticDeploy.js";
 import { collectFiles, zipBuffer, type ZipEntry } from "./zip.js";
 
 /**
@@ -13,7 +14,10 @@ import { collectFiles, zipBuffer, type ZipEntry } from "./zip.js";
  * Export  = zip the build output into the task workspace so it can ship anywhere.
  * Deploy  = copy/package the same output through a pluggable DeployTarget.
  *   - LOCAL target (always available): writes to a dist dir, returns a local URL.
- *   - Vercel/Netlify: honest stubs reporting which env credentials they need.
+ *   - Vercel/Netlify: REAL static deploys through the shared core in
+ *     ./staticDeploy.ts when VERCEL_TOKEN / NETLIFY_AUTH_TOKEN is present;
+ *     an honest "not enabled" report when it is not. UIs that call their own
+ *     server API are refused — static-only stays the rule (G14).
  */
 
 export interface BuildOutput {
@@ -303,64 +307,116 @@ export async function deployBuild(root: string, taskId: string, target: DeployTa
   if (!build) {
     throw new Error("no build output found (expected dist/, build/, out/, www/ or index.html in the task workspace)");
   }
-  if (target.kind === "cloud") {
-    // Credentials are present, but real cloud publishing is not wired yet.
-    return {
-      target,
-      build,
-      result: {
-        ok: false,
-        url: null,
-        target: target.id,
-        buildDir: build.dir,
-        files: build.fileCount,
-        missingEnv: [],
-        message: `تم العثور على بيانات اعتماد ${target.label} لكن النشر السحابي الفعلي غير مفعّل في هذا الإصدار؛ استخدم الهدف المحلي أو التصدير.`,
-      },
-    };
-  }
   const result = await target.deploy({ buildDir: build.dir, taskId });
   return { target, build, result };
 }
 
-/* ---- Cloud stubs: they only report required credentials. ---- */
+/* ---- Cloud targets: real static deploys via the shared core when the
+ * provider token is present; an honest "not enabled" report otherwise. ---- */
 
-export function createVercelDeployTarget(): DeployTarget {
-  const base = { id: "vercel", label: "Vercel (stub)", kind: "cloud" as const, requiredEnv: ["VERCEL_TOKEN"] as const };
+export interface CloudDeployTargetOptions {
+  /** Token override (tests / explicit callers); defaults to the provider's env token. */
+  token?: string;
+  /** Project name override; defaults to `loam-<taskId>`. */
+  projectName?: string;
+  /** Vercel-only: publish to production instead of a preview deployment. Default false. */
+  production?: boolean;
+  /** Netlify-only: existing site id override; defaults to NETLIFY_SITE_ID when set. */
+  siteId?: string;
+  /** Vercel-only: team scope override; defaults to VERCEL_TEAM_ID when set. */
+  teamId?: string;
+  /** Test hooks: inject fetch/sleep and shorten the polling deadline. */
+  fetchImpl?: typeof fetch;
+  sleep?: (ms: number) => Promise<void>;
+  pollTimeoutMs?: number;
+}
+
+/** Maps a shared-core outcome to the DeployResult shape the tool/route layer reports. */
+function toDeployResult(id: string, input: DeployInput, outcome: StaticDeployOutcome): DeployResult {
   return {
-    ...base,
+    ok: outcome.ok,
+    url: outcome.url,
+    target: id,
+    buildDir: input.buildDir,
+    bytes: outcome.bytes,
+    files: outcome.files,
+    missingEnv: [],
+    message: outcome.message,
+  };
+}
+
+/** The provider token: explicit override first, then the documented env variable. */
+function cloudToken(provider: CloudTarget, opts: CloudDeployTargetOptions): string | undefined {
+  return opts.token ?? process.env[PROVIDER_TOKEN_ENV[provider]];
+}
+
+/** The honest result cloud targets return (and deployBuild pre-computes) when no token is configured. */
+function notEnabledResult(id: string, input: DeployInput, tokenEnv: string): DeployResult {
+  return {
+    ok: false,
+    url: null,
+    target: id,
+    buildDir: input.buildDir,
+    missingEnv: [tokenEnv],
+    message: `نشر ${id} غير مفعّل: لم يُنفّذ أي شيء لأن ${tokenEnv} غير متوفر في البيئة؛ أضِفه لتمكين النشر الفعلي، أو استخدم الهدف المحلي أو التصدير.`,
+  };
+}
+
+export function createVercelDeployTarget(opts: CloudDeployTargetOptions = {}): DeployTarget {
+  const tokenEnv = PROVIDER_TOKEN_ENV.vercel;
+  return {
+    id: "vercel",
+    label: "Vercel",
+    kind: "cloud",
+    requiredEnv: [tokenEnv],
     describe(): string {
-      return "هدف سحابي محفّظ: لا ينفّذ شيئًا حتى يتوفر VERCEL_TOKEN في البيئة.";
+      return cloudToken("vercel", opts)
+        ? `نشر Vercel فعلي للمخرجات الثابتة (ملفات inline عبر POST /v13/deployments)؛ مفعّل لأن ${tokenEnv} متوفر في البيئة.`
+        : `هدف Vercel غير مفعّل: النشر الفعلي يتطلب ${tokenEnv} في البيئة؛ استخدم الهدف المحلي أو التصدير حتى يتوفر.`;
     },
     async deploy(input: DeployInput): Promise<DeployResult> {
-      return {
-        ok: false,
-        url: null,
-        target: base.id,
-        buildDir: input.buildDir,
-        missingEnv: missingCredentials(base.requiredEnv),
-        message: `نشر Vercel غير مفعّل (stub): لا ينفّذ شيئًا حتى يتوفر VERCEL_TOKEN في البيئة.`,
-      };
+      const token = cloudToken("vercel", opts);
+      if (!token) return notEnabledResult("vercel", input, tokenEnv);
+      const teamId = opts.teamId ?? process.env.VERCEL_TEAM_ID;
+      const outcome = await deployStaticTo("vercel", input.buildDir, {
+        token,
+        name: opts.projectName ?? `loam-${safeSegment(input.taskId)}`,
+        production: opts.production === true,
+        ...(teamId ? { teamId } : {}),
+        ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
+        ...(opts.sleep ? { sleep: opts.sleep } : {}),
+        ...(opts.pollTimeoutMs !== undefined ? { pollTimeoutMs: opts.pollTimeoutMs } : {}),
+      });
+      return toDeployResult("vercel", input, outcome);
     },
   } satisfies DeployTarget;
 }
 
-export function createNetlifyDeployTarget(): DeployTarget {
-  const base = { id: "netlify", label: "Netlify (stub)", kind: "cloud" as const, requiredEnv: ["NETLIFY_AUTH_TOKEN"] as const };
+export function createNetlifyDeployTarget(opts: CloudDeployTargetOptions = {}): DeployTarget {
+  const tokenEnv = PROVIDER_TOKEN_ENV.netlify;
   return {
-    ...base,
+    id: "netlify",
+    label: "Netlify",
+    kind: "cloud",
+    requiredEnv: [tokenEnv],
     describe(): string {
-      return "هدف سحابي محفّظ: لا ينفّذ شيئًا حتى يتوفر NETLIFY_AUTH_TOKEN (و NETLIFY_SITE_ID اختياريًا) في البيئة.";
+      return cloudToken("netlify", opts)
+        ? `نشر Netlify فعلي للمخرجات الثابتة (موقع جديد أو NETLIFY_SITE_ID، ثم رفع ZIP)؛ مفعّل لأن ${tokenEnv} متوفر في البيئة.`
+        : `هدف Netlify غير مفعّل: النشر الفعلي يتطلب ${tokenEnv} في البيئة (و NETLIFY_SITE_ID اختياريًا)؛ استخدم الهدف المحلي أو التصدير حتى يتوفر.`;
     },
     async deploy(input: DeployInput): Promise<DeployResult> {
-      return {
-        ok: false,
-        url: null,
-        target: base.id,
-        buildDir: input.buildDir,
-        missingEnv: missingCredentials(base.requiredEnv),
-        message: `نشر Netlify غير مفعّل (stub): لا ينفّذ شيئًا حتى يتوفر NETLIFY_AUTH_TOKEN (و NETLIFY_SITE_ID اختياريًا) في البيئة.`,
-      };
+      const token = cloudToken("netlify", opts);
+      if (!token) return notEnabledResult("netlify", input, tokenEnv);
+      const siteId = opts.siteId ?? process.env.NETLIFY_SITE_ID;
+      const outcome = await deployStaticTo("netlify", input.buildDir, {
+        token,
+        name: opts.projectName ?? `loam-${safeSegment(input.taskId)}`,
+        ...(siteId ? { siteId } : {}),
+        ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
+        ...(opts.sleep ? { sleep: opts.sleep } : {}),
+        ...(opts.pollTimeoutMs !== undefined ? { pollTimeoutMs: opts.pollTimeoutMs } : {}),
+      });
+      return toDeployResult("netlify", input, outcome);
     },
   } satisfies DeployTarget;
 }

@@ -17,6 +17,7 @@ import type {
 const TTL_MS = 30 * 60_000;
 const MAX_PENDING_PLANS = 200;
 
+import { persistGate, settleGate, gatesToRehydrate } from "../orchestration/durable/gateBridge.js";
 const pendingPlans = new Map<string, PlanApprovalRecord>();
 /** Per-task FIFO queue so a waiting tool resumes in creation order. */
 const waiters = new Map<string, Array<(status: PlanApprovalStatus) => void>>();
@@ -63,6 +64,7 @@ export function createPlanApproval(input: { taskId: string; plan: SuggestPlanArg
     createdAt: new Date().toISOString(),
   };
   pendingPlans.set(record.id, record);
+  try { persistGate("plan_approval", record.id, record.taskId, record, TTL_MS); } catch { /* best effort */ }
   prune();
   // Trivial-task bypass (D4): a single obvious action needs no approval card.
   if (input.plan.trivial && getSettings().planApprovalSkipTrivial === true) {
@@ -109,6 +111,7 @@ export function decidePlanApproval(id: string, decision: PlanApprovalDecision): 
   if (!record) return undefined;
   expire(record);
   if (record.status !== "pending") return record;
+  try { settleGate(id, decision); } catch { /* best effort */ }
   if (decision.decision === "approve") {
     record.status = "approved";
   } else if (decision.decision === "edit") {
@@ -199,4 +202,12 @@ export function serializePlanApproval(record: PlanApprovalRecord): Record<string
     ...(record.decidedAt ? { decidedAt: record.decidedAt } : {}),
     ...(record.editedPlan ? { editedPlan: record.editedPlan } : {}),
   };
+}
+
+// C2: re-create plan approvals pending before a restart.
+export function rehydratePlanApprovals(): void {
+  for (const g of gatesToRehydrate("plan_approval")) {
+    const r = g.payload as PlanApprovalRecord;
+    if (r && typeof r === "object" && typeof r.taskId === "string") pendingPlans.set(g.id, { ...r, status: "pending" });
+  }
 }

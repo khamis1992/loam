@@ -5,6 +5,7 @@ import { getTask } from "../db.js";
 import { requireTaskWorkspace, taskPath } from "../taskWorkspace.js";
 import { loadConfig } from "../../config.js";
 import { SheetIOError, parseSheetDoc, readSheetDoc, writeSheetDoc } from "../workspace/sheetIO.js";
+import { renderWorkbookPdf } from "../../studio/office-pdf.js";
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const MAX_PUT_BYTES = 30_000_000;
@@ -76,10 +77,19 @@ export async function handleWorkspaceSheetRoutes(
   p: string,
   _ctx?: Record<string, unknown>,
 ): Promise<boolean> {
-  if (p !== "/api/workspace/sheet/file") return false;
+  if (p !== "/api/workspace/sheet/file" && p !== "/api/workspace/sheet/pdf") return false;
   const method = req.method ?? "";
   try {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "127.0.0.1"}`);
+    if (p === "/api/workspace/sheet/pdf" && method === "GET") {
+      const identity = resolveFile(url.searchParams.get("taskId") ?? "", url.searchParams.get("path") ?? "", loadConfig().workspace);
+      const abs = path.resolve(identity.abs);
+      if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) throw new SheetIOError("file not found", 404);
+      const pdf = await renderWorkbookPdf(fs.readFileSync(abs));
+      res.writeHead(200, { "content-type": "application/pdf", "cache-control": "no-store" });
+      res.end(pdf);
+      return true;
+    }
     if (method === "GET") {
       const identity = resolveFile(url.searchParams.get("taskId") ?? "", url.searchParams.get("path") ?? "", loadConfig().workspace);
       const abs = path.resolve(identity.abs);

@@ -126,9 +126,9 @@ export class FilmcraftBridge {
 
   // -- Engine primitives ----------------------------------------------------
 
-  /** Run one editor command via window.filmcraft.execute({command, params}). */
+  /** Run one editor command. The engine takes the id and the parameter object separately. */
   async execute<T = unknown>(command: string, params: Record<string, unknown> = {}): Promise<T> {
-    return this.call<T>('execute', { command, params });
+    return this.call<T>('execute', command, params);
   }
 
   /** List the commands the engine supports (ids like file.newProject, export). */

@@ -41,8 +41,8 @@
     <a class="back" href="/"><loam-icon name="back"></loam-icon> مساحة Loam</a>
     <h2>الذاكرة الدائمة والتعلّم</h2>
     <p class="desc">
-      مدعومة بخادم <span class="id">memory-skills</span>: حلقات المهام (episodic)، الحقائق والتفضيلات (semantic)،
-      والمهارات مع سجل أدائها وطابور التحسين (procedural). تُسجَّل كل مهمة تلقائياً ويُحقن السياق ذو الصلة قبل المهمة التالية.
+      مدعومة بخادم <span class="id">memory-skills</span>: حلقات المهام (الأحداث)، الحقائق والتفضيلات (معرفة عامة)،
+      والمهارات مع سجل أدائها وطابور التحسين (خطوات متعلمة). تُسجَّل كل مهمة تلقائياً ويُحقن السياق ذو الصلة قبل المهمة التالية.
     </p>
     <div class="row"><button id="refresh" class="primary">تحديث</button><span id="generatedAt" class="desc"></span></div>
     <div id="status" role="status" aria-live="polite"></div>
@@ -58,18 +58,18 @@
     </section>
 
     <section class="box">
-      <h3>أحدث الحلقات (episodic)</h3>
+      <h3>أحدث الأحداث</h3>
       <div id="episodes"><div class="desc">…</div></div>
     </section>
 
     <section class="box">
-      <h3>المهارات وسجل الأداء (procedural)</h3>
+      <h3>المهارات وسجل الأداء (خطوات متعلمة)</h3>
       <div id="skills"><div class="desc">…</div></div>
       <pre id="skillView" hidden></pre>
     </section>
 
     <section class="box">
-      <h3>حقائق وتفضيلات دائمة (semantic)</h3>
+      <h3>حقائق وتفضيلات دائمة (معرفة عامة)</h3>
       <div id="facts"><div class="desc">…</div></div>
     </section>
 

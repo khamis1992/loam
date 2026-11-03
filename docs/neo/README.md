@@ -4,7 +4,7 @@ This guide covers the four long-horizon surfaces of Loam: the **Canvas** that sh
 
 Every behaviour described here is the behaviour shipped in this build. Where a feature is off by default, the guide says so and names the setting that turns it on. Where a provider has to be configured first, the guide names the provider instead of implying it works out of the box.
 
-Start here: [canvas.md](canvas.md) · [recipe.md](recipe.md) · [knowledge-garden.md](knowledge-garden.md) · [missions.md](missions.md)
+Start here: [canvas.md](canvas.md) · [recipe.md](recipe.md) · [knowledge-garden.md](knowledge-garden.md) · [missions.md](missions.md) · [phase2.md](phase2.md) (0.5.32 capabilities: chat with your files, subtitles, the app engine, deploy, images + voice, Remote, devflow, marketplace, update channel)
 
 Arabic edition: [docs/neo/README.ar.md](README.ar.md) · [دليل لُوام للمهام الطويلة (عربي)](README.ar.md)
 

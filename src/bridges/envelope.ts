@@ -9,11 +9,31 @@ function tail(s: string, n: number): string {
 /** Turn a finished process into one envelope: JSON, `{error,type}`, or text. */
 export function toEnvelope(
   cmd: Pick<BridgeCommand, "output">,
-  run: { code: number | null; stdout: string; stderr: string; timedOut: boolean },
+  run: { code: number | null; stdout: string; stdoutBuffer?: Buffer; stderr: string; timedOut: boolean },
 ): BridgeEnvelope {
   const base = { exitCode: run.code, timedOut: run.timedOut };
   if (run.timedOut) {
     return { ...base, ok: false, error: { type: "timeout", message: "the program was killed after the time limit" } };
+  }
+  if (cmd.output === "base64" && run.code === 0) {
+    const bytes = run.stdoutBuffer ?? Buffer.from(run.stdout, "utf8");
+    return { ...base, ok: true, text: bytes.toString("base64") };
+  }
+  if (cmd.output === "jsonl") {
+    const items: unknown[] = [];
+    for (const line of run.stdout.split(/\r?\n/)) {
+      if (!line.trim().startsWith("{")) continue;
+      try {
+        items.push(JSON.parse(line));
+      } catch {
+        /* skip non-JSON log lines */
+      }
+    }
+    if (run.code !== 0) {
+      const text = [run.stdout.trim(), run.stderr.trim() ? `stderr:\n${run.stderr.trim()}` : ""].filter(Boolean).join("\n");
+      return { ...base, ok: false, text: tail(text, TEXT_CAP), error: { type: "exit", message: `exit code ${run.code ?? "null"}` } };
+    }
+    return { ...base, ok: true, data: items, text: tail(run.stdout, TEXT_CAP) };
   }
   if (cmd.output === "json" && run.stdout.trim()) {
     try {

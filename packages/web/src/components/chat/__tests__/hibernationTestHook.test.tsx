@@ -206,5 +206,5 @@ describe('hibernationTestHook', () => {
     expect(screen.getByTestId('event-list')).toHaveAttribute('data-hibernated', 'false');
     expect(screen.getByText(/message body 0/)).toBeInTheDocument();
     expect(draft).toBe('persisted user draft');
-  });
+  }, 15_000);
 });

@@ -16,6 +16,9 @@ import { isDestructiveCommand } from "./commands.js";
 import { isInside } from "./paths.js";
 import { assessCommand } from "./commandRisk/index.js";
 import type { ApprovalRule } from "../server/approvalRules.js";
+import { reaToolTier } from "../tools/reaAllowlist.js";
+import { classifyReToolCall } from "../re/effects.js";
+import { cuaDriverTier } from "../tools/cuaDriverAllowlist.js";
 
 // ----------------------------------------------------------------------------
 // Tiers
@@ -92,6 +95,8 @@ const READ_TOOL_NAMES = new Set<string>([
   "search",
   "session_search",
   "code_outline",
+  "codegraph_status", "codegraph_query", "codegraph_node", "codegraph_neighbors",
+  "codegraph_path", "codegraph_affected", "codegraph_hubs", "codegraph_community",
   "code_symbols",
   "semantic_search",
   "explore",
@@ -125,12 +130,18 @@ const READ_TOOL_NAMES = new Set<string>([
   "wideResearchSubSessionStatus",
   "swarm_status",
   "security_status",
+  "security_audit_status",
+  "security_audit_report",
+  "remediation_status",
+  "remediation_report",
   "companion_delegations",
   "list_instruction_versions",
   "computer_screenshot",
   "computer_ui_tree",
   "computer_ui_list",
   "computer_list_windows",
+  // Workflow hint only: returns the device_exec commands to run, touches nothing.
+  "device_preview",
   // Control/communication tools never touch the filesystem or run a command, so
   // they stay usable while plan mode is read-only.
   "think",
@@ -152,6 +163,7 @@ const WRITE_TOOL_NAMES = new Set<string>([
   "write",
   "edit",
   "create",
+  "codegraph_index",
   "file_write",
   "file_edit",
   "file_mkdir",
@@ -187,6 +199,11 @@ const WRITE_TOOL_NAMES = new Set<string>([
   "office_edit",
   "office_export",
   "office_import",
+  // Office intelligence/workflow runs only read the artifact and append run
+  // records inside the workspace; applying a proposed change set stays behind
+  // the UI approve flow, so the write-workspace tier is the honest ceiling.
+  "office_intelligence_run",
+  "office_workflow_run",
   "propose_instructions_update",
   "video_studio",
 ]);
@@ -220,13 +237,19 @@ const EXEC_TOOL_NAMES = new Set<string>([
   "deep_research",
   "wide_research",
   "security_assess",
+  "security_audit_start",
+  "remediation_start",
+  "remediation_cancel",
   "pentest_check",
   "pentest_report",
   "pentest_routes",
   "video_analyze",
   "video_edit",
   "creative_image",
+  "creative_subtitles",
   "export_build",
+  // OCR shells out to tesseract inside WSL, so it is an execution, not a read.
+  "image_ocr",
   "computer_click",
   "computer_type",
   "computer_key",
@@ -299,6 +322,11 @@ function isDestructiveShell(command: string, workspaceRoot?: string): boolean {
 
 /** Tool results that come from outside the task workspace are untrusted data. */
 const UNTRUSTED_TOOL_NAMES = new Set<string>([
+  // Code-map results quote repository text (labels, comments, docstrings): data, not instructions.
+  "codegraph_status", "codegraph_index", "codegraph_query", "codegraph_node", "codegraph_neighbors", "codegraph_path", "codegraph_affected", "codegraph_hubs", "codegraph_community",
+  // Real-swarm board results quote peer-worker notes and repository content the
+  // peers pasted (FACT/OBSERVED/FAIL): another model's text, never instructions.
+  "board_write", "board_read", "board_grep", "board_unfold", "swarm_message", "swarm_inbox", "merge_request",
   "web_fetch",
   "web_search",
   "webpage_extract",
@@ -440,6 +468,80 @@ function isSecretLikeName(name: string): boolean {
  *                   destructive patterns.
  * @param workspaceRoot workspace the task is confined to (default: process.cwd())
  */
+// ----------------------------------------------------------------------------
+// Pluggable tier resolvers (integrations whose tier depends on data, e.g. api-anything)
+// ----------------------------------------------------------------------------
+
+export type ToolTierResolver = (toolName: string, args: Record<string, unknown> | undefined) => RiskTier;
+
+interface TierResolverEntry {
+  prefix?: string;
+  names: ReadonlySet<string>;
+  resolve: ToolTierResolver;
+  untrusted: boolean;
+}
+
+const TIER_RESOLVERS: TierResolverEntry[] = [];
+const PROTECTED_PREFIXES: string[] = [];
+
+/**
+ * Register a resolver for tool names that start with `prefix` or are listed in `names`
+ * (both compared lower-case). A resolver that throws yields `destructive` (fail safe).
+ * Returns an unregister function (tests).
+ */
+export function registerToolTierResolver(entry: {
+  prefix?: string;
+  names?: Iterable<string>;
+  resolve: ToolTierResolver;
+  untrusted?: boolean;
+}): () => void {
+  const item: TierResolverEntry = {
+    prefix: entry.prefix?.toLowerCase(),
+    names: new Set([...(entry.names ?? [])].map((n) => n.toLowerCase())),
+    resolve: entry.resolve,
+    untrusted: entry.untrusted === true,
+  };
+  TIER_RESOLVERS.push(item);
+  return () => {
+    const i = TIER_RESOLVERS.indexOf(item);
+    if (i >= 0) TIER_RESOLVERS.splice(i, 1);
+  };
+}
+
+/** Cap H (OD-H-11): writes/commands touching Loam api-anything state ask first. */
+export function registerProtectedPath(absolutePath: string): void {
+  const p2 = path.resolve(absolutePath).toLowerCase();
+  if (!PROTECTED_PREFIXES.includes(p2)) PROTECTED_PREFIXES.push(p2);
+}
+
+function touchesProtected(candidate: string, root: string): boolean {
+  if (PROTECTED_PREFIXES.length === 0) return false;
+  const abs = (path.isAbsolute(candidate) ? path.resolve(candidate) : path.resolve(root, candidate)).toLowerCase();
+  return PROTECTED_PREFIXES.some((p2) => abs === p2 || abs.startsWith(p2 + path.sep));
+}
+
+function commandMentionsProtected(command: string): boolean {
+  const c = command.toLowerCase().split("/").join(path.sep);
+  return PROTECTED_PREFIXES.some((p2) => c.includes(p2) || c.includes(path.basename(p2)));
+}
+
+function findTierResolver(name: string): TierResolverEntry | undefined {
+  return TIER_RESOLVERS.find((r) => r.names.has(name) || (r.prefix !== undefined && name.startsWith(r.prefix)));
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function resolveCustomTier(name: string, args: Record<string, unknown> | undefined): RiskTier | undefined {
+  const entry = findTierResolver(name);
+  if (!entry) return undefined;
+  try {
+    return entry.resolve(name, args);
+  } catch {
+    return "destructive";
+  }
+}
 export function classifyToolCall(
   toolName: string,
   args?: Record<string, unknown> | null,
@@ -447,19 +549,50 @@ export function classifyToolCall(
 ): RiskTier {
   const name = normalizeToolName(toolName);
   const root = path.resolve(workspaceRoot);
+  // Resolver-owned tools, called directly or through integration_call (whose own
+  // NETWORK_TOOL_NAMES tier would otherwise hide a write or a login inside it).
+  const custom = resolveCustomTier(name, args ?? undefined);
+  if (custom) return custom;
+  if (name === "integration_call" && args && typeof args.name === "string") {
+    const inner = normalizeToolName(String(args.name));
+    const innerTier = resolveCustomTier(inner, isPlainRecord(args.arguments) ? (args.arguments as Record<string, unknown>) : undefined);
+    if (innerTier) return innerTier;
+  }
 
   // Exact names are authoritative; heuristics only cover unregistered tools.
   if (SECRET_TOOL_NAMES.has(name)) return "secret";
+  // REA allowlisted tools (mcp__rea__*): the static effects table decides the tier
+  // (11 read / 2 write-workspace — REA_INTO_LOAM §7). An untabled name can only
+  // mean the allowlist was bypassed; fail safe to the review tier.
+  if (name.startsWith("mcp__rea__")) return reaToolTier(name.slice("mcp__rea__".length)) ?? "exec";
+  // Cap B (MISSING §5): the rea-agents server classifies through the effects map
+  // (read / write-workspace-data); the import_evidence_bundle read-vs-write delta
+  // recorded in B1 reconciles HERE first.
+  if (name.startsWith("mcp__rea-agents__")) {
+    const path = classifyReToolCall(name.slice("mcp__rea-agents__".length));
+    if (path === "write-workspace-data" || path === "workspace-write") return "write-workspace";
+    if (path === "network-external") return "network-external";
+    if (path === "read") return "read";
+    return "exec";
+  }
+  // Cua Driver tools (mcp__cua-driver__*): host input tools are `destructive`
+  // (never auto-approved — §6.2 "input tools always ask"); reads and session start
+  // are `read` (CUA_INTO_LOAM §7.4, appendix B5). Untabled names fail safe.
+  if (name.startsWith("mcp__cua-driver__")) return cuaDriverTier(name.slice("mcp__cua-driver__".length)) ?? "exec";
   // cr-05: office_craft drives the live Craft editors. Its read actions change
   // nothing; every other action edits the open document (and the war_room /
   // studio engines write their own files).
   if (name === "office_craft" && isOfficeCraftReadOnly(args)) return "read";
   if (WRITE_TOOL_NAMES.has(name)) {
     const target = firstString(args ?? undefined, WRITE_PATH_KEYS);
+    // Cap H (OD-H-11): writes into Loam's api-anything state (sessions, cookie jars,
+    // captured pages) would let a task self-grant — treat them as destructive.
+    if (target && touchesProtected(target, root)) return "destructive";
     return target ? resolveTierPath(root, target) : "write-workspace";
   }
   if (EXEC_TOOL_NAMES.has(name)) {
     const command = firstString(args ?? undefined, SHELL_COMMAND_KEYS);
+    if (command && commandMentionsProtected(command)) return "destructive";
     return command && isDestructiveShell(command, root) ? "destructive" : "exec";
   }
   if (NETWORK_TOOL_NAMES.has(name)) return "network-external";
@@ -469,10 +602,12 @@ export function classifyToolCall(
   if (isSecretLikeName(name)) return "secret";
   if (isWriteLikeName(name)) {
     const target = firstString(args ?? undefined, WRITE_PATH_KEYS);
+    if (target && touchesProtected(target, root)) return "destructive";
     return target ? resolveTierPath(root, target) : "write-workspace";
   }
   if (isExecLikeName(name)) {
     const command = firstString(args ?? undefined, SHELL_COMMAND_KEYS);
+    if (command && commandMentionsProtected(command)) return "destructive";
     return command && isDestructiveShell(command, root) ? "destructive" : "exec";
   }
   if (isNetworkLikeName(name)) return "network-external";
@@ -644,6 +779,7 @@ export function renderPolicyContext(mode: SandboxMode, workspaceRoot?: string): 
 export function isUntrustedTool(toolName: string): boolean {
   const name = normalizeToolName(toolName);
   if (UNTRUSTED_TOOL_NAMES.has(name) || NETWORK_TOOL_NAMES.has(name)) return true;
+  if (findTierResolver(name)?.untrusted) return true;
   return /(web|browser|http|url|email|gmail|fetch|integration|search)/.test(name);
 }
 

@@ -1,3 +1,29 @@
+import { handleCodeGraphRoute, type CodeGraphRouteDeps } from "./routes/codegraph.js";
+import { handleTaskResumeRoute } from "./routes/taskResume.js";
+import { handleRealSwarmRoutes } from "./routes/realswarm.js";
+import { handleApiAnythingRoute } from "./apiAnythingRoutes.js";
+import { handleWorkflowRoutes, handleWorkflowRunRoutes, type WorkflowRouteDeps } from "./routes/workflows.js";
+import { handleTracesRoutes } from "./routes/traces.js";
+import { getBalance } from "./credits.js";
+import { computeTaskMetrics } from "./taskMetrics.js";
+import { handleCheckpointRoutes } from "./routes/checkpoints.js";
+import { handleInterruptRoutes } from "./routes/interrupts.js";
+import { createRunResume } from "./runResume.js";
+import { handleSecurityEnterpriseRoute } from "./securityEnterpriseRoutes.js";
+import { handleMobileScaleRoute } from "./mobileScaleRoutes.js";
+import { handleAdvancedSecurityRoute } from "./advancedSecurityRoutes.js";
+import { handleVulnerabilityCatalogRoute } from "./vulnerabilityCatalogRoutes.js";
+import { handleNextSecurityRoute } from "./nextSecurityRoutes.js";
+import { handleEngineRoute } from "./engineRoutes.js";
+import { setServiceBaseUrl } from "../tools/serviceBridgeTools.js";
+import { announceRelayTargets } from "./relayAttach.js";
+import { isHostileCrossSite } from "./appShellOrigin.js";
+import { rehydrateAskUsers } from "../tools/askUserStore.js";
+import { rehydratePlanApprovals } from "../tools/planApprovalStore.js";
+import { rehydrateApprovals } from "./approvals.js";
+import { expireDue } from "../orchestration/durable/interrupts.js";
+import { GRAPHIFY_PIN } from "../codegraph/config.js";
+import { getRecallService } from "../memory/recall/instance.js";
 import http from "node:http";
 import { startSseHeartbeat } from './sseHeartbeat.js';
 import { TimelineService } from '../creative/timeline.js';
@@ -39,8 +65,21 @@ import { applyAppRun } from "../tools/appBridgeTools.js";
 import { outlineWorkspacePath, queryWorkspaceSymbols } from "../tools/symbols.js";
 import { buildPentestMarkdownReport, PENTEST_CHECKS, runPentestCheck, scanWorkspaceRoutesAndRisks } from "../tools/pentest.js";
 import { AssessmentError, startAssessment, listAssessments, readAssessment, cancelAssessment, assessmentReport, updateFinding, retestAssessment } from "../security/assessments.js";
+import { RemediationError } from "../security/remediate/errors.js";
+import {
+  listRuns as listRemediations, readRun as readRemediation, approveScopeForRun as approveRemediationScope,
+  workApprovedRepos as workRemediation, commitApproved as commitRemediation, recordPr as recordRemediationPr,
+  discardRepo as discardRemediationRepo, cancelRemediation as cancelRemediationRun,
+} from "../security/remediate/index.js";
+import { approveCommit as approveRemediationCommit, approvePr as approveRemediationPr, expectedPlanHash } from "../security/remediate/gate/index.js";
+import { closeWithDeployEvidence as closeRemediationWithEvidence } from "../security/remediate/rescan/index.js";
+import { remediationRollup } from "../security/remediate/report/rollup.js";
+import { planPaths } from "../security/remediate/store.js";
+import { canonicalSha256 as canonicalHash } from "../security/remediate/types.js";
 import { SECURITY_CAPABILITIES } from '../security/diagnostics.js';
 import { sarif } from "../security/findings.js";
+import { setRedKillSwitch } from "../security/red/control.js";
+import { isKillSwitchEngaged } from "../security/red/gate.js";
 import {prepareRepair,changeRepair,listRepairs} from '../security/repairs.js';
 import { readBrowserArtifact } from "../security/browser.js";
 import { loadActiveMirofishSession, runConversationalMirofish, runConversationalMirofishAsync } from "../tools/mirofish.js";
@@ -77,6 +116,8 @@ import {
   getSavedRun,
 } from "./db.js";
 import { getSettings, updateSettings } from "./settings.js";
+import { probeSrtStatus } from "../sandbox/srt/session.js";
+import { runSrtWindowsInstall } from "../sandbox/srt/install.js";
 import { cancelRunSignal } from "./runControl.js";
 import { createAgent, deleteAgent, getAgent, listAgents, listAgentsWithChatMeta, reorderAgents, sanitizeAvatarFields, setAgentArchived, setAgentHidden, setAgentPinned, updateAgent } from "./agents.js";
 import { handleScratchpadRoutes } from "./routes/scratchpad.js";
@@ -86,14 +127,30 @@ import { handleEventsRoutes } from "./routes/events.js";
 import { handleDesignStudioRoutes } from "./routes/designStudio.js";
 import { handleSchedulesRoutes } from "./routes/schedules.js";
 import { handleAutomationsRoutes } from "./routes/automations.js";
+import { handleAppBuilderRoutes } from "./routes/appBuilder.js";
+import { handleModelRegistryRoutes } from "./routes/modelRegistry.js";
+import { handleBoardRoutes } from "./routes/board.js";
 import { handleAgentThreadRoutes } from "./routes/agentThreads.js";
 import { handleWorkspaceVideoRoutes } from "./routes/workspaceVideo.js";
+import { handleWorkspaceDocRoutes } from "./routes/workspaceDoc.js";
+import { handleCollabRoutes } from "./routes/collabDoc.js";
+import { handleWorkspaceSheetRoutes } from "./routes/workspaceSheet.js";
+import { handleWorkspaceSlidesRoutes } from "./routes/workspaceSlides.js";
+import { handleOfficeIntelligenceRoutes } from "./routes/officeIntelligence.js";
+import { handleOfficeLegalRoutes } from "./routes/officeLegal.js";
+import { handleOfficeLinkRoutes } from "./routes/officeLinks.js";
+import { handleOfficeConnectorRoutes } from "./routes/officeConnectors.js";
+import { handleTypstRoutes } from "./routes/typstRoutes.js";
+import { handleFinanceRoutes } from "./routes/financeRoutes.js";
+import { handleOfficeWorkflowRoutes } from "./routes/officeWorkflows.js";
+import { handleOfficePortalRoutes } from "./routes/officePortal.js";
 import { handleGraphRoutes } from "./routes/graph.js";
 import { handleGraphNodeRoutes } from "./routes/graphNodes.js";
 // Neo N17 external-agent canvas bridge: local HTTP/WS API for OpenCode/Claude Code/Orca.
 import { createCanvasBridgeUpgrade, handleCanvasBridgeParentRoutes, handleCanvasBridgeRoutes } from "./routes/canvasBridge.js";
 import { getLiveRunGraph, subscribeRunGraph } from "../agent/runGraphAdapter.js";
 import { handleCraftRoutes } from "./routes/craft.js";
+import { handleRecorderRoutes } from "./routes/recorder.js";
 import { handleInstructionsRoutes } from "./routes/instructions.js";
 import { handleAgentSpawnRoutes } from "./routes/agentSpawn.js";
 import { handleAutoVideoRoutes } from "./routes/autoVideo.js";
@@ -120,6 +177,7 @@ import { handleSessionControlRoutes } from "./routes/sessionControl.js";
 import { handleInsightsRoutes } from "./routes/insights.js";
 import { handleShareRoutes } from "./routes/shares.js";
 import { handleProjectContextRoutes } from "./routes/projectContext.js";
+import { PROVIDER_PRESETS, activeModel, listModelDirectory, registryModelEntries } from "./modelDirectory.js";
 import { handlePlaybookRoutes } from "./routes/playbooks.js";
 import { handleFlowTemplateRoutes } from "./routes/flowTemplates.js";
 import { handleVoiceRoutes } from "./routes/voice.js";
@@ -143,7 +201,7 @@ import { createWatchRoutine, watchSchedules, stopWatcher } from "./fileWatchers.
 import { AGENT_TEMPLATES, getAgentTemplate, sanitizeBundle, writeBundleFile, type CompanionBundle } from "./agentTemplates.js";
 import { agentIntegrationGrants, saveAgentIntegrationGrants } from "../tools/integrations.js";
 import { readTelemetry, telemetrySummary } from "../telemetry/store.js";
-import { setSecret, listSecrets, deleteSecret } from "./secretsVault.js";
+import { setSecret, listSecrets, deleteSecret, resolveSecret } from "./secretsVault.js";
 import { createApproval, decideApproval, getApproval, listApprovals } from "./approvals.js";
 import { subscribeTask } from "./streams.js";
 import { workspaceRelay, workspaceRelay as videoStudioRelay, type WorkspaceRelayResult } from "./workspaceRelay.js";
@@ -162,6 +220,9 @@ import { isOutputType } from "../llm/router.js";
 import { requiresReplayConfirmation } from "./recovery.js";
 import { executionQueue } from "./executionQueue.js";
 import { SwarmService, SwarmError } from "../swarm/service.js";
+import { classifyEffort } from "../swarm/effort.js";
+import { routeIntent } from "./intentRouter.js";
+import { RealSwarmService } from "../orchestration/swarm/service.js";
 import type { McpToolset } from "../tools/mcp.js";
 import { integrationCatalog, integrationGrants, saveIntegrationGrants } from '../tools/integrations.js';
 import { admitPending as admitPendingInputs, pending as pendingInputs } from './inputQueue.js';
@@ -206,6 +267,7 @@ export interface ServerDeps {
   preview?: PreviewService;
   registry?: ToolRegistry;
   mcp?: McpToolset | null;
+  codeGraph?: import("../codegraph/service.js").CodeGraphService | null;
   runTask: (opts: RunTaskOptions) => Promise<{ taskId: string; text: string }>;
   /** N3 Knowledge Garden vector channel; absent => lexical-only search. */
   embedder?: { embed(texts: string[]): Promise<number[][]> };
@@ -229,6 +291,7 @@ const MIME: Record<string, string> = {
   ".ttf": "font/ttf",
   ".json": "application/json; charset=utf-8",
   ".svg": "image/svg+xml",
+  ".webmanifest": "application/manifest+json; charset=utf-8",
 };
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
@@ -459,13 +522,57 @@ async function applyPendingItem(item: PendingItem, memory?: MemoryStore, cfg?: C
 
 export function startServer(deps: ServerDeps): Promise<http.Server> {
   const { cfg, ollama, runTask } = deps;
+  
+  // Initialize model registry (async, non-blocking)
+  (async () => {
+    try {
+      const { initializeRegistry } = await import("../models/registry/init.js");
+      await initializeRegistry(cfg);
+      log.info("[registry] Model registry initialized");
+    } catch (error) {
+      log.error(`[registry] Failed to initialize: ${error}`);
+    }
+  })();
+  
   const timeline = new TimelineService(cfg.workspace);
   const memory = deps.memory;
   const live = deps.screenLive;
   const preview = deps.preview;
   const registry = deps.registry;
   const swarm = registry ? new SwarmService({ cfg, ollama, tools: registry }) : null;
+  // C11 coding team (فريق البرمجة): always constructed so past runs list and
+  // read; when orchestration.swarm.enabled is false it refuses new runs with 409.
+  const realSwarm = registry ? new RealSwarmService({ cfg, ollama, tools: registry }) : null;
+  const workflowRouteDeps: WorkflowRouteDeps = { cfg, ollama, tools: registry ?? null };
+    const tracesRouteDeps = { sendJson, readBody, otlpEndpoint: () => cfg.orchestration?.tracing.otlpEndpoint ?? "" };
+    // C2: durable gates survive a restart; boot rehydrates the in-memory cards and settles expiry.
+    try { rehydrateAskUsers(); rehydratePlanApprovals(); rehydrateApprovals(); expireDue(); } catch { /* best effort */ }
+    const { startForkedRun: checkpointRoutesResume, resumeFromInterrupt: interruptRoutesResume } = createRunResume({ cfg, runTask });
   const mcp = deps.mcp ?? null;
+  // Cap H §6.13: restart-only settings are compared against the flags this process
+  // actually started with (the panel may have saved new ones to disk since).
+  const apiAnythingStartedWith = {
+    enabled: (cfg.apiAnything ?? { enabled: false }).enabled,
+    allowWrites: (cfg.apiAnything ?? { allowWrites: false }).allowWrites,
+    allowWriteLearning: (cfg.apiAnything ?? { allowWriteLearning: false }).allowWriteLearning,
+  };
+    const codeGraphUvSha256 = (): string => {
+      try {
+        const j = JSON.parse(fs.readFileSync(rootAsset("resources", "codegraph", "uv.json"), "utf8")) as { sha256?: Record<string, string> };
+        return j.sha256?.[process.platform === "win32" ? "win32-x64" : `${process.platform}-${process.arch}`] ?? "";
+      } catch { return ""; }
+    };
+    const codeGraphRouteDeps: CodeGraphRouteDeps = {
+      svc: () => deps.codeGraph ?? null,
+      cfg: () => cfg.codeGraph,
+      sendJson,
+      readBody,
+      resolveWorkspace: (taskId) => requireTaskWorkspace(taskId, cfg.workspace),
+      uvExe: rootAsset("resources", "codegraph", process.platform === "win32" ? "uv.exe" : "uv"),
+      uvSha256: codeGraphUvSha256(),
+      lockFile: rootAsset("resources", "codegraph", GRAPHIFY_PIN.lockFile),
+      lockSha256: GRAPHIFY_PIN.lockFileSha256,
+    };
   void createTask;
 
   const memorySkillsCall = async (
@@ -495,12 +602,32 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         const localAuthDir = process.env.LOAM_LOCAL_TOKEN_DIR || DATA_DIR;
         setLocalAuthUserDataDir(localAuthDir);
         const publicPaths = new Set(["/api/health", "/api/identity"]);
+        // CORS: the Agent Studio renderer loads from the privileged app://agent
+        // protocol; every API call from it to this http server is cross-origin.
+        // Answer the preflight and allow the origin so fetch() reaches the API.
+        const ALLOWED_ORIGINS = new Set(["app://agent", `http://${req.headers.host ?? "127.0.0.1"}`]);
+        if (ALLOWED_ORIGINS.has(String(req.headers.origin ?? ""))) {
+          res.setHeader("access-control-allow-origin", String(req.headers.origin));
+          res.setHeader("access-control-allow-methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+          res.setHeader("access-control-allow-headers", "content-type,authorization,x-loam-local-token");
+          res.setHeader("access-control-allow-private-network", "true");
+          res.setHeader("access-control-max-age", "600");
+          if (req.method === "OPTIONS") {
+            res.writeHead(204);
+            res.end();
+            return;
+          }
+        }
         const isStatic = req.method === "GET" && (p === "/" || MIME[path.extname(p).toLowerCase()] !== undefined);
         // The public share replay feed (GET /api/share/:token) is anonymous by
         // design; POST/DELETE stay behind the install token like every /api route.
-        const isPublicShare = req.method === "GET" && /^\/api\/share\/[A-Za-z0-9_-]+$/.test(p);
-        // The share replay page and its static assets are public like the feed.
-        const isNextStatic = req.method === "GET" && (p === "/share" || p.startsWith("/share/") || p.startsWith("/_next/"));
+        const isPublicShare = req.method === "GET" && (/^\/api\/share\/[A-Za-z0-9_-]+$/.test(p) || /^\/api\/office\/portal\/[A-Za-z0-9_-]+$/.test(p));
+        // The share replay page and its static assets are public like the feed;
+        // the public client portal page (/portal/<token>) is public the same way.
+        // The Loam Remote phone page (/remote) is a public PWA page too — the
+        // APIs it calls stay token-gated (the page sends the install token the
+        // user pasted once); its manifest/icon live under public /remote/.
+        const isNextStatic = req.method === "GET" && (p === "/share" || p.startsWith("/share/") || p === "/portal" || p.startsWith("/portal/") || p === "/remote" || p.startsWith("/remote/") || p.startsWith("/_next/"));
         if (req.method === "OPTIONS" && p.startsWith("/api/legal") && req.headers.origin === "app://agent") {
           res.writeHead(204, {
             "access-control-allow-origin": "app://agent", "access-control-allow-methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
@@ -521,6 +648,31 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         }
 
         if (await timeline.handle(req, res, url)) return;
+        // UI overhaul W-U2: the composer's intent router. Token-gated above
+        // like every other /api route. Contract: POST {text: string} with
+        // 1..4000 chars -> 200 {mode, effort, reason, source}; invalid input
+        // is a 400 (deliberate choice — the caller asked us to document it),
+        // and routing NEVER 500s: routeIntent itself never throws, and the
+        // catch below degrades to the "ask" default on any unexpected error.
+        if (p === "/api/intent/route") {
+          res.setHeader("cache-control", "no-store");
+          if (req.method !== "POST") return sendJson(res, 405, { error: "Method not allowed" });
+          if ((req.headers.origin && req.headers.origin !== `http://${req.headers.host}`) || req.headers["sec-fetch-site"] === "cross-site") return sendJson(res, 403, { error: "Same-origin requests required" });
+          let intentBody: { text?: unknown } | null = null;
+          // 16 KB body cap: the 4000-char text limit is measured in characters,
+          // but Arabic costs up to 2 UTF-8 bytes per char plus JSON framing.
+          try { intentBody = await readBody(req, 16_000) as { text?: unknown }; } catch { intentBody = null; }
+          const intentText = intentBody && typeof intentBody.text === "string" ? intentBody.text : "";
+          if (!intentText.trim() || intentText.length > 4000) {
+            return sendJson(res, 400, { error: "text required (non-empty string, 4000 chars max)" });
+          }
+          try {
+            const decision = await routeIntent(intentText, { cfg, ollama });
+            return sendJson(res, 200, { mode: decision.mode, effort: decision.effort.effort, reason: decision.reason, source: decision.source });
+          } catch {
+            return sendJson(res, 200, { mode: "ask", effort: classifyEffort(intentText).effort, reason: "اخترنا وضع «استكشف» افتراضيًا.", source: "keywords" });
+          }
+        }
         if (p === '/api/integrations') {
           res.setHeader('cache-control', 'no-store');
           if (!registry) return sendJson(res, 503, { error: 'Integrations unavailable' });
@@ -538,6 +690,14 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
             return sendJson(res, 200, { enabled: integrationGrants(body.taskId) });
           } catch (error) { return sendJson(res, 400, { error: error instanceof Error ? error.message : String(error) }); }
         }
+        if (await handleApiAnythingRoute(req, res, url, {
+          cfg,
+          mcp,
+          registry,
+          sendJson,
+          readBody,
+          startedWith: apiAnythingStartedWith,
+        })) return;
         if (p === '/api/mobile' || p.startsWith('/api/mobile/')) {
           res.setHeader('cache-control', 'no-store');
           if (!['GET', 'POST'].includes(req.method ?? '')) return sendJson(res, 405, { error: 'Method not allowed' });
@@ -640,7 +800,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
               }
               return sendJson(res, 405, { error: "Method not allowed" });
             }
-            const match = /^\/api\/swarm\/runs\/([a-zA-Z0-9_-]+)(?:\/(cancel|retry|resume|artifacts|preview|preview\/stop))?$/.exec(p);
+            const match = /^\/api\/swarm\/runs\/([a-zA-Z0-9_-]+)(?:\/(cancel|retry|resume|artifacts|preview|preview\/stop|clarify|approve|checkpoints|rollback|launch))?$/.exec(p);
             if (!match) return sendJson(res, 404, { error: "Run endpoint not found" });
             const id = match[1]!;
             if (req.method === "GET" && !match[2]) return sendJson(res, 200, { run: swarm.get(id) });
@@ -650,12 +810,38 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
             if (req.method === "POST" && match[2] === "resume") return sendJson(res, 202, { run: swarm.resume(id) });
             if (req.method === "POST" && match[2] === "preview") return sendJson(res, 200, { preview: await swarm.preview(id) });
             if (req.method === "POST" && match[2] === "preview/stop") return sendJson(res, 200, { ...(await swarm.stopPreview(id)) });
+            // BUILD_SPEC §8: lifecycle gates, checkpoints/rollback and the opt-in cloud launch.
+            if (req.method === "GET" && match[2] === "checkpoints") return sendJson(res, 200, swarm.checkpointsOf(id));
+            if (req.method === "POST" && (match[2] === "clarify" || match[2] === "approve" || match[2] === "rollback" || match[2] === "launch")) {
+              let body: unknown;
+              try { body = await readBody(req, 40_000); }
+              catch { return sendJson(res, 400, { error: "Invalid JSON request" }); }
+              if (match[2] === "clarify") return sendJson(res, 202, { run: swarm.clarify(id, body) });
+              if (match[2] === "approve") return sendJson(res, 202, { run: swarm.approve(id, body) });
+              if (match[2] === "rollback") return sendJson(res, 200, { rollback: await swarm.rollback(id, body) });
+              if (process.env.LOAM_SWARM_CLOUD_DEPLOY !== "1") return sendJson(res, 403, { error: "Cloud launch is disabled; set LOAM_SWARM_CLOUD_DEPLOY=1 to enable it" });
+              const tokenName = (target: string) => target === "vercel" ? "VERCEL_TOKEN" : "NETLIFY_AUTH_TOKEN";
+              const outcome = await swarm.launchCloud(id, body, target => resolveSecret("swarm-launch", tokenName(target)) ?? process.env[tokenName(target)] ?? undefined);
+              return sendJson(res, outcome.ok ? 200 : 502, { launch: outcome });
+            }
             return sendJson(res, 405, { error: "Method not allowed" });
           } catch (error) {
             if (error instanceof SwarmError) return sendJson(res, error.status, { error: error.message });
             throw error;
           }
         }
+        // Loam Remote (mobile PWA): same static-export trick as /share and
+        // /portal below, but placed ahead of the generic static branch because
+        // its public assets (/remote/manifest.webmanifest, /remote/icon.png)
+        // carry MIME-known extensions. The page is public; its /api calls carry
+        // the install token the user pastes once. Deployments that configured
+        // the legacy keyed phone page (LOAM_REMOTE_KEY) keep that page instead.
+        if (req.method === "GET" && (p === "/remote" || p.startsWith("/remote/")) && !process.env.LOAM_REMOTE_KEY) {
+          const rel = p === "/remote" ? "remote.html" : p.replace(/^\/+/, "");
+          serveNextExport(res, /^remote\/(manifest\.webmanifest|icon\.png)$/.test(rel) ? `/${rel}` : "/remote.html");
+          return;
+        }
+
         if (req.method === "GET" && !p.startsWith("/vendor/") && (p === "/" || MIME[path.extname(p).toLowerCase()] !== undefined)) {
           serveStatic(res, p);
           return;
@@ -668,23 +854,41 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           serveNextExport(res, "/share.html");
           return;
         }
+        // Public client portal: same trick as the share replay. The export has
+        // one /portal.html page, and /portal/<token> or /portal?t=<token> both
+        // land on it; the page reads the real token from path or query.
+        if (req.method === "GET" && (p === "/portal" || p.startsWith("/portal/"))) {
+          serveNextExport(res, "/portal.html");
+          return;
+        }
         if (req.method === "GET" && p.startsWith("/_next/")) {
           serveNextExport(res, p);
           return;
         }
 
         if (req.method === "GET" && p === "/api/models") {
+          // Real model directory: Ollama (local) + Flex BYOK + cloudModel +
+          // every failover provider probed live (freellmapi included). Old
+          // consumers read `.name`; entries keep both `id` and `name`.
           try {
-            const models = await ollama.listModels();
-            sendJson(res, 200, { models });
+            const directory = await listModelDirectory(cfg, () => ollama.listLocalModels());
+            sendJson(res, 200, {
+              models: directory.models,
+              entries: registryModelEntries(),
+              sources: directory.sources,
+              presets: PROVIDER_PRESETS,
+              active: activeModel(cfg),
+            });
           } catch (err) {
             log.warn(`models list failed: ${err instanceof Error ? err.message : String(err)}`);
-            sendJson(res, 200, { models: [], providerError: "model provider unavailable" });
+            sendJson(res, 200, { models: [], entries: registryModelEntries(), sources: [], presets: PROVIDER_PRESETS, active: activeModel(cfg), providerError: "model provider unavailable" });
           }
           return;
         }
 
         if (req.method === "GET" && p === "/api/health") {
+          const relayStage = url.searchParams.get("relay");
+          if (relayStage) log.info("relay_seen", { stage: relayStage });
           sendJson(res, 200, {
             ok: true,
             provider: cfg.model.endsWith(":cloud") ? "cloud" : "ollama",
@@ -747,6 +951,14 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           return;
         }
 
+        if (p.startsWith("/api/codegraph/") && await handleCodeGraphRoute(req, res, p, url, codeGraphRouteDeps)) return;
+        if (await handleRealSwarmRoutes(req, res, p, realSwarm)) return;
+        if (await handleWorkflowRoutes(req, res, p, workflowRouteDeps)) return;
+        if (await handleWorkflowRunRoutes(req, res, p)) return;
+        if (p.startsWith("/api/traces/") && await handleTracesRoutes(req, res, p, url, tracesRouteDeps)) return;
+        if (await handleCheckpointRoutes(req, res, p, checkpointRoutesResume)) return;
+        if (await handleInterruptRoutes(req, res, p, url, interruptRoutesResume)) return;
+
         if (req.method === "GET" && p === "/api/mcp/status") {
           sendJson(res, 200, { servers: mcp?.status ? await mcp.status() : Object.keys(cfg.mcpServers).map(name => ({ name, connected: false, toolCount: 0 })) });
           return;
@@ -781,6 +993,27 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           const refresh = url.searchParams.get("refresh") === "1";
           sendJson(res, 200, queryWorkspaceSymbols(requireTaskWorkspace(url.searchParams.get("taskId"), cfg.workspace), { query: q, kind, limit, refresh }));
           return;
+        }
+
+        if (await handleSecurityEnterpriseRoute(req, res, url, { workspace: cfg.workspace, sendJson, readBody })) return;
+        if (await handleMobileScaleRoute(req, res, url, { workspace: cfg.workspace, sendJson, readBody })) return;
+        if (await handleAdvancedSecurityRoute(req, res, url, { workspace: cfg.workspace, sendJson, readBody })) return;
+        if (await handleVulnerabilityCatalogRoute(req, res, url, { workspace: cfg.workspace, sendJson, readBody })) return;
+        if (await handleNextSecurityRoute(req, res, url, { workspace: cfg.workspace, sendJson, readBody })) return;
+        if (await handleEngineRoute(req, res, url, { workspace: cfg.workspace, sendJson, readBody })) return;
+
+        if (p === "/api/security/red/kill-switch") {
+          res.setHeader("cache-control", "no-store");
+          if (req.method === "GET") return sendJson(res, 200, { engaged: isKillSwitchEngaged() });
+          if (req.method !== "POST") return sendJson(res, 405, { error: "method not allowed" });
+          const origin = req.headers.origin;
+          if ((origin && origin !== `http://${req.headers.host}`) || req.headers["sec-fetch-site"] === "cross-site") return sendJson(res, 403, { error: "Same-origin requests required" });
+          if (!req.headers["content-type"]?.startsWith("application/json")) return sendJson(res, 415, { error: "application/json required" });
+          const input = await readBody(req, 4000);
+          if (!input || typeof input !== "object" || Array.isArray(input) || typeof (input as { engage?: unknown }).engage !== "boolean") {
+            return sendJson(res, 400, { error: "engage must be a boolean" });
+          }
+          return sendJson(res, 200, setRedKillSwitch((input as { engage: boolean }).engage));
         }
 
         if (p === "/api/security/assessments" || p.startsWith("/api/security/assessments/")) {
@@ -838,6 +1071,102 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
             return sendJson(res, 404, { error: "Unknown assessment route" });
           } catch (error) {
             if (error instanceof AssessmentError) return sendJson(res, error.status, { error: error.message });
+            throw error;
+          }
+        }
+
+        // Remediate runs — REMEDIATE_INTO_LOAM §5.2/E5: the three GATES are decided
+        // HERE (HTTP/UI only, same-origin); model tools can only start/read runs.
+        if (p === "/api/security/remediations" || p.startsWith("/api/security/remediations/")) {
+          res.setHeader("cache-control", "no-store");
+          if (req.method !== "GET") {
+            const origin = req.headers.origin;
+            if ((origin && origin !== `http://${req.headers.host}`) || req.headers["sec-fetch-site"] === "cross-site") return sendJson(res, 403, { error: "Same-origin requests required" });
+            if (!req.headers["content-type"]?.startsWith("application/json")) return sendJson(res, 415, { error: "application/json required" });
+          }
+          try {
+            const parts = p.split("/").slice(4);
+            const id = parts[0];
+            const action = parts[1];
+            const body = req.method === "POST" ? await readBody(req, 100000) as Record<string, unknown> : {};
+            const str = (k: string): string | undefined => (typeof body[k] === "string" ? body[k] as string : undefined);
+            if (!id && req.method === "GET") return sendJson(res, 200, { runs: listRemediations() });
+            if (!id) return sendJson(res, 404, { error: "Unknown remediation route" });
+            if (!action && req.method === "GET") {
+              const run = readRemediation(id);
+              if (!run) return sendJson(res, 404, { error: "Run not found" });
+              // Review materials for the NEXT gate decision: what the user must see
+              // is what the hash binds (GATE 1 inventory hash; GATE 2 diff + PR body).
+              const review = {
+                scopePlanHash: run.state === "awaiting_scope_approval" ? expectedPlanHash(run) : null,
+                plans: run.plans.filter((p) => p.phase === "awaiting_commit").map((p) => {
+                  const paths = planPaths(run.id, p.repoId);
+                  const diff = fs.existsSync(paths.diff) ? fs.readFileSync(paths.diff, "utf8") : "";
+                  const body = fs.existsSync(paths.prBody) ? fs.readFileSync(paths.prBody, "utf8") : "";
+                  return { repoId: p.repoId, verdict: p.fixGate?.verdict ?? null, diff, prBody: body, diffHash: canonicalHash({ diff }), prBodyHash: canonicalHash({ body }) };
+                }),
+              };
+              return sendJson(res, 200, { run, review });
+            }
+            if (action === "report" && req.method === "GET") {
+              const run = readRemediation(id);
+              if (!run) return sendJson(res, 404, { error: "Run not found" });
+              const report = remediationRollup(run);
+              res.writeHead(200, { "content-type": "text/markdown; charset=utf-8", "content-disposition": `attachment; filename="remediation-${id}.md"`, "cache-control": "no-store" });
+              res.end(report); return;
+            }
+            if (req.method !== "POST") return sendJson(res, 405, { error: "Method not allowed" });
+            if (!action) return sendJson(res, 404, { error: "Unknown remediation route" });
+            const run = readRemediation(id);
+            if (!run) return sendJson(res, 404, { error: "Run not found" });
+            if (action === "approve-scope") {
+              const planHash = str("plan_hash");
+              const repos = Array.isArray(body["repos"]) ? body["repos"] as unknown[] : [];
+              const rows = Array.isArray(body["rows"]) ? body["rows"] as unknown[] : [];
+              if (!planHash || !repos.every((r) => typeof r === "string") || !rows.every((r) => typeof r === "string")) return sendJson(res, 400, { error: "plan_hash, repos[] and rows[] are required" });
+              const approved = approveRemediationScope(run, { planHash, repos: repos as string[], rows: rows as string[] });
+              const worked = await workRemediation(approved.id); // resolve → edit → fix gate; no commit before GATE 2
+              return sendJson(res, 200, { run: worked });
+            }
+            if (action === "approve-commit") {
+              const repoId = str("repo_id");
+              const diffHash = str("diff_hash");
+              const prBodyHash = str("pr_body_hash");
+              if (!repoId || !diffHash || !prBodyHash) return sendJson(res, 400, { error: "repo_id, diff_hash and pr_body_hash are required" });
+              approveRemediationCommit(run, repoId, { diffHash, prBodyHash, acceptUnverified: body["accept_unverified"] === true });
+              return sendJson(res, 200, { run: commitRemediation(id, repoId) });
+            }
+            if (action === "approve-pr") {
+              const repoId = str("repo_id");
+              const remote = str("remote");
+              const base = str("base");
+              if (!repoId || !remote || !base) return sendJson(res, 400, { error: "repo_id, remote and base are required" });
+              return sendJson(res, 200, { run: approveRemediationPr(run, repoId, { remote, base, draft: body["draft"] !== false }) });
+            }
+            if (action === "record-pr") {
+              const repoId = str("repo_id");
+              const number = typeof body["number"] === "number" ? body["number"] : Number(str("number"));
+              const url2 = str("url");
+              if (!repoId || !Number.isFinite(number) || !url2) return sendJson(res, 400, { error: "repo_id, number and url are required" });
+              return sendJson(res, 200, { run: recordRemediationPr(id, repoId, { number, url: url2, draft: body["draft"] !== false, provider: str("provider") ?? "local" }) });
+            }
+            if (action === "discard") {
+              const repoId = str("repo_id");
+              if (!repoId) return sendJson(res, 400, { error: "repo_id is required" });
+              return sendJson(res, 200, { run: discardRemediationRepo(id, repoId) });
+            }
+            if (action === "cancel") return sendJson(res, 200, { run: cancelRemediationRun(id) });
+            if (action === "close") {
+              const vulnId = str("vuln_id");
+              const observedVersion = str("observed_version");
+              const note = str("note");
+              const evidenceId = str("evidence_id");
+              if (!vulnId || !observedVersion || !note || !evidenceId) return sendJson(res, 400, { error: "vuln_id, observed_version, note and evidence_id are required" });
+              return sendJson(res, 200, { run: closeRemediationWithEvidence(run, vulnId, { observedVersion, note, evidenceId }) });
+            }
+            return sendJson(res, 404, { error: "Unknown remediation route" });
+          } catch (error) {
+            if (error instanceof RemediationError) return sendJson(res, error.status, { error: error.message });
             throw error;
           }
         }
@@ -1075,6 +1404,64 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           return;
         }
 
+        if (req.method === "GET" && p === "/api/recall/stats") {
+          const service = getRecallService();
+          if (!service) return sendJson(res, 200, { enabled: false });
+          sendJson(res, 200, { enabled: true, ...(await service.stats()) });
+          return;
+        }
+
+        if (req.method === "GET" && p === "/api/recall/search") {
+          const service = getRecallService();
+          const query = url.searchParams.get("q") ?? "";
+          if (!service || !query.trim()) return sendJson(res, 200, { hits: [] });
+          const hits = await service.search({ text: query, scope: ["user"], limit: 20 });
+          sendJson(res, 200, { hits: hits.map((hit) => ({ id: hit.memory.id, content: hit.memory.content, kind: hit.memory.kind, state: hit.memory.state, score: hit.score })) });
+          return;
+        }
+
+        if (req.method === "POST" && p === "/api/recall/confirm") {
+          const service = getRecallService();
+          const body = (await readBody(req)) as { id?: unknown };
+          if (!service || typeof body.id !== "string") return sendJson(res, 400, { error: "id required" });
+          await service.confirm(body.id);
+          sendJson(res, 200, { ok: true });
+          return;
+        }
+
+        if (req.method === "POST" && p === "/api/recall/forget") {
+          const service = getRecallService();
+          const body = (await readBody(req)) as { id?: unknown; hard?: unknown; confirm?: unknown };
+          if (!service || typeof body.id !== "string") return sendJson(res, 400, { error: "id required" });
+          if (body.hard === true && body.confirm !== true) return sendJson(res, 400, { error: "hard forget needs confirmation" });
+          await service.forget(body.id, body.hard === true ? "hard" : "soft");
+          sendJson(res, 200, { ok: true });
+          return;
+        }
+
+        if (req.method === "POST" && p === "/api/recall/restore") {
+          const service = getRecallService();
+          const body = (await readBody(req)) as { id?: unknown };
+          if (!service || typeof body.id !== "string") return sendJson(res, 400, { error: "id required" });
+          await service.restore(body.id);
+          sendJson(res, 200, { ok: true });
+          return;
+        }
+
+        if (req.method === "POST" && p === "/api/recall/settings") {
+          const service = getRecallService();
+          const body = (await readBody(req)) as { rerank?: unknown; embedder?: unknown; reviewModes?: unknown };
+          if (!service) return sendJson(res, 200, { ok: false });
+          if (typeof body.rerank === "boolean") service.repo.setSetting("rerank", body.rerank ? "1" : "0");
+          if (typeof body.embedder === "string") {
+            service.repo.setSetting("embedder", body.embedder.slice(0, 120));
+            service.startReembed();
+          }
+          if (body.reviewModes && typeof body.reviewModes === "object") service.repo.setSetting("reviewModes", JSON.stringify(body.reviewModes));
+          sendJson(res, 200, { ok: true });
+          return;
+        }
+
         if (req.method === "POST" && p === "/api/memory/curate") {
           if (!memory) return sendJson(res, 503, { error: "memory disabled in config" });
           const removed = memory.prune({ maxEntries: cfg.memory.maxEntries, dropKinds: ["task"] });
@@ -1275,6 +1662,28 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           return;
         }
 
+        // Sandbox Runtime (srt) — read-only status + one-time user-gesture install
+        // (SANDBOX_RUNTIME_INTO_LOAM §7.4; appendix C2/C7). Mode/domain changes ride
+        // the existing POST /api/settings.
+        if (req.method === "GET" && p === "/api/sandbox") {
+          const st = getSettings();
+          sendJson(res, 200, {
+            status: await probeSrtStatus(),
+            mode: st.sandboxMode ?? "off",
+            allowedDomains: st.sandboxAllowedDomains ?? [],
+            skipProfileGrant: st.sandboxSkipProfileGrant ?? true,
+            supplyChainAck: st.sandboxSupplyChainAck === true,
+          });
+          return;
+        }
+
+        if (req.method === "POST" && p === "/api/sandbox/install") {
+          const st = getSettings();
+          const result = await runSrtWindowsInstall({ skipProfileGrant: st.sandboxSkipProfileGrant ?? true });
+          sendJson(res, result.ok ? 200 : result.cancelled ? 200 : 500, { ...result, status: await probeSrtStatus() });
+          return;
+        }
+
         if (req.method === "GET" && p === "/api/updater") {
           const st = getSettings();
           const repo = (st.githubRepo || process.env.MANUS_GITHUB_REPO || "").trim();
@@ -1312,8 +1721,8 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         }
 
         if (req.method === "POST" && p === "/api/settings") {
-          const body = (await readBody(req)) as { theme?: unknown; model?: unknown; projectId?: unknown; autoApprove?: unknown; trainingOptOut?: unknown; codemode?: unknown; planApprovalSkipTrivial?: unknown; lessonsAutoApply?: unknown };
-          const patch: { theme?: "dark" | "light" | "system"; model?: string; projectId?: string | null; autoApprove?: boolean; trainingOptOut?: boolean; codemode?: boolean; planApprovalSkipTrivial?: boolean; lessonsAutoApply?: boolean } = {};
+          const body = (await readBody(req)) as { theme?: unknown; model?: unknown; projectId?: unknown; autoApprove?: unknown; trainingOptOut?: unknown; codemode?: unknown; planApprovalSkipTrivial?: unknown; lessonsAutoApply?: unknown; officeIdentity?: unknown; knowledgeRag?: unknown; codingDiscipline?: unknown };
+          const patch: { theme?: "dark" | "light" | "system"; model?: string; projectId?: string | null; autoApprove?: boolean; trainingOptOut?: boolean; codemode?: boolean; planApprovalSkipTrivial?: boolean; lessonsAutoApply?: boolean; officeIdentity?: { name?: string; role?: "partner" | "senior" | "associate" | "paralegal" | "reviewer" | "client" | "admin" }; knowledgeRag?: boolean; codingDiscipline?: "off" | "lite" | "full" | "ultra" } = {};
           if (body.theme === "dark" || body.theme === "light" || body.theme === "system") patch.theme = body.theme;
           if (typeof body.model === "string") patch.model = body.model;
           if (body.projectId === null || typeof body.projectId === "string") patch.projectId = body.projectId;
@@ -1323,6 +1732,22 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           if (typeof body.codemode === "boolean") patch.codemode = body.codemode;
           if (typeof body.planApprovalSkipTrivial === "boolean") patch.planApprovalSkipTrivial = body.planApprovalSkipTrivial;
           if (typeof body.lessonsAutoApply === "boolean") patch.lessonsAutoApply = body.lessonsAutoApply;
+          // «تحدث مع ملفاتك» (Phase-2 W2): kb_* in ask/build on/off switch.
+          if (typeof body.knowledgeRag === "boolean") patch.knowledgeRag = body.knowledgeRag;
+          // lazy-senior (Ponytail BUILD_SPEC P2): coding-discipline level; only
+          // a known level is stored, unknown values leave the setting untouched.
+          if (body.codingDiscipline === "off" || body.codingDiscipline === "lite" || body.codingDiscipline === "full" || body.codingDiscipline === "ultra") {
+            patch.codingDiscipline = body.codingDiscipline;
+          }
+          // د2: identity block for office intelligence / track changes (name + role).
+          if (body.officeIdentity === null) patch.officeIdentity = undefined;
+          else if (typeof body.officeIdentity === "object" && body.officeIdentity !== null) {
+            const incoming = body.officeIdentity as { name?: unknown; role?: unknown };
+            patch.officeIdentity = {
+              ...(typeof incoming.name === "string" && incoming.name.trim() ? { name: incoming.name } : {}),
+              ...(typeof incoming.role === "string" && ["partner", "senior", "associate", "paralegal", "reviewer", "client", "admin"].includes(incoming.role) ? { role: incoming.role as "admin" } : {}),
+            };
+          }
           sendJson(res, 200, updateSettings(patch));
           return;
         }
@@ -1344,6 +1769,14 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         }
 
         // ---- task workspace files (UI files tab) ----
+        if (req.method === "GET" && p.startsWith("/api/tasks/") && p.endsWith("/metrics")) {
+          // lazy-senior P4: the task panel's metrics band — local data only.
+          const id = decodeURIComponent(p.slice("/api/tasks/".length, -"/metrics".length));
+          const task = getTask(id);
+          if (!task) return sendJson(res, 404, { error: "المهمة غير موجودة" });
+          return sendJson(res, 200, computeTaskMetrics(task.steps));
+        }
+
         if (req.method === "GET" && p.startsWith("/api/tasks/") && p.endsWith("/files")) {
           const id = decodeURIComponent(p.slice("/api/tasks/".length, -"/files".length));
           const task = getTask(id);
@@ -1831,9 +2264,23 @@ loadAgents();
         if (await handleHibernationRoutes(req, res, p)) return;
         // Durable event log (O8): GET /api/sessions/:id/events and /events/stream.
         if (await handleEventsRoutes(req, res, p)) return;
+        // Model registry (Unified Model Registry): /api/model-registry/*
+        if (handleModelRegistryRoutes(req, res)) return;
         // Design Studio (/api/design/*): brand kits, templates, generate, outputs.
         if (await handleDesignStudioRoutes(req, res, p)) return;
         if (await handleWorkspaceVideoRoutes(req, res, p, { workspace: cfg.workspace })) return;
+        if (await handleWorkspaceDocRoutes(req, res, p, { workspace: cfg.workspace })) return;
+        if (await handleCollabRoutes(req, res, p, { workspace: cfg.workspace })) return;
+        if (await handleWorkspaceSheetRoutes(req, res, p, { workspace: cfg.workspace })) return;
+        if (await handleWorkspaceSlidesRoutes(req, res, p, { workspace: cfg.workspace })) return;
+        if (await handleOfficeLegalRoutes(req, res, p, { workspace: cfg.workspace })) return;
+        if (await handleOfficeLinkRoutes(req, res, p, { workspace: cfg.workspace })) return;
+        if (await handleTypstRoutes(req, res, p)) return;
+        if (await handleFinanceRoutes(req, res, p)) return;
+        if (await handleOfficeConnectorRoutes(req, res, p, { workspace: cfg.workspace })) return;
+        if (await handleOfficeWorkflowRoutes(req, res, p, { workspace: cfg.workspace, cfg, ollama })) return;
+        if (await handleOfficePortalRoutes(req, res, p)) return;
+        if (await handleOfficeIntelligenceRoutes(req, res, p, { workspace: cfg.workspace, cfg, ollama })) return;
         // Neo N2 canvas: the run graph built live by the agent (N1).
         if (await handleGraphRoutes(req, res, p, { enabled: cfg.runGraph?.enabled !== false })) return;
         // Neo N17 external-agent canvas bridge: same graph, driven from outside.
@@ -1854,6 +2301,7 @@ loadAgents();
         })) return;
         // Craft apps (/api/craft/status): which vendored dists are installed.
         if (await handleCraftRoutes(req, res, p)) return;
+        if (await handleRecorderRoutes(req, res, p)) return;
         if (await handleInstructionsRoutes(req, res, p)) return;
         if (await handleAgentSpawnRoutes(req, res, p)) return;
         if (await handleAgentThreadRoutes(req, res, p)) return;
@@ -1863,6 +2311,10 @@ loadAgents();
         if (await handleSchedulesRoutes(req, res, p)) return;
         // D14: event-trigger deliveries (HMAC-verified webhook / GitHub events).
         if (await handleAutomationsRoutes(req, res, p)) return;
+        // Cap G §4.15.2: /api/app-projects/* (Agent Studio App Builder).
+        if (await handleAppBuilderRoutes(req, res, p, url)) return;
+        // UX-W3: shared board kanban (/api/board/*) — the Board page's backend.
+        if (await handleBoardRoutes(req, res, p)) return;
         if (await handleAutoVideoRoutes(req, res, p)) return;
         if (await handleLiveViewRoutes(req, res, p, { screenLive: live })) return;
         if (await handleTranscriptRoutes(req, res, p, { workspace: cfg.workspace })) return;
@@ -1920,7 +2372,7 @@ loadAgents();
         // Legal mode (Qatar): corpus, matters, verification, review gate.
         if (p.startsWith("/api/legal")) {
           if (!deps.legal) return sendJson(res, p.split("?")[0] === "/api/legal/status" ? 200 : 404, { enabled: false });
-          if (await handleLegalRoutes(req, res, p, { corpus: deps.legal.corpus, matters: deps.legal.matters, egress: deps.legal.egress, keys: deps.legal.keys, vault: deps.legal.vault, model: deps.legal.model, buildDefense: deps.legal.buildDefense, buildResponse: deps.legal.buildResponse, analyzeDocuments: deps.legal.analyzeDocuments, importDocument: deps.legal.importDocument, enabled: true })) return;
+          if (await handleLegalRoutes(req, res, p, { corpus: deps.legal.corpus, matters: deps.legal.matters, egress: deps.legal.egress, keys: deps.legal.keys, vault: deps.legal.vault, model: deps.legal.model, buildDefense: deps.legal.buildDefense, buildResponse: deps.legal.buildResponse, analyzeDocuments: deps.legal.analyzeDocuments, importDocument: deps.legal.importDocument, library: deps.legal.library, enabled: true })) return;
         }
 
         // ---- avatar (Grok Bot-style): set shape/color/image on an existing agent ----
@@ -2564,21 +3016,27 @@ loadAgents();
         // result of a command that was dispatched over the task's event stream.
         // The /video-studio/result path stays as the fc-02 (Video Studio) alias.
         if (req.method === "POST" && /^\/api\/tasks\/[^/]+\/(?:workspace|video-studio)\/result$/.test(p)) {
-          const origin = req.headers.origin;
-          if ((origin && origin !== `http://${req.headers.host}`) || req.headers["sec-fetch-site"] === "cross-site") {
+          if (isHostileCrossSite(req)) {
+            log.info("relay_result_rejected", { origin: req.headers.origin ?? "", site: req.headers["sec-fetch-site"] ?? "" });
             return sendJson(res, 403, { error: "same-origin requests required" });
           }
           const route = p.includes("/video-studio/result") ? "/video-studio/result" : "/workspace/result";
           const taskId = decodeURIComponent(p.slice("/api/tasks/".length, -route.length));
           if (!getTask(taskId)) return sendJson(res, 404, { error: "task not found" });
           let raw: unknown;
-          try { raw = await readBody(req, 64_000); } catch { return sendJson(res, 400, { error: "invalid JSON body" }); }
+          // A finished export comes back as base64 video. The default 1 MB cap
+          // drops that body, so the render never lands in the task workspace.
+          try { raw = await readBody(req, 64_000_000); } catch (error) {
+            log.info("relay_result_body", { error: error instanceof Error ? error.message : String(error) });
+            return sendJson(res, 400, { error: "invalid JSON body" });
+          }
           const result = raw as WorkspaceRelayResult;
           if (!result || typeof result !== "object" || typeof result.id !== "string" || typeof result.taskId !== "string") {
             return sendJson(res, 400, { error: "id and taskId are required" });
           }
           if (result.taskId !== taskId) return sendJson(res, 400, { error: "taskId mismatch" });
           const handled = workspaceRelay.resolve(result);
+          log.info("relay_result", { taskId, id: result.id, ok: result.ok === true, handled });
           return sendJson(res, 200, { ok: handled, ...(handled ? {} : { ignored: true }) });
         }
 
@@ -2587,8 +3045,7 @@ loadAgents();
         // editor renders, the bytes come back through the relay and the file is
         // written into this task's workspace under exports/.
         if (req.method === "POST" && /^\/api\/tasks\/[^/]+\/video-studio\/export$/.test(p)) {
-          const origin = req.headers.origin;
-          if ((origin && origin !== `http://${req.headers.host}`) || req.headers["sec-fetch-site"] === "cross-site") {
+          if (isHostileCrossSite(req)) {
             return sendJson(res, 403, { error: "same-origin requests required" });
           }
           const taskId = decodeURIComponent(p.slice("/api/tasks/".length, -"/video-studio/export".length));
@@ -2615,7 +3072,7 @@ loadAgents();
           } catch (error) {
             const err = error as { code?: string; message?: string };
             if (err.code === "PANEL_NOT_OPEN") {
-              return sendJson(res, 409, { ok: false, reason: "panel_not_open", retry: true, message: err.message });
+              return sendJson(res, 409, { ok: false, reason: "panel_not_open", retry: false, message: err.message });
             }
             if (err.code === "CANCELLED") {
               return sendJson(res, 499, { ok: false, reason: "cancelled", message: err.message });
@@ -2627,6 +3084,9 @@ loadAgents();
 
         if (req.method === "GET" && p.startsWith("/api/tasks/") && p.endsWith("/stream")) {
           const id = decodeURIComponent(p.slice("/api/tasks/".length, -"/stream".length));
+          const announcedEarly = url.searchParams.has("targets");
+          const earlyTargets = (url.searchParams.get("targets") ?? "").split(",").map((part) => part.trim()).filter(Boolean);
+          log.info("task_stream", { taskId: id, targets: earlyTargets.join(","), announced: announcedEarly });
           const task = getTask(id);
           if (!task) return sendJson(res, 404, { error: "task not found" });
           res.writeHead(200, {
@@ -2641,9 +3101,15 @@ loadAgents();
           const unsub = subscribeTask(id, (event) => {
             res.write(`data: ${redact(JSON.stringify(event))}\n\n`);
           });
+          const detachTargets = announcedEarly ? announceRelayTargets(id, earlyTargets) : () => {};
+          for (const request of workspaceRelay.openRequestsFor(id)) {
+            res.write(`data: ${JSON.stringify({ type: "workspace_open_request", target: request.target, path: request.path })}\n\n`);
+          }
+          workspaceRelay.replayPending(id);
           const keepalive = setInterval(() => res.write(": ping\n\n"), 15_000);
           req.on("close", () => {
             clearInterval(keepalive);
+            detachTargets();
             unsub();
           });
           return;
@@ -2782,6 +3248,12 @@ loadAgents();
           };
           const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
           if (!prompt) return sendJson(res, 400, { error: "prompt required" });
+          // Credit gate (Strix-style 402): opt-in, so a local install that never
+          // buys credits keeps running while an enforced deployment gets a clean
+          // refusal the client can act on instead of a mid-run failure.
+          if (cfg.credits?.enforce && getBalance() <= 0) {
+            return sendJson(res, 402, { error: "insufficient credits", balance: getBalance() });
+          }
           const expansion = expandPlaybookMacros(prompt);
           const runPrompt = expansion.text;
           let taskId = typeof body.taskId === "string" && body.taskId ? body.taskId : undefined;
@@ -2881,24 +3353,7 @@ loadAgents();
           const admitted = admitPendingInputs(sessionId);
           return sendJson(res, 200, { admitted });
         }
-        if (req.method === "POST" && p.startsWith("/api/tasks/") && p.endsWith("/resume")) {
-          const id = decodeURIComponent(p.slice("/api/tasks/".length, -"/resume".length));
-          const task = getTask(id);
-          const saved = getSavedRun(id);
-          if (!task) return sendJson(res, 404, { error: "task not found" });
-          if (!saved || task.status === "done" || executionQueue.has(id)) return sendJson(res, 409, { error: "task cannot be resumed" });
-          const body = await readBody(req) as { retryInterruptedStep?: boolean };
-          if (requiresReplayConfirmation(saved) && body.retryInterruptedStep !== true) {
-            return sendJson(res, 409, { error: "قد تكون الخطوة المتوقفة نفذت إجراءات بالفعل. يلزم تأكيد إعادة المحاولة.", requiresConfirmation: true });
-          }
-          if (!fs.existsSync(saved.workspace)) return sendJson(res, 409, { error: "saved workspace is unavailable" });
-          if (path.resolve(saved.workspace).toLowerCase() !== path.resolve(requireTaskWorkspace(id, cfg.workspace)).toLowerCase()) {
-            return sendJson(res, 409, { error: "لا يمكن استئناف التنفيذ القديم في المساحة المشتركة. ابدأ تشغيلاً جديداً معزولاً." });
-          }
-          void runTask({ taskId: id, prompt: saved.prompt, resume: true, retryInterruptedStep: body.retryInterruptedStep === true, emit: () => {} })
-            .catch((error) => log.warn(`resume ${id}: ${String(error)}`));
-          return sendJson(res, 202, { taskId: id, status: getTask(id)?.status });
-        }
+        if (await handleTaskResumeRoute(req, res, p, { cfg, readBody, runTask, sendJson })) return;
         // Session timeline UX (D16): side-chat questions + pause/take-over.
         if (await handleSessionControlRoutes(req, res, p)) return;
         if (req.method === "POST" && p.startsWith("/api/tasks/") && p.endsWith("/cancel")) {
@@ -3149,7 +3604,7 @@ loadAgents();
   }
 
   return new Promise((resolve) => {
-    server.once("close", () => { swarm?.close(); void timeline.close(); });
-    server.listen(cfg.server.port, cfg.server.host, () => { const address = server.address(); if (address && typeof address !== "string") timeline.start(`http://127.0.0.1:${address.port}`); resolve(server); });
+    server.once("close", () => { swarm?.close(); void realSwarm?.close(); void timeline.close(); });
+    server.listen(cfg.server.port, cfg.server.host, () => { const address = server.address(); if (address && typeof address !== "string") { setServiceBaseUrl(`http://127.0.0.1:${address.port}`); timeline.start(`http://127.0.0.1:${address.port}`); } resolve(server); });
   });
 }

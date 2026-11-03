@@ -69,9 +69,16 @@ detect("research / look up", "look up the answer", "research");
 detect("build / app", "build a mobile app", "build");
 detect("build / web app", "build a small todo web app", "build");
 detect("build / default", "hello", "build");
+detect("write / one-page arabic deck", "اعمل برزنيشن من صفحة واحده عن قطر", "write");
+detect("write / arabic presentation", "اعمل برزنتيشن", "write");
+detect("build / arabic app", "ابن لي تطبيق ويب", "build");
+detect("ask / arabic chat", "مرحبا كيف الحال", "ask");
 
 // resolveLoamMode precedence and fallbacks.
 resolve("explicit loamMode overrides prompt", um({ loamMode: "research" }), "build me an app", "research");
+resolve("one-page deck leaves Build for Loam Slides", um({ loamMode: "build" }), "اعمل برزنيشن من صفحة واحده عن قطر", "write");
+resolve("website deliverable stays a site", um({ outputType: "website" }), "create a presentation", "build");
+resolve("mentioning a presentation is not a new deck", um({ loamMode: "research" }), "summarize this presentation", "research");
 resolve("explicit loamMode alias discuss→ask", um({ loamMode: "discuss" }), "anything", "ask");
 resolve("explicit invalid falls back to detection", um({ loamMode: "unknownmode" }), "create a logo", "media");
 resolve("lite taskMode stays ask", um({ taskMode: "lite" }), "hello", "ask");

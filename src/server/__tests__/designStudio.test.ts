@@ -156,14 +156,14 @@ describe("generate step", () => {
 
 describe("agent tool exposure (gateway + always-on)", () => {
   it("design tools are registered and reach the effective run tool list", () => {
-    assert.ok(ALWAYS_ON_TOOLS.includes("design_create"), "design_create is always-on");
+    assert.ok(!ALWAYS_ON_TOOLS.includes("design_create"), "design_create belongs to build mode");
     assert.ok(ALWAYS_ON_TOOLS.includes("design_brand_kit_save"), "design_brand_kit_save is always-on");
     const registry = new ToolRegistry() as RegistryType;
     registry.registerAll(createDesignStudioTools());
     const names = registry.names();
     assert.ok(names.includes("design_create") && names.includes("design_brand_kit_save"));
-    const runAllow = mergeAlwaysOnTools({ resolvedAllow: ["file_read"], registeredTools: names });
-    assert.ok(runAllow.includes("design_create"), "merged run allowlist must expose design_create");
+    const runAllow = mergeAlwaysOnTools({ resolvedAllow: ["file_read", "design_create"], registeredTools: names });
+    assert.ok(runAllow.includes("design_create"), "a build-mode allowlist still exposes design_create");
     const scoped = registry.forAllowlist(runAllow);
     assert.ok(scoped.names().includes("design_create"));
     assert.ok(scoped.toOllama().some((t) => t.function.name === "design_create"), "model sees design_create");

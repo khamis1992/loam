@@ -1,0 +1,6 @@
+{
+  "name": "reuse-form-fixture",
+  "private": true,
+  "version": "1.0.0",
+  "description": "lazy-senior A/B fixture: a tiny form app with an existing Input component and validateEmail helper (T1 reuse-first)."
+}

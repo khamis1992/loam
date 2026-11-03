@@ -1,0 +1,32 @@
+rules:
+  - id: loam.py.eval-exec-dynamic
+    message: eval or exec called with a non-literal argument; check whether input can reach it.
+    severity: WARNING
+    languages: [python]
+    patterns:
+      - pattern-either:
+          - pattern: eval($X)
+          - pattern: exec($X)
+      - pattern-not: eval("...")
+      - pattern-not: exec("...")
+  - id: loam.py.subprocess-shell-true
+    message: subprocess call with shell=True; pass an argv list instead.
+    severity: WARNING
+    languages: [python]
+    pattern-either:
+      - pattern: subprocess.$F(..., shell=True, ...)
+      - pattern: os.system($X)
+  - id: loam.py.pickle-load
+    message: Unpickling data; only safe for fully trusted input.
+    severity: WARNING
+    languages: [python]
+    pattern-either:
+      - pattern: pickle.load(...)
+      - pattern: pickle.loads(...)
+  - id: loam.py.yaml-unsafe-load
+    message: yaml.load without a safe loader; use yaml.safe_load.
+    severity: WARNING
+    languages: [python]
+    patterns:
+      - pattern: yaml.load($X)
+      - pattern-not: yaml.load($X, Loader=yaml.SafeLoader)

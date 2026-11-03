@@ -4,7 +4,12 @@
   "ollamaUrl": "http://127.0.0.1:11434",
   "cloudModel": {
     "baseUrl": "https://openrouter.ai/api/v1",
-    "apiKey": "ضع-مفتاحك-هنا"
+    "apiKey": "ضع-مفتاحك-هنا",
+    "images": {
+      "model": "",
+      "baseUrl": "",
+      "apiKey": ""
+    }
   },
   "server": {
     "host": "127.0.0.1",
@@ -18,6 +23,15 @@
   "workspace": "./workspace",
   "recovery": {
     "autoResume": false
+  },
+  "sandbox": {
+    "container": {
+      "enabled": false,
+      "image": "node:22-alpine",
+      "network": "none",
+      "cpus": 2,
+      "memoryMb": 2048
+    }
   },
   "policy": {
     "networkEnabled": true,
@@ -106,7 +120,7 @@
     "verifyFinal": true
   },
   "mcpServers": {
-    "filesystem": {
+    "filesystem": { "sandbox": true,
       "command": "node",
       "args": [
         "${ROOT}/node_modules/@modelcontextprotocol/server-filesystem/dist/index.js",
@@ -138,6 +152,23 @@
     "loam-bridge": {
       "transport": "http",
       "url": "http://127.0.0.1:3002/mcp"
+    },
+    "rea": {
+      "command": "node",
+      "args": [
+        "${DATA}/bin/rea-agents/6.7.0/node_modules/rea-agents/scripts/rea.mjs",
+        "mcp"
+      ],
+      "env": {
+        "REA_MCP_INPUT_SCHEMA_PROFILE": "compact"
+      }
+    },
+    "cua-driver": {
+      "command": "${DATA}/bin/cua-driver/0.38.0/cua-driver.exe",
+      "args": ["mcp"],
+      "env": {
+        "CUA_DRIVER_PERMISSION_MODE": "standard"
+      }
     }
   }
 }

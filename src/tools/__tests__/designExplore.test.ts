@@ -32,7 +32,8 @@ import {
 } from "../designExplore.js";
 import type { ToolContext, ToolResult } from "../../tools/registry.js";
 import { BUILD_SUBPHASES, BUILD_PHASE_PROMPT, getBuildPhase } from "../../modes/buildPhases.js";
-import { mergeAlwaysOnTools } from "../../server/runTools.js";
+import { getLoamMode } from "../../modes/catalog.js";
+import { ALWAYS_ON_TOOLS, mergeAlwaysOnTools } from "../../server/runTools.js";
 
 const HEX = /^#[\da-f]{6}$/i;
 
@@ -133,9 +134,19 @@ describe("loam_design tool run", () => {
     assert.match(result.content, /boom/);
   });
 
-  it("appears in the effective allowlist after merging always-on tools", () => {
-    const merged = mergeAlwaysOnTools({ resolvedAllow: [], registeredTools: [DESIGN_EXPLORE_TOOL_NAME] });
+  it("reaches a build run through the mode catalog", () => {
+    assert.equal(ALWAYS_ON_TOOLS.includes(DESIGN_EXPLORE_TOOL_NAME), false);
+    assert.ok(getLoamMode("build").tools.includes(DESIGN_EXPLORE_TOOL_NAME));
+    const merged = mergeAlwaysOnTools({
+      resolvedAllow: getLoamMode("build").tools,
+      registeredTools: [DESIGN_EXPLORE_TOOL_NAME, ...ALWAYS_ON_TOOLS],
+    });
     assert.ok(merged.includes(DESIGN_EXPLORE_TOOL_NAME));
+    const write = mergeAlwaysOnTools({
+      resolvedAllow: getLoamMode("write").tools,
+      registeredTools: [DESIGN_EXPLORE_TOOL_NAME, ...ALWAYS_ON_TOOLS],
+    });
+    assert.equal(write.includes(DESIGN_EXPLORE_TOOL_NAME), false);
   });
 
   it("injects the design-exploration directive into the system prompt", async () => {

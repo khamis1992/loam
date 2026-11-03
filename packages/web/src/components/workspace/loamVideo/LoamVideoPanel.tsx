@@ -7,6 +7,7 @@ import { FilmcraftBridge, FILMCRAFT_FRAME_URL, type FilmcraftMethod } from '@/li
 import { setLoamVideoTarget } from '@/lib/filmcraftClient';
 import { exportLoamVideo, type LoamVideoExportProgress } from '@/lib/videoStudioExport';
 import { EffectcraftBridge, EFFECTCRAFT_FRAME_URL, type EffectcraftMethod } from '@/lib/effectcraft';
+import { callStudioMethod, taskMediaFile, VideoStudioClient } from '@/lib/videoStudioClient';
 import { setLoamEffectsTarget } from '@/lib/effectcraftClient';
 import {
   planReopenEffects,
@@ -16,6 +17,50 @@ import {
   parseFilmState,
   effectsProjectPathFor,
 } from '@shared/effectsRoundTrip';
+
+const filmBridges = new Map<string, FilmcraftBridge>();
+const effectsBridges = new Map<string, EffectcraftBridge>();
+const videoRelays = new Map<string, { client: VideoStudioClient; refs: number }>();
+
+function releaseVideoRelay(taskId: string): void {
+  const entry = videoRelays.get(taskId);
+  if (!entry) return;
+  entry.refs -= 1;
+  if (entry.refs > 0) return;
+  entry.client.stop();
+  videoRelays.delete(taskId);
+}
+
+/** One executing video relay per task. Film and effects share it. */
+export function retainVideoRelay(taskId: string): () => void {
+  const existing = videoRelays.get(taskId);
+  if (existing) {
+    existing.refs += 1;
+    return () => releaseVideoRelay(taskId);
+  }
+  const client = new VideoStudioClient({
+    taskId,
+    autoReconnect: true,
+    executor: async (command) => {
+      const bridge = command.target === 'effects' ? effectsBridges.get(taskId) : filmBridges.get(taskId);
+      if (!bridge) throw new Error(`no ${command.target} panel is mounted`);
+      if (command.method === 'importFiles' && Array.isArray(command.params.files)) {
+        const files = [];
+        for (const item of command.params.files) {
+          if (typeof item !== 'string' || !item.trim()) continue;
+          files.push(await taskMediaFile(taskId, item));
+        }
+        if (files.length === 0) throw new Error('importFiles needs a task file');
+        const caller = bridge as { call(method: string, ...args: unknown[]): Promise<unknown> };
+        return caller.call('importFiles', ...files);
+      }
+      return callStudioMethod(bridge, command.method, command.params);
+    },
+  });
+  void client.start();
+  videoRelays.set(taskId, { client, refs: 1 });
+  return () => releaseVideoRelay(taskId);
+}
 
 export type LoamVideoBridgeStatus = 'loading' | 'ready' | 'unavailable';
 
@@ -115,10 +160,16 @@ export function LoamVideoPanel({
   const reopenedRef = useRef<string | null>(null);
 
   useEffect(() => {
+    if (!taskId) return;
+    return retainVideoRelay(taskId);
+  }, [taskId]);
+
+  useEffect(() => {
     const iframe = iframeRef.current;
     if (!iframe) return;
     const bridge = new FilmcraftBridge(iframe);
     bridgeRef.current = bridge;
+    if (taskId) filmBridges.set(taskId, bridge);
     let disposed = false;
     setStatus('loading');
     statusCb.current?.('loading');
@@ -132,11 +183,13 @@ export function LoamVideoPanel({
         statusCb.current?.(next);
         if (!hasApi) return;
         readyCb.current?.(bridge);
-        if (sourcePath && importedRef.current !== sourcePath) {
+        if (taskId && sourcePath && importedRef.current !== sourcePath) {
           importedRef.current = sourcePath;
-          void bridge.importFiles(sourcePath).catch(() => {
-            /* the editor may not expose importFiles yet; fc-02 wires the real path */
-          });
+          void taskMediaFile(taskId, sourcePath)
+            .then((file) => bridge.importFiles(file))
+            .catch(() => {
+              /* the editor may not expose importFiles yet; fc-02 wires the real path */
+            });
         }
         // The timeline state and catalog are what "Open in effects" needs to
         // round-trip the selected clip, so read them once the API is up.
@@ -151,11 +204,12 @@ export function LoamVideoPanel({
     return () => {
       disposed = true;
       bridgeRef.current = null;
+      if (taskId) filmBridges.delete(taskId);
       bridge.dispose();
     };
     // Remount only when the source clip changes; callbacks are read via refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourcePath]);
+  }, [sourcePath, taskId]);
 
   // Mount the effects engine alongside the video engine. Both iframes exist for
   // the panel's lifetime; only the visible one is shown, so switching engines is
@@ -165,6 +219,7 @@ export function LoamVideoPanel({
     if (!iframe) return;
     const bridge = new EffectcraftBridge(iframe);
     effectsBridgeRef.current = bridge;
+    if (taskId) effectsBridges.set(taskId, bridge);
     let disposed = false;
 
     bridge
@@ -187,11 +242,12 @@ export function LoamVideoPanel({
     return () => {
       disposed = true;
       effectsBridgeRef.current = null;
+      if (taskId) effectsBridges.delete(taskId);
       setLoamEffectsTarget(null);
       bridge.dispose();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [taskId]);
 
   // Reopen a requested project in the effects engine. The request usually
   // arrives before the engine has booted, so retry until the bridge is ready.

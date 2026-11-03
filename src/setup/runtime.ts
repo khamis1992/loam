@@ -29,8 +29,18 @@ import { browserTools, closeBrowser } from "../tools/browser.js";
 import { computerUseTools } from "../tools/computerUse.js";
 import { initPty, disposePty, ptyStatus, ptyTools } from "../tools/pty.js";
 import { registerMcpTools, type McpToolset } from "../tools/mcp.js";
-import { OllamaEmbedder } from "../memory/embeddings.js";
-import { MemoryStore, startMemoryDreamJob } from "../memory/store.js";
+import { prepareApiAnything } from "../tools/apiAnything/server.js";
+import { createApiAnythingLearnTools } from "../tools/apiAnything/learnTools.js";
+import { fromBase64, OllamaEmbedder } from "../memory/embeddings.js";
+import { MemoryStore, setMemoryRecallMirror, setRecallGardenerStarter, startMemoryDreamJob } from "../memory/store.js";
+import { database } from "../server/sqliteStore.js";
+import { createRecallService } from "../memory/recall/service.js";
+import { getRecallService, setRecallService } from "../memory/recall/instance.js";
+import type { Embedder } from "../memory/recall/types.js";
+import { migrateLegacyStore } from "../memory/recall/migrateLegacy.js";
+import { startGardener } from "../memory/recall/gardener.js";
+import { createLoamMemoryTools } from "../tools/memoryTools.js";
+import { configureTurnHooks, textModelFromOllama } from "../review/turnHook.js";
 import { createMemoryTools, createRecallTools } from "../tools/memory.js";
 import { recallIndex } from "../graph/recall.js";
 import { createSkillTools } from "../tools/skills.js";
@@ -55,8 +65,9 @@ import { createVaultTools } from "../tools/vaultTools.js";
 import { createCodeSessionTools } from "../tools/codeSession.js";
 import { createDocsLookupTools } from "../tools/docsLookup.js";
 import { createSemanticSearchTools } from "../tools/semanticSearch.js";
-import { createKnowledgeTools } from "../tools/knowledge.js";
+import { createKnowledgeTools, createTaskFilesIngestTool, type KnowledgeToolOptions } from "../tools/knowledge.js";
 import { createLegalTools } from "../tools/legalTools.js";
+import { createQatarLibraryTools } from "../tools/qatarLibraryTools.js";
 import { normalizeLegalConfig } from "../legal/config.js";
 import { requestMattersKey, parentPortOf } from "../legal/keyHandoff.js";
 import { createLegalRuntime, type LegalRuntime } from "../legal/runtime.js";
@@ -64,6 +75,7 @@ import { configureLegalProtection } from "../legal/security/protection.js";
 import { fromFile } from "../knowledge/importers.js";
 import { DATA_DIR } from "../config.js";
 import { createGenExtraTools } from "../tools/genExtra.js";
+import { applyMcpPresets } from "../tools/mcpPresets.js";
 import { defaultGenProviders } from "../creative/genProviders.js";
 import { createArtifactTools } from "../tools/artifactTools.js";
 import { planTool, messageTool } from "../tools/specAliases.js";
@@ -71,7 +83,25 @@ import { createTodoTools } from "../tools/todoTools.js";
 import { createContextRecallTools } from "../tools/contextRecallTool.js";
 import { createProjectWikiTools } from "../tools/wikiTools.js";
 import { createAppBridgeTools } from "../tools/appBridgeTools.js";
+import { createSecurityAuditTools } from "../tools/securityAuditTools.js";
+import { createSecurityScanTools } from "../tools/securityScanTools.js";
+import { createReTools } from "../tools/reTools.js";
+import { createFuzzTools } from "../tools/fuzzTools.js";
+import { createRemediateTools } from "../tools/remediateTools.js";
+// devflow mode: the نتريو swarm agent tools (same /api/swarm/runs surface the UI uses).
+import { createSecurityTools, createSwarmTools } from "../tools/serviceBridgeTools.js";
+import { CodeGraphService } from "../codegraph/service.js";
+import { createCodeGraphTools } from "../codegraph/tools.js";
+import { setWorkspaceMutationObserver } from "../codegraph/mutations.js";
 import { createUnboundCodemodeTool } from "../codemode/tool.js";
+import { redTools } from "../tools/red.js";
+import { createMobileSecurityTools } from "../tools/mobileSecurity.js";
+import { createBudgetTools } from "../tools/budgetTools.js";
+import { createThreatModelTools } from "../tools/threatModelTools.js";
+import { createTypstTools } from "../tools/typstTools.js";
+import { createFinancialTools } from "../tools/financialTools.js";
+import { createCoverageTools } from "../tools/coverageTools.js";
+import { createProxyTools } from "../tools/proxy.js";
 
 export interface Runtime {
   cfg: Config;
@@ -96,6 +126,8 @@ export interface Runtime {
    * when memory embeddings are off and no embedder is available.
    */
   recall: import("../graph/recall.js").RecallIndex | null;
+  /** Code map service (graphify engine); null when codeGraph.enabled is false. */
+  codeGraph: import("../codegraph/service.js").CodeGraphService | null;
   dispose: () => Promise<void>;
 }
 
@@ -105,7 +137,7 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   log.info(`pty: ${ptyStatus()}`);
 
   const registry = new ToolRegistry();
-  registry.registerAll([...fileTools, ...projectMemoryTools, ...shellTools, ...ptyTools, ...webTools, ...browserTools, ...computerUseTools, ...attachmentTools(), ...symbolTools(), ...searchTools(), ...pentestTools()]);
+  registry.registerAll([...fileTools, ...projectMemoryTools, ...shellTools, ...ptyTools, ...webTools, ...browserTools, ...computerUseTools, ...attachmentTools(), ...symbolTools(), ...searchTools(), ...pentestTools(), ...redTools()]);
   registry.registerAll(createPhaseTools());
   registry.registerAll(createFinishTools());
   registry.registerAll(createMultiEditTools());
@@ -116,6 +148,29 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   registry.registerAll(createContextRecallTools());
   registry.registerAll(createProjectWikiTools());
   registry.registerAll(createAppBridgeTools({ gate: writeGate }));
+  registry.registerAll(createSecurityAuditTools({ cfg, ollama, tools: registry }));
+  registry.registerAll(createSecurityScanTools({ ollama }));
+  registry.registerAll(createMobileSecurityTools());
+  registry.registerAll(createBudgetTools());
+  registry.registerAll(createThreatModelTools());
+  registry.registerAll(createTypstTools());
+  registry.registerAll(createFinancialTools());
+  registry.registerAll(createCoverageTools());
+  registry.registerAll(createProxyTools());
+  registry.registerAll(createReTools());
+  registry.registerAll(createFuzzTools());
+  registry.registerAll(createRemediateTools());
+  // devflow: swarm_run/swarm_status call the local realswarm API; reachability is
+  // still per-mode (only the devflow catalog entry lists them).
+  registry.registerAll(createSwarmTools());
+  registry.registerAll(createSecurityTools());
+
+  // Code map: tools exist only when enabled, so disabled installs see no extra schemas.
+  const codeGraph = cfg.codeGraph?.enabled ? new CodeGraphService(cfg.codeGraph) : null;
+  if (codeGraph) {
+    registry.registerAll(createCodeGraphTools(codeGraph));
+    setWorkspaceMutationObserver((workspace) => codeGraph.indexer.markDirty(workspace));
+  }
   // Codemode ships in every mode but stays inert until the user opts in: the
   // instance registered here is unbound, and index.ts swaps in a per-run
   // instance bound to that run's allowlisted registry before execution.
@@ -125,9 +180,55 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   registry.registerAll(mirofishTools().map(tool => ({ ...tool, integration: true })));
 
   const embedder = new OllamaEmbedder(cfg.ollamaUrl, cfg.memory.model);
+  const recallEmbedders = new Set(["nomic-embed-text:latest", "bge-m3", "embeddinggemma"]);
+  const recallEmbedder: Embedder = {
+    async embed(texts) {
+      const chosen = getRecallService()?.repo.getSetting("embedder");
+      const model = chosen && recallEmbedders.has(chosen) ? chosen : cfg.memory.model;
+      const active = model === cfg.memory.model ? embedder : new OllamaEmbedder(cfg.ollamaUrl, model);
+      return active.embed(texts);
+    },
+  };
+  // C9 memory ranking (default off, OD-7): recency + importance re-ranking
+  // of cosine hits, enabled only by the orchestration switch.
+  const mr = cfg.orchestration?.memoryRanking;
   const memory = cfg.memory.enabled
-    ? new MemoryStore(cfg.memory.file, embedder, cfg.memory.model, cfg.memory.dedupeThreshold)
+    ? new MemoryStore(
+        cfg.memory.file, embedder, cfg.memory.model, cfg.memory.dedupeThreshold,
+        ...(mr?.enabled
+          ? [{ weights: { similarityWeight: mr.similarityWeight, recencyWeight: mr.recencyWeight, importanceWeight: mr.importanceWeight, recencyHalfLifeDays: mr.recencyHalfLifeDays }, candidateMultiplier: mr.candidateMultiplier }]
+          : []),
+      )
     : null;
+  const loamRecall = cfg.memory.enabled
+    ? createRecallService(database(), {
+        embedder: recallEmbedder,
+        model: textModelFromOllama(ollama, cfg.model),
+        config: { models: { generator: cfg.model, embedder: cfg.memory.model } },
+        dbBytes: () => 0,
+      })
+    : null;
+  if (loamRecall) {
+    setRecallService(loamRecall);
+    configureTurnHooks({ model: textModelFromOllama(ollama, cfg.model), mode: "ask" });
+    setMemoryRecallMirror(async (entry) => {
+      const kind = entry.kind === "preference" ? "preference" : "fact";
+      const chosen = loamRecall.repo.getSetting("embedder");
+      const sameModel = !chosen || chosen === cfg.memory.model;
+      await loamRecall.remember({
+        content: entry.text,
+        scope: "user",
+        kind,
+        origin: entry.source === "user" ? "user" : "assistant",
+        tags: entry.tags,
+        ...(sameModel && entry.vector && entry.dim ? { embedding: fromBase64(entry.vector, entry.dim) } : {}),
+      });
+    });
+    setRecallGardenerStarter(() => startGardener(loamRecall.repo, loamRecall.config, () => textModelFromOllama(ollama, cfg.model)));
+    void migrateLegacyStore(loamRecall, cfg.memory.file, embedder, loamRecall.config).catch((error) => {
+      log.warn(`recall migration skipped: ${error instanceof Error ? error.message : String(error)}`);
+    });
+  }
   // Background consolidation ("dreaming"): merges duplicates and drops stale
   // unused entries while preserving user preferences. Idempotent; unref'd timer.
   const stopDream = memory
@@ -142,6 +243,7 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   // Always hand tools a WriteGate object; per-write gateActive() decides staging vs. direct apply.
   const gate = writeGate;
   if (memory) registry.registerAll(createMemoryTools(memory, { gate }));
+  if (loamRecall) registry.registerAll(createLoamMemoryTools());
   // N16 cross-run recall: the shelf shares the memory embedder, and without it
   // the shelf still answers lexically, so the tools are always registered and a
   // node is vectorized exactly when memory embeddings are on. Reachability is
@@ -163,7 +265,14 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   const preview = new PreviewService();
   registry.registerAll(createPreviewTools(preview, cfg));
   registry.registerAll(createRorkTools(preview).map(tool => ({ ...tool, integration: true })));
-  registry.registerAll(createFrontierBridgeTools(preview).map(tool => ({ ...tool, integration: true })));
+  // Phase-2 W2 «تحدث مع ملفاتك»: the garden's wiring (embedder/model) is
+  // resolved once and shared by the kb_* tools, the bulk task_files_ingest and
+  // the legacy rag_* redirectors, so every path ranks the same way.
+  const knowledgeOptions: KnowledgeToolOptions = {
+    embedder: cfg.memory.enabled && cfg.memory.model ? embedder : undefined,
+    model: cfg.memory.model || cfg.model,
+  };
+  registry.registerAll(createFrontierBridgeTools(preview, knowledgeOptions).map(tool => ({ ...tool, integration: true })));
   registry.registerAll(createSubagentTools(ollama, registry));
   registry.register(createFanoutTool({ ollama, parentRegistry: registry }));
   registry.registerAll(createManagedSessionTools({ ollama, parentRegistry: registry }));
@@ -189,10 +298,10 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   // N3 Knowledge Garden: user-built RAG store. The vector channel shares the
   // memory embedder; without it the garden still answers lexically, so the tools
   // are always registered and reachability is decided by the per-run toggle.
-  registry.registerAll(createKnowledgeTools({
-    embedder: cfg.memory.enabled && cfg.memory.model ? embedder : undefined,
-    model: cfg.memory.model || cfg.model,
-  }));
+  // Phase-2 W2: task_files_ingest bulk-imports the task workspace through the
+  // same garden (it rides the same gates as kb_*, see server/knowledgeTools.ts).
+  registry.registerAll(createKnowledgeTools(knowledgeOptions));
+  registry.register(createTaskFilesIngestTool(knowledgeOptions));
   // Legal mode (Qatar): opt-in. The corpus is public law; matters are encrypted with a
   // DPAPI-wrapped key handed over by Electron main (fail closed without it).
   const legalConfig = normalizeLegalConfig(cfg.legal);
@@ -208,13 +317,25 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   if (legal) {
     configureLegalProtection({ seal: legal.seal, open: legal.open });
     registry.registerAll(createLegalTools(legal.toolDeps));
+    registry.registerAll(createQatarLibraryTools(legal.library));
     if (!requestMattersKey(parentPortOf(process))) log.warn("legal: no Electron parent port; matters stay locked");
   }
   // N12 generator tools: media/search providers from the environment plus the
   // runtime model as the reasoning backend for solve_logic / generate_storyboard.
   registry.registerAll(createGenExtraTools({ providers: defaultGenProviders(cfg), reasoner: ollama }));
 
-  const mcp = opts.mcp === false ? null : await registerMcpTools(registry, cfg.mcpServers, cfg.workspace);
+  // Cap H: prepareApiAnything overlays panel settings, protects Loam's api-anything
+  // state, installs the tier resolver, and (when enabled + vendored) adds the
+  // Loam-managed server with its policy hooks. Disabled by default until H4 passes.
+  // Blueprint gap 5: curated BYOK presets (supabase/vercel/google-*) overlay first.
+  const apiAnything = prepareApiAnything(cfg, applyMcpPresets(cfg.mcpServers));
+  const mcp = opts.mcp === false ? null : await registerMcpTools(registry, apiAnything.servers, cfg.workspace, apiAnything.hooks);
+  // Cap H §6.5: the nine api_* learn tools exist only while the Loam-managed
+  // server is running; they register integration:true (per-task grant), the
+  // policy envelope guards every call (§6.5 P3 acceptance 1).
+  if (apiAnything.policy && cfg.apiAnything && mcp?.servers.includes("api-anything")) {
+    registry.registerAll(createApiAnythingLearnTools(cfg.apiAnything, apiAnything.policy));
+  }
   registry.registerAll(createIntegrationTools(registry));
 
   return {
@@ -228,15 +349,21 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
     preview,
     recall,
     mcpServers: mcp?.servers ?? [],
+    codeGraph,
     mcp,
     dispose: async (): Promise<void> => {
       stopDream?.();
+      setRecallService(null);
+      setMemoryRecallMirror(null);
+      setRecallGardenerStarter(null);
       screenLive.stop();
       preview.stop();
       disposeShellSessions();
       disposePty();
       await closeBrowser();
       if (mcp) await mcp.close();
+      setWorkspaceMutationObserver(null);
+      if (codeGraph) await codeGraph.dispose();
     },
   };
 }

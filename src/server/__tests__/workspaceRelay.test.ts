@@ -68,7 +68,7 @@ describe("workspaceRelay (craft targets)", () => {
   });
 
   it("rejects with PANEL_NOT_OPEN and publishes an open request when nothing is attached", async () => {
-    const relay = new WorkspaceRelay();
+    const relay = new WorkspaceRelay({ attachTimeoutMs: 0 });
     try {
       // No panel is attached to this task at all, so the enqueue cannot be
       // consumed: the relay asks the shell to open the editor and rejects.
@@ -235,7 +235,7 @@ describe("workspaceRelay (video backward compatibility)", () => {
   });
 
   it("names the editor in the PANEL_NOT_OPEN message", async () => {
-    const relay = new WorkspaceRelay();
+    const relay = new WorkspaceRelay({ attachTimeoutMs: 0 });
     await assert.rejects(
       relay.enqueue("video-2", "effects", "renderFrame"),
       (err: unknown) => /Loam Effects/.test((err as Error).message),

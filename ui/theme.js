@@ -67,7 +67,7 @@
     document.querySelectorAll('a[href="/"],a[href="/index.html"]').forEach(function(a){a.target='_top';});
     if(window.self!==window.top)return;
     var nav=document.createElement('nav');nav.setAttribute('aria-label','العودة إلى مساحة العمل');
-    nav.style.cssText='position:fixed;bottom:12px;inset-inline-end:16px;z-index:1000;display:flex;gap:8px;padding:8px;border:1px solid var(--border,#425448);border-radius:10px;background:var(--panel,#182820);box-shadow:0 3px 15px #0003;font:13px Arial';
+    nav.style.cssText='position:fixed;bottom:12px;inset-inline-start:16px;z-index:1000;display:flex;gap:8px;padding:8px;border:1px solid var(--border,#425448);border-radius:10px;background:var(--panel,#182820);box-shadow:0 3px 15px #0003;font:13px Arial';
     var back=document.createElement('a');back.textContent='عودة';back.href=parentUrl;
     try{var ref=new URL(document.referrer);if(ref.origin===location.origin&&(ref.pathname==='/'||ref.pathname==='/index.html'))back.href=ref.href;}catch(e){}
     var home=document.createElement('a');home.textContent='الرئيسية';home.href='/#/home';

@@ -150,6 +150,25 @@ describe('VideoStudioClient', () => {
     expect(effectsCall).toHaveBeenCalledTimes(1);
     expect(filmCall).toHaveBeenCalledTimes(1);
     expect(filmCall).toHaveBeenCalledWith('importFiles', {});
+    const clip = new File(['video'], 'clip.mp4', { type: 'video/mp4' });
+    await executor({ id: 'd', taskId: 't', target: 'film', method: 'importFiles', params: { files: [clip] } });
+    expect(filmCall).toHaveBeenCalledWith('importFiles', clip);
+    await executor({
+      id: 'e',
+      taskId: 't',
+      target: 'film',
+      method: 'execute',
+      params: { command: 'file.newSequence', params: { fromItems: [49] } },
+    });
+    expect(filmCall).toHaveBeenCalledWith('execute', 'file.newSequence', { fromItems: [49] });
+    await executor({
+      id: 'f',
+      taskId: 't',
+      target: 'film',
+      method: 'readFile',
+      params: { path: '/exports/montage.mp4' },
+    });
+    expect(filmCall).toHaveBeenCalledWith('readFile', '/exports/montage.mp4');
     // An unknown target is refused rather than silently dropped on the floor.
     await expect(
       executor({ id: 'c', taskId: 't', target: 'audio', method: 'inspect', params: {} } as unknown as VideoStudioCommand),

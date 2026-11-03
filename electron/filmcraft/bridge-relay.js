@@ -47,6 +47,21 @@
       if (!api || typeof api[method] !== "function") {
         throw new Error("Loam Video editor API not ready or missing method: " + String(method));
       }
+      // The wasm importer accepts a FileList. A path string is not one, so a File
+      // sent by the host is wrapped here, inside the editor page.
+      if (method === "importFiles" && typeof DataTransfer !== "undefined") {
+        var incoming = [];
+        args.forEach(function (arg) {
+          if (typeof FileList !== "undefined" && arg instanceof FileList) {
+            for (var i = 0; i < arg.length; i += 1) incoming.push(arg[i]);
+          } else if (typeof File !== "undefined" && arg instanceof File) incoming.push(arg);
+        });
+        if (incoming.length > 0) {
+          var transfer = new DataTransfer();
+          incoming.forEach(function (file) { transfer.items.add(file); });
+          args = [transfer.files];
+        }
+      }
       return api[method].apply(api, args);
     }).then(
       function (result) {

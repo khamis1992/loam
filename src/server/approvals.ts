@@ -5,6 +5,7 @@
  * user approves or denies — in the companions UI approvals center or via API.
  */
 import crypto from "node:crypto";
+import { persistGate, settleGate, gatesToRehydrate } from "../orchestration/durable/gateBridge.js";
 import { notifyApprovalPending } from "./notifications.js";
 import { BoundedMap } from "../memory/cache.js";
 import { registerCacheStats } from "../memory/stats.js";
@@ -44,6 +45,7 @@ export function createApproval(input: { taskId: string; tool: string; summary: s
     createdAt: new Date().toISOString(),
   };
   approvals.set(record.id, record);
+  try { persistGate("tool_approval", record.id, record.taskId, record, TTL_MS); } catch { /* best effort */ }
   // Notification feed hook (option #20): a pending sensitive action is one
   // unread notification; deciding it does not auto-clear the feed entry.
   notifyApprovalPending({ id: record.id, taskId: record.taskId, tool: record.tool, summary: record.summary });
@@ -58,6 +60,7 @@ export function createApproval(input: { taskId: string; tool: string; summary: s
 export function decideApproval(id: string, decision: "approve" | "deny"): ApprovalRecord | undefined {
   const rec = approvals.get(id);
   if (!rec || rec.status !== "pending") return rec;
+  try { settleGate(id, { decision }); } catch { /* best effort */ }
   rec.status = decision === "approve" ? "approved" : "denied";
   rec.decidedAt = new Date().toISOString();
   rec.decidedBy = "user";
@@ -93,4 +96,12 @@ export async function waitForDecision(id: string, signal: AbortSignal | undefine
     await new Promise((r) => setTimeout(r, 250));
   }
   return "expired";
+}
+
+// C2: re-create tool approvals pending before a restart.
+export function rehydrateApprovals(): void {
+  for (const g of gatesToRehydrate("tool_approval")) {
+    const r = g.payload as ApprovalRecord;
+    if (r && typeof r === "object" && r.tool) approvals.set(g.id, { ...r, status: "pending" });
+  }
 }

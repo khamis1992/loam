@@ -43,10 +43,23 @@ asarUnpack:
   - "**/node_modules/node-pty/**/*"
   - "**/node_modules/@img/**/*"
   - "**/node_modules/sharp/**/*"
+  # api-anything runs as a plain Node child (ELECTRON_RUN_AS_NODE) and launches Edge via
+  # playwright-core, which resolves its own files from disk; keep the whole payload real.
+  - "addons/api-anything/pkg/**/*"
 afterPack: ./electron/afterPack.cjs
 # electron-builder's dependency collector excludes directories named examples.
 # Three.js ships its runtime controls/loaders/exporters in examples/jsm.
 extraResources:
+  # The memory-skills MCP server.cjs is an esbuild output under a .gitignore'd
+  # `dist/`, so no positive files pattern can beat the default ignore. Shadow it
+  # into app.asar.unpacked (the overlay the Electron fs serves for asar paths):
+  # the packaged app then finds ${ROOT}/addons/memory-skills-mcp/dist/server.cjs
+  # and the memory-skills MCP connects; without it the packaged app lost that
+  # server while the stdio node_modules servers kept working.
+  - from: addons/memory-skills-mcp/dist
+    to: app.asar.unpacked/addons/memory-skills-mcp/dist
+    filter:
+      - "server.cjs*"
   - from: node_modules/ffmpeg-static
     to: app.asar.unpacked/node_modules/ffmpeg-static
     filter:
@@ -56,6 +69,17 @@ extraResources:
     to: app.asar.unpacked/node_modules/three/examples/jsm
     filter:
       - "**/*.js"
+  - from: resources/codegraph
+    to: app.asar.unpacked/resources/codegraph
+    filter:
+      - "uv.exe"
+      - "uv.json"
+      - "requirements-0.9.95-mcp.txt"
+      - "LICENSE-uv"
+  # Remediate advisory packs (E9): hash-pinned data shipped read-only with the app.
+  - from: security/advisories
+    to: app/security/advisories
+  # Qatar legal runtime (OCR + PDF rendering payloads must be real on disk).
   - from: resources/legal/ocr
     to: app.asar.unpacked/resources/legal/ocr
   - from: node_modules/tesseract.js

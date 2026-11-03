@@ -24,8 +24,10 @@ export interface BridgeCommand {
   effect: BridgeEffect;
   argv: ArgvToken[];
   params: Record<string, BridgeParam>;
-  /** How stdout is parsed into the result envelope. */
-  output: "json" | "text";
+  /** How stdout is parsed into the result envelope. `base64` preserves binary output; `jsonl` preserves each JSON object untruncated. */
+  output: "json" | "text" | "base64" | "jsonl";
+  /** Per-command environment overrides (e.g. sanitize a broken provider config). */
+  env?: Record<string, string>;
   timeoutSeconds?: number;
 }
 

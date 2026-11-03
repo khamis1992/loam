@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "note": "BUILD_SPEC §12.3 fixed task set. Run with LOAM_SWARM_TASKSET=bench/swarm-taskset.json and LOAM_SWARM_COMPARE_ROUNDS=3. S1 is the existing compare brief (probed live); the others use completed + recorded verification as the productWorks proxy.",
+  "tasks": [
+    {
+      "id": "S1",
+      "size": "small",
+      "brief": "@compare"
+    },
+    {
+      "id": "S2",
+      "size": "small",
+      "brief": "Write slugify.js exporting slugify(text): lower-case, trim, Arabic letters kept, runs of non-letters become one dash. Add slugify.test.js with node:test (5 cases). Verify with node --test slugify.test.js."
+    },
+    {
+      "id": "S3",
+      "size": "small",
+      "seed": "bench/swarm-taskset-seeds/calculator",
+      "brief": "In the existing calculator.cjs, make divide(a, b) throw an Error containing 'zero divisor' when b is 0, without changing calculator.test.cjs; add a test for it in divide.test.cjs. Verify with node --test."
+    },
+    {
+      "id": "M1",
+      "size": "medium",
+      "brief": "Build a notes REST API in Node.js with no packages: server.cjs with GET/POST/PUT/DELETE /notes, notes stored in notes.json, tag filtering via ?tag=, full-text search via ?q=, validation with 400 errors (title required, max 200 chars), and notes.test.cjs covering every route. Listen on process.env.PORT only when run directly."
+    },
+    {
+      "id": "M2",
+      "size": "medium",
+      "brief": "Build an expense tracker web app in Node.js with no packages: server.cjs serving an Arabic RTL page at / (form for amount, category, date; a list; a monthly total per category) and a JSON API (GET/POST /expenses, DELETE /expenses/:id) persisted to expenses.json; validation with 400 errors; expenses.test.cjs covering the API and the totals."
+    },
+    {
+      "id": "M3",
+      "size": "medium",
+      "brief": "Build a team task board in Node.js with no packages: login with a password hashed by crypto.scrypt and a session cookie; tasks with title, assignee and status stored in tasks.json; an Arabic RTL board page with three columns; REST API for tasks (GET/POST/PATCH); plus tasks.test.cjs covering login and the API."
+    },
+    {
+      "id": "L1",
+      "size": "large",
+      "brief": "Build a small library loans system in Node.js with no packages: staff login with a password hashed by crypto.scrypt and a session cookie; books, members and loans stored in a JSON database file with a migration step; an admin dashboard page (Arabic RTL) listing overdue loans; REST API for books, members, loans (borrow, return, renew with a 3-renewal limit); a daily overdue report exported as CSV; and node:test coverage for auth, loans rules and the CSV export."
+    }
+  ]
+}
