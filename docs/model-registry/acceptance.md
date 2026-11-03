@@ -186,3 +186,26 @@
 - **Ready for**: Integration testing and user feedback
 
 **Next milestone**: Wire into server startup, mount routes, test with real APIs
+
+## Recorded run — 2026-11-03
+
+Automated in `tests/e2e/model-registry.flow.test.ts` (12 passed, 0 failed). The fake key `sk-test-REDACTED-0000` was stored only through the vault mock and was absent from the registry JSON.
+
+| Item | Result | Evidence |
+| --- | --- | --- |
+| A1 | Not run on a fresh profile | Needs a first launch of a copy that still has only `config.json` |
+| A2 | Partial | Last project start listed 481 models from the live directory. `freellmapi` and `opencode-go` were unreachable |
+| A3 | Not run | No LM Studio or llama.cpp server was confirmed on this machine |
+| A4 | Partial | A closed port raises an error and a provider can be saved disabled. A live 5s failover was not timed |
+| A5 | Pass in the automated suite | E2 writes a credential id and the registry file has no key |
+| A6 | Stub only | E7 Anthropic stub returned a tool call. No live Anthropic key was used |
+| A7 | Stub only | E7 Gemini stub returned a tool call. No live Gemini key was used |
+| A8 | Not run | No LongCat key |
+| A9 | Not run | OpenCode Go was unreachable at the last start |
+| A10 | Not run | z.ai base URL is still unverified |
+| A11 | Not run on the live UI | A 401 from the OpenAI-compatible adapter becomes an auth error in the unit test |
+| A12 | Pass for a file reload | The registry file keeps the default and fallback after the cache is cleared. An Electron restart was not run |
+| A13 | Pass for the fake key | A search of the Loam folders under %APPDATA% and %LOCALAPPDATA% found no `sk-test-REDACTED-0000` |
+| A14 | Pass for the env path | `start-web.bat` still starts the same server. An env-backed provider reads the key from the process and does not store it. The bat file was not launched, so port 3939 stayed free |
+
+On 2026-11-03 a temporary page loaded the legacy Settings screen against an isolated registry file. The walk covered S1 (defaults, providers, models, chains), S2–S5 (custom provider, no key, closed port, typed remote id, tools/vision/thinking/context/output/temperature, save onto the default chain), S6 (timeout and delete in the provider dialog), S7 (limits, probe, replacement), and S8 (the down button reversed the default chain). The saved registry JSON had `auth.type` `none` and no key text. S9 was executed from the real `fillModelSelects` in `ui/app.js`: local and cloud groups, provider labels, disabled models hidden, and an unregistered value kept visible. The live `config.json` has no key field. The registry file stores environment-variable names, not raw keys. Live items A1, A3, and A8–A11 were not run. A13 found no copy of the fake key in the Loam app-data folders. A14 was checked through the env-key path, and `start-web.bat` was not launched.

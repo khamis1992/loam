@@ -9,12 +9,13 @@ import { renderMarkdown } from './markdown.js';
 import { studios, studioById, installStudioBridge } from './studio-routes.js';
 // Per-bot chat accent color (C20): a task owned by a companion tints the chat.
 import { chatAccentFor, accentVars } from './chat-color.js';
+import { initModelsSettings } from './models-settings.js';
 const $ = id => document.getElementById(id);
 const updateNavigation=createNavigation();
 mountAppUpdates({confirm:confirmAction});
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const labels = {queued:'في الانتظار',running:'جارٍ التنفيذ',done:'مكتملة',error:'تعثّرت',interrupted:'انقطع التشغيل',cancelled:'متوقفة'};
-const state = {modes:[],tasks:[],task:null,mode:null,draft:null,attachments:[],sequence:0,stream:null,posting:new Set(),launching:false,uploading:false,projectId:null};
+const state = {modes:[],tasks:[],task:null,mode:null,draft:null,attachments:[],sequence:0,stream:null,posting:new Set(),launching:false,uploading:false,projectId:null,runModel:''};
 let livePreview=null;
 const busy = task => ['queued','running'].includes(task?.status);
 const modeById = id => state.modes.find(m=>m.id===id);
@@ -96,7 +97,54 @@ $('navBack').onclick=()=>history.back();$('navFwd').onclick=()=>history.forward(
 $('homeAttach').onclick=()=>{pendingHomePrompt={mode:homeMode,text:$('homePrompt').value.trim()};location.hash='#/modes/'+homeMode;};
 $('homePrompt').addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();$('homeForm').requestSubmit();}});
 document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='k'){event.preventDefault();$('sidebar').classList.remove('collapsed');$('sidebar').classList.add('open');$('menuToggle').setAttribute('aria-expanded','true');$('sideSearch').focus();}});
-$('sidebarModel').onchange=run(async()=>{const value=$('sidebarModel').value;await post('/api/settings',{model:value});$('model').value=value;notice('تم حفظ نموذج التنفيذ.');});
+function modelOptionValue(source,id){return `${source}\t${id}`;}
+function modelChoices(payload){
+  if(Array.isArray(payload.entries)&&payload.entries.length){
+    return payload.entries.filter(item=>item.enabled!==false).map(item=>{
+      const remote=String(item.id).startsWith(`${item.providerId}/`)?String(item.id).slice(item.providerId.length+1):item.id;
+      return {id:remote,source:`registry:${item.providerId}`,location:item.location==='cloud'?'cloud':'local',label:`${item.label} — ${item.providerId}`,ref:`registry:${item.id}`};
+    });
+  }
+  const labels=new Map((payload.sources||[]).map(source=>[source.source,source.label]));
+  return (payload.models||[]).map(item=>{
+    if(typeof item==='string')return {id:item,source:'ollama',label:item,location:'local'};
+    const id=item.id||item.name;
+    const source=item.source||'ollama';
+    const provider=labels.get(source);
+    return {id,source,location:source==='ollama'?'local':'cloud',label:provider&&source!=='ollama'?`${item.name||id} — ${provider}`:(item.name||id)};
+  }).filter(choice=>choice.id);
+}
+function choiceMatches(choice,settingsModel,flexModel){
+  if(choice.ref)return settingsModel===choice.ref;
+  if(choice.source.startsWith('registry:'))return settingsModel===`registry:${choice.source.slice(9)}/${choice.id}`;
+  if(flexModel&&choice.id===flexModel&&(choice.source==='flex'||choice.source==='cloud'))return settingsModel===flexModel||settingsModel===`${flexModel}:cloud`;
+  return choice.source==='ollama'&&choice.id===settingsModel;
+}
+function fillModelSelects(payload,settingsModel){
+  const flexModel=String(payload.active?.flex?.model||'').replace(/:cloud$/,'');
+  const choices=modelChoices(payload);
+  const group=(location,title)=>`<optgroup label="${title}">${choices.filter(choice=>(choice.location||'local')===location).map(choice=>`<option value="${esc(modelOptionValue(choice.source,choice.id))}">${esc(choice.label)}</option>`).join('')}</optgroup>`;
+  let html=group('local','محلي')+group('cloud','سحابي');
+  if(settingsModel&&!choices.some(choice=>choiceMatches(choice,settingsModel,flexModel)||choice.id===settingsModel))html=`<option value="${esc(modelOptionValue('legacy',settingsModel))}">(not registered) ${esc(settingsModel)}</option>`+html;
+  $('model').innerHTML=html;$('sidebarModel').innerHTML=html;
+  const selected=choices.find(choice=>choiceMatches(choice,settingsModel,flexModel))||choices.find(choice=>choice.id===settingsModel)||choices[0];
+  if(!selected)return;
+  const value=modelOptionValue(selected.source,selected.id);
+  $('model').value=value;$('sidebarModel').value=value;
+  state.runModel=settingsModel||selected.id;
+}
+async function applyModelChoice(raw){
+  const tab=String(raw).indexOf('\t');
+  const source=tab<0?'ollama':raw.slice(0,tab);
+  const id=tab<0?raw:raw.slice(tab+1);
+  if(!id)throw new Error('لا يوجد نموذج متاح.');
+  const result=await api('/api/model',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({id,source})});
+  state.runModel=result.model||id;
+  $('model').value=raw;$('sidebarModel').value=raw;
+  notice(result.needsKey?'حُفظ النموذج، والمفتاح غير موجود بعد. أضفه من إعدادات النماذج.':'تم حفظ نموذج التنفيذ.');
+}
+$('sidebarModel').onchange=run(()=>applyModelChoice($('sidebarModel').value));
+document.getElementById('openModelsSettings')?.addEventListener('click',()=>{void initModelsSettings();});
 function renderModes() {
   $('homeModes').innerHTML=state.modes.map(m=>`<button type="button" class="mchip" data-home-mode="${esc(m.id)}" aria-pressed="${m.id===homeMode}"><span class="mc-ic">${icon(m.id)}</span><span class="mc-t">${esc(m.labelAr)} · ${esc(m.tagline)}</span></button>`).join('');
   $('homeModes').onclick=event=>{const button=event.target.closest('[data-home-mode]');if(!button)return;homeMode=button.dataset.homeMode;document.querySelectorAll('[data-home-mode]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));updateHomeMode();};
@@ -293,11 +341,11 @@ async function showServices(){
   const results=await Promise.allSettled(checks.map(async([,path])=>api(path)));
   if(location.hash!=='#/services')return;
   $('serviceCards').innerHTML=results.map((result,index)=>{let success=result.status==='fulfilled';const data=success?result.value:null;let detail=success?'استجاب مسار الخدمة للفحص.':result.reason.message;if(index===1&&success)detail=`${data.models?.length||0} نماذج متاحة. لم يُختبر توليد الإجابات بهذا الفحص.`;if(index===2&&success)detail=`${data.queued?.length||0} في الانتظار · ${data.active?'تنفيذ جارٍ':'لا تنفيذ جارٍ'}`;if(index===6&&success)detail=(data.servers||[]).map(s=>s.name+': '+(s.connected?'متصل · '+s.toolCount+' أدوات':'غير متصل')).join(' · ');if(index===6&&success&&(!data.servers?.length||data.servers.some(s=>!s.connected)))success=false;if(index===7&&success){const r=data.runtime||{};detail=!data.enabled?(r.state==='ready'?'المحرك مثبّت · الميزة معطّلة في الإعدادات':'معطّلة · المحرك غير مثبّت'):r.state==='ready'?`جاهز · الإصدار ${esc(r.version||'')}`:r.state==='broken'?'المحرك تالف — أعد التثبيت':'المحرك غير مثبّت';if(data.install?.running)detail=`جارٍ التثبيت… (${esc(data.install.step||'')})`;success=!!data.ok;}if(index===0&&success)detail=`${data.mcpServers?.length||0} اتصالات إضافية مهيأة؛ يلزم اختبار اتصال كل منها.`;return `<div class="service-card"><span class="pill ${success?'done':'error'}">${success?'استجاب للفحص':'غير متاح'}</span><h3>${checks[index][0]}</h3><p>${esc(detail)}</p></div>`;}).join('');
-  const models=results[1];if(models.status==='fulfilled'){const selected=$('model').value;$('model').innerHTML=(models.value.models||[]).map(m=>`<option>${esc(typeof m==='string'?m:m.name)}</option>`).join('');if(selected)$('model').value=selected;}
+  const models=results[1];if(models.status==='fulfilled')fillModelSelects(models.value,state.runModel);
   refreshCodegraphPanel().catch(()=>{});
   refreshSandboxPanel().catch(()=>{});
 }
-$('refreshServices').onclick=run(showServices);$('saveModel').onclick=run(async()=>{if(!$('model').value)throw new Error('لا يوجد نموذج متاح.');await post('/api/settings',{model:$('model').value});$('sidebarModel').value=$('model').value;notice('تم حفظ نموذج التنفيذ.');});
+$('refreshServices').onclick=run(showServices);$('saveModel').onclick=run(()=>applyModelChoice($('model').value));
 async function showCollection(kind){
   show('list',kind==='projects'?'المشاريع':'المواعيد');$('listTitle').textContent=kind==='projects'?'المشاريع':'المواعيد';$('taskSearch').hidden=true;
   const data=await api(`/api/${kind}`);if(location.hash!==`#/${kind}`)return;const items=data[kind]||[];
@@ -344,9 +392,8 @@ async function boot(){
   const results=await Promise.allSettled([api('/api/modes'),api('/api/settings'),api('/api/models')]);
   void loadChatAgents();
   if(results[0].status==='fulfilled'){state.modes=results[0].value.modes||[];renderModes();$('connection').textContent='متصل محليًا';$('connection').classList.add('online');}else{notice('تعذّر تحميل مساحات Loam. تحقق من تشغيل الخادم ثم أعد تحميل الصفحة.',true);$('connection').textContent='غير متصل';}
-  if(results[2].status==='fulfilled')$('model').innerHTML=(results[2].value.models||[]).map(m=>`<option>${esc(typeof m==='string'?m:m.name)}</option>`).join('');
-  if(results[1].status==='fulfilled'&&results[1].value.model)$('model').value=results[1].value.model;
-  $('sidebarModel').innerHTML=$('model').innerHTML;$('sidebarModel').value=$('model').value;
+  const settingsModel=results[1].status==='fulfilled'?results[1].value.model||'':'';
+  if(results[2].status==='fulfilled')fillModelSelects(results[2].value,settingsModel);
   await navigate();
   if(!state.modes.length){$('modeCards').innerHTML='<div class="empty">تعذّر تحميل المساحات. أعد تحميل الصفحة بعد التأكد من تشغيل الخادم.</div>';notice('خدمة الأنماط غير متاحة.',true);}
 }

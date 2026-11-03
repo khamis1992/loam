@@ -8,9 +8,9 @@
 
 ### 1. OpenCode Go (U-L3)
 **Status:** ✅ VERIFIED  
-**Base URL:** `https://opencode.ai/inference/go/openai/v1`  
-**Evidence:** Loam config.ts defaults (L07) use this URL. FreeLLMAPI comment suggesting `/zen/go/v1` appears to be outdated or alternative endpoint.  
-**Decision:** Use `/inference/go/openai/v1` as it matches current Loam defaults.  
+**Base URL:** `https://opencode.ai/zen/go/v1`  
+**Evidence:** On 2026-11-03 a live list call with the saved key returned 28 models from `/zen/go/v1` and HTTP 404 from `/inference/go/openai/v1`.  
+**Decision:** Use `/zen/go/v1`.  
 **Requires:** `x-opencode-session` header (stable UUID per session) per FreeLLMAPI F08 quirk.  
 **Source:** Loam src/config.ts line 476; FreeLLMAPI evidence F08
 
