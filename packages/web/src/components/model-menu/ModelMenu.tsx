@@ -71,7 +71,10 @@ export function ModelMenu({
           style={{ backdropFilter: "blur(40px)", overflowAnchor: "none" }}
         >
           <RealModelPicker
-            onTier={(tier) => onSelect(tier)}
+            onTier={(tier, opts) => {
+              onSelect(tier);
+              if (!opts?.keepOpen) setOpen(false);
+            }}
             forceFlexForm={currentMode === "flex"}
           />
         </div>
