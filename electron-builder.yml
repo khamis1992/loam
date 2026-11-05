@@ -60,6 +60,10 @@ extraResources:
     to: app.asar.unpacked/addons/memory-skills-mcp/dist
     filter:
       - "server.cjs*"
+  - from: packs
+    to: app.asar.unpacked/packs
+    filter:
+      - "**/*"
   - from: resources/recorder
     to: app.asar.unpacked/resources/recorder
     filter:
