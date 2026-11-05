@@ -5,6 +5,7 @@ import { handleApiAnythingRoute } from "./apiAnythingRoutes.js";
 import { handleWorkflowRoutes, handleWorkflowRunRoutes, type WorkflowRouteDeps } from "./routes/workflows.js";
 import { handleTracesRoutes } from "./routes/traces.js";
 import { getBalance } from "./credits.js";
+import { handleCreditsRoutes } from "./routes/credits.js";
 import { computeTaskMetrics } from "./taskMetrics.js";
 import { handleCheckpointRoutes } from "./routes/checkpoints.js";
 import { handleInterruptRoutes } from "./routes/interrupts.js";
@@ -179,6 +180,7 @@ import { handleProjectContextRoutes } from "./routes/projectContext.js";
 import { PROVIDER_PRESETS, activeModel, listModelDirectory, registryModelEntries } from "./modelDirectory.js";
 import { handlePlaybookRoutes } from "./routes/playbooks.js";
 import { handleFlowTemplateRoutes } from "./routes/flowTemplates.js";
+import { handleStudioTemplateRoutes } from "./routes/studioTemplates.js";
 import { handleVoiceRoutes } from "./routes/voice.js";
 import { handleConnectorsRoutes } from "./routes/connectors.js";
 import { handleEnvBuildRoutes } from "./routes/envBuilds.js";
@@ -237,6 +239,8 @@ export interface RunTaskOptions {
   effort?: string;
   /** Neo N10: output type selector (Auto/Text/Image/Video/Slides/Website). */
   outputType?: string;
+  studioGoal?: string;
+  studioOptions?: Record<string, unknown>;
   /** Neo N10: also run the same prompt on other models as sibling canvas nodes. */
   abModels?: string[];
   agentId?: string;
@@ -521,6 +525,17 @@ async function applyPendingItem(item: PendingItem, memory?: MemoryStore, cfg?: C
 
 export function startServer(deps: ServerDeps): Promise<http.Server> {
   const { cfg, ollama, runTask } = deps;
+  let modelDirectoryFlight: { at: number; promise: ReturnType<typeof listModelDirectory> } | null = null;
+  const loadModelDirectory = (): ReturnType<typeof listModelDirectory> => {
+    if (!modelDirectoryFlight || Date.now() - modelDirectoryFlight.at > 5000) {
+      const promise = listModelDirectory(cfg, () => ollama.listLocalModels());
+      modelDirectoryFlight = { at: Date.now(), promise };
+      promise.catch(() => {
+        if (modelDirectoryFlight?.promise === promise) modelDirectoryFlight = null;
+      });
+    }
+    return modelDirectoryFlight.promise;
+  };
   
   // Initialize model registry (async, non-blocking)
   (async () => {
@@ -646,6 +661,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           }
         }
 
+        if (await handleCreditsRoutes(req, res, p)) return;
         if (await timeline.handle(req, res, url)) return;
         // UI overhaul W-U2: the composer's intent router. Token-gated above
         // like every other /api route. Contract: POST {text: string} with
@@ -656,7 +672,8 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         if (p === "/api/intent/route") {
           res.setHeader("cache-control", "no-store");
           if (req.method !== "POST") return sendJson(res, 405, { error: "Method not allowed" });
-          if ((req.headers.origin && req.headers.origin !== `http://${req.headers.host}`) || req.headers["sec-fetch-site"] === "cross-site") return sendJson(res, 403, { error: "Same-origin requests required" });
+          const intentOrigin = String(req.headers.origin ?? "");
+          if (intentOrigin && intentOrigin !== "app://agent" && intentOrigin !== `http://${req.headers.host}`) return sendJson(res, 403, { error: "Same-origin requests required" });
           let intentBody: { text?: unknown } | null = null;
           // 16 KB body cap: the 4000-char text limit is measured in characters,
           // but Arabic costs up to 2 UTF-8 bytes per char plus JSON framing.
@@ -870,7 +887,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           // every failover provider probed live (freellmapi included). Old
           // consumers read `.name`; entries keep both `id` and `name`.
           try {
-            const directory = await listModelDirectory(cfg, () => ollama.listLocalModels());
+            const directory = await loadModelDirectory();
             sendJson(res, 200, {
               models: directory.models,
               entries: registryModelEntries(),
@@ -2292,6 +2309,7 @@ loadAgents();
         // Playbooks (D9): versioned reusable prompt library + macro expansion.
         if (await handlePlaybookRoutes(req, res, p)) return;
 
+        if (await handleStudioTemplateRoutes(req, res, p)) return;
         if (await handleFlowTemplateRoutes(req, res, p)) return;
         // Environment snapshots (D3): read-only build status + redacted log.
         if (await handleEnvBuildRoutes(req, res, p)) return;

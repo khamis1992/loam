@@ -1,6 +1,8 @@
 node_modules/
 dist/
 /electron/filmcraft/dist/
+/electron/recorder/dist/
+/resources/recorder/bin/
 /electron/effectcraft/dist/
 /release/
 /feed/
@@ -23,6 +25,7 @@ dist/
 .DS_Store
 Thumbs.db
 /graphify-out/
+/.recorder-build/
 /.testsprite/runs/
 # Per-task done reports and gate-failure logs are session markers, not project files.
 /.cc-report-*.md
@@ -94,3 +97,11 @@ output/
 
 # Mimosa scanner working data (local only)
 .mimosa/
+
+# Local build outputs and verification artifacts (never ship these in source commits)
+/release-*/
+/test-results/
+/qa/
+/exports/
+/clip.mp4
+/scripts/_*.mjs

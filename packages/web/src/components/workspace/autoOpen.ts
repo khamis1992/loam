@@ -284,8 +284,12 @@ const OFFICE_PATH_RE = /[\w./\\-]+\.(docx|docm|dotx|doc|odt|rtf|xlsx|xlsm|xls|cs
 function candidatePath(event: ToolUsedEvent): string | null {
   const sources: unknown[] = [event.argumentsDetail, event.detail];
   for (const raw of sources) {
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
-    const rec = raw as Record<string, unknown>;
+    let structured = raw;
+    if (typeof structured === 'string') {
+      try { structured = JSON.parse(structured); } catch { continue; }
+    }
+    if (!structured || typeof structured !== 'object' || Array.isArray(structured)) continue;
+    const rec = structured as Record<string, unknown>;
     for (const key of ['path', 'file', 'filePath', 'outputPath', 'output', 'savePath', 'dest']) {
       const v = rec[key];
       if (typeof v === 'string' && v.trim()) return v.trim();
@@ -300,6 +304,15 @@ function candidatePath(event: ToolUsedEvent): string | null {
     }
   }
   const text = [event.brief ?? '', event.description ?? ''].join(' ');
+  try {
+    const result = JSON.parse(text) as Record<string, unknown>;
+    for (const key of ['path', 'file', 'filePath', 'outputPath', 'output', 'savePath', 'dest']) {
+      const value = result[key];
+      if (typeof value === 'string' && value.trim()) return value.trim();
+    }
+  } catch {
+    // Plain-text tool summaries use the extension matcher below.
+  }
   const match = text.match(OFFICE_PATH_RE);
   return match ? match[0] : null;
 }
@@ -332,8 +345,24 @@ function craftAppForTarget(tool: string, path: string | null): string | null {
 }
 
 /** Decide whether a tool event should open the right panel on the Workspace tab. */
+function recorderVideoPath(event: ToolUsedEvent): string | null {
+  const text = event.description ?? '';
+  if (!text.includes('loam-video') && !/\.mp4/i.test(text)) return null;
+  try {
+    const parsed = JSON.parse(text) as { target?: string; path?: string };
+    if (parsed.target === 'loam-video' && typeof parsed.path === 'string' && /\.mp4$/i.test(parsed.path)) return parsed.path;
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 export function decideWorkspaceOpen(event: ToolUsedEvent): WorkspaceOpenTarget | null {
-  if (isRecorderTool(event.tool)) return { path: null, kind: 'loam-recorder' };
+  if (isRecorderTool(event.tool)) {
+    const video = recorderVideoPath(event);
+    if (video) return { path: video, kind: 'loam-video', importPath: video };
+    return { path: null, kind: 'loam-recorder' };
+  }
   if (isVideoStudioTool(event.tool)) {
     const path = candidatePath(event);
     return { path, kind: 'loam-video', importPath: path };

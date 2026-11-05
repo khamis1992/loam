@@ -54,6 +54,13 @@ describe("mode tool sets", () => {
     }
   });
 
+  it("exposes presentation design and asset tools in the write run registry", () => {
+    const names = registryWithAllModeTools().forMode("write").names();
+    for (const name of ["design_brief", "design_image_generate", "design_create", "loam_canvas"]) {
+      assert.ok(names.includes(name), `write run registry is missing ${name}`);
+    }
+  });
+
   it("gives the data mode the dataset and office tools", () => {
     const mode = getLoamMode("data");
     for (const name of [...OFFICE_TOOLS, "loam_studio", "loam_dataset"]) {

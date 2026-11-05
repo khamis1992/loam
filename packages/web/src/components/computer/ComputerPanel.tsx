@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -26,14 +26,15 @@ import {
 import type { ToolUsedEvent } from '@shared/socket';
 import { t } from '@/i18n/t';
 import { desktopEvents } from '@/services/desktopApis';
-import { getApiBase } from '@/services/rpc';
+import { getApiBase, getApiHeaders } from '@/services/rpc';
+import { renderSlide, type SlideLike } from '@/components/workspace/slides/SlideView';
 import { LiveView } from '@/components/computer/LiveView';
 import type { TimelineStep } from '@/components/chat/StepTimeline';
 import { getToolFamily, getStudioMode, type ToolFamily, type StudioMode } from '@/components/chat/toolIcons';
 import { humanizeToolName } from '@/components/chat/toolLabels';
+import { DOCUMENT_CANVAS, DOCUMENT_SHEET, DOCUMENT_TYPE, DocumentPage, isDocumentFile, splitDocument } from '@/components/computer/DocumentPage';
 
 // int-f3: studio iframes load real backend UI pages served from the same origin used for /api/* calls.
-const OFFICE_PREVIEW_PATH = '/office-preview.html';
 const CREATIVE_RENDER_PATH = '/creative-render.html';
 
 type TabId = ToolFamily;
@@ -90,9 +91,6 @@ const TABS: { id: TabId; label: string; icon: typeof Terminal }[] = [
 ];
 
 const STUDIO_TAB = { id: 'studio' as const, label: 'Open in studio', icon: Palette };
-
-// Remember inferred studio mode per session so the tab stays visible after the first studio tool.
-const studioModeBySession = new Map<string, StudioMode>();
 
 // Last tool event seen per tab family, per session, so each tab shows its own latest activity
 // instead of whatever event happened to arrive last.
@@ -163,36 +161,60 @@ export function ComputerPanel({ event, sessionId, onClose, workspaceSlot, focusW
     return store;
   }, [sessionId, derivedTab, event]);
   const studioMode = useMemo(() => {
-    const fromTool = getStudioMode(event.tool);
-    if (fromTool) {
-      studioModeBySession.set(sessionId, fromTool);
-      return fromTool;
-    }
-    return studioModeBySession.get(sessionId) ?? null;
-  }, [event.tool, sessionId]);
-  // Only offer tabs that have (or can have) something to show for this task.
+    const tool = event.tool.toLowerCase();
+    const isFileResult = /(?:^|_)export$/.test(tool) || tool === 'office_craft' || tool === 'office_import';
+    return isFileResult ? null : getStudioMode(event.tool);
+  }, [event.tool]);
+  const docPath = docPathOf(event);
+  const docName = docPath ? baseName(docPath) : null;
   const visibleTabs = useMemo(() => {
     const tabs: { id: TabId; label: string; icon: typeof Terminal }[] = TABS.filter(
-      (tab) => tab.id === 'live' || tab.id === 'files' || tab.id === derivedTab || seen[tab.id] !== undefined,
+      (tab) =>
+        tab.id === derivedTab ||
+        seen[tab.id] !== undefined ||
+        (tab.id === 'live' && derivedTab === 'browser') ||
+        (tab.id === 'files' && Boolean(docPath)),
     );
     if (workspaceSlot) tabs.push({ id: 'workspace' as const, label: 'Workspace', icon: FolderOpen });
     if (studioMode) tabs.push(STUDIO_TAB);
     return tabs;
-  }, [studioMode, workspaceSlot, derivedTab, seen]);
+  }, [studioMode, workspaceSlot, derivedTab, seen, docPath]);
   const activeTab = useMemo<TabId>(() => {
     const pick = userTab ?? (workspaceSlot && focusWorkspace ? 'workspace' : derivedTab);
     return visibleTabs.some((tab) => tab.id === pick) ? pick : 'files';
   }, [userTab, workspaceSlot, focusWorkspace, derivedTab, visibleTabs]);
-  const tabEvent = seen[activeTab] ?? (activeTab === derivedTab ? event : undefined);
+  const tabEvent = activeTab === derivedTab || (activeTab === 'files' && docPath) ? event : seen[activeTab];
   const isDriving = !isFinalStatus(event.status) && activeTab === 'browser';
   // H2 scrubber: position of the event being viewed within the timeline.
   const stepIndex = steps ? Math.max(0, steps.findIndex((s) => s.actionId === event.actionId)) : 0;
 
   // Viewer chrome (Manus-style content panel): document title, last-modified
   // time, and the real actions that exist for the viewed artifact.
-  const docPath = docPathOf(event);
-  const docName = docPath ? baseName(docPath) : null;
-  const viewerTitle = docName ?? humanizeToolName(event.tool);
+  const [studioTitle, setStudioTitle] = useState<string | null>(null);
+  useEffect(() => {
+    const studioFile = (docPath ?? '').replace(/\\/g, '/').endsWith('.loam/studio.json');
+    const studioTool = event.tool === 'office_status' || event.tool === 'loam_studio' || event.tool === 'office_craft' || event.tool === 'office_export';
+    if (!taskId || (!studioFile && !studioTool)) {
+      setStudioTitle(null);
+      return;
+    }
+    let stop = false;
+    void (async () => {
+      try {
+        const headers = await getApiHeaders();
+        const res = await fetch(`${getApiBase()}/api/studio?taskId=${encodeURIComponent(taskId)}`, { headers });
+        if (!res.ok) return;
+        const body = (await res.json()) as { artifact?: { title?: string } | null };
+        if (!stop && body.artifact?.title) setStudioTitle(body.artifact.title);
+      } catch {
+        /* the file name stays until the artifact loads */
+      }
+    })();
+    return () => {
+      stop = true;
+    };
+  }, [taskId, docPath, event.tool]);
+  const viewerTitle = studioTitle ?? (docName === 'studio.json' ? 'Studio' : docName) ?? humanizeToolName(event.tool);
   const modifiedLabel = new Date(event.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const isDocSurface = activeTab === 'preview' || activeTab === 'studio';
   const canDownload = Boolean(docPath && taskId);
@@ -201,10 +223,10 @@ export function ComputerPanel({ event, sessionId, onClose, workspaceSlot, focusW
   return (
     <div
       data-testid={fullscreen ? 'computer-panel-fullscreen' : 'computer-panel'}
-      style={fullscreen ? undefined : { width }}
+      style={fullscreen ? undefined : { ['--computer-panel-width' as string]: `${width}px` }}
       className={[
-        'relative flex h-full shrink-0 flex-col bg-bg-menu',
-        fullscreen ? 'fixed inset-0 z-40 max-w-none' : 'max-w-[85vw] border-s',
+        'relative flex h-dvh shrink-0 flex-col bg-bg-menu',
+        fullscreen ? 'fixed inset-0 z-40 max-w-none' : 'w-full border-s max-lg:fixed max-lg:inset-y-0 max-lg:end-0 max-lg:z-30 max-lg:w-[min(100%,28rem)] max-lg:shadow-xl lg:w-[var(--computer-panel-width)] lg:max-w-[min(var(--computer-panel-width),85%)]',
         isDriving ? 'border-s-4 border-s-[var(--icon-blue)]' : fullscreen ? '' : 'border-border-main',
       ].join(' ')}
     >
@@ -328,6 +350,7 @@ export function ComputerPanel({ event, sessionId, onClose, workspaceSlot, focusW
             studioMode={studioMode}
             workspaceSlot={workspaceSlot}
             taskId={taskId}
+            live={live}
             fallbackEvent={event}
           />
         </div>
@@ -406,6 +429,7 @@ function TabContent({
   studioMode,
   workspaceSlot,
   taskId,
+  live,
   fallbackEvent,
 }: {
   event?: ToolUsedEvent;
@@ -415,6 +439,7 @@ function TabContent({
   studioMode: StudioMode | null;
   workspaceSlot?: ReactNode;
   taskId?: string;
+  live?: boolean;
 }) {
   switch (tab) {
     case 'live':
@@ -424,7 +449,7 @@ function TabContent({
       return <>{workspaceSlot}</>;
     case 'studio':
       if (!studioMode) return <FilesContent event={event ?? fallbackEvent} sessionId={sessionId} />;
-      return <StudioContent sessionId={sessionId} mode={studioMode} />;
+      return <StudioContent sessionId={sessionId} taskId={taskId} mode={studioMode} live={live} />;
     case 'files':
       return <FilesContent event={event ?? fallbackEvent} sessionId={sessionId} />;
     default:
@@ -457,25 +482,181 @@ function EmptyTab({ tab }: { tab: TabId }) {
   );
 }
 
-function StudioContent({ sessionId, mode }: { sessionId: string; mode: StudioMode }) {
-  const apiBase = useMemo(() => getApiBase(), []);
-  const src = useMemo(() => {
-    const path = mode === 'media' ? CREATIVE_RENDER_PATH : OFFICE_PREVIEW_PATH;
-    return `${apiBase}${path}?taskId=${encodeURIComponent(sessionId)}`;
-  }, [apiBase, mode, sessionId]);
-
+function StudioContent({ sessionId, taskId, mode, live }: { sessionId: string; taskId?: string; mode: StudioMode; live?: boolean }) {
+  if (mode === 'office') return <OfficeStudio taskId={taskId || sessionId} live={live} />;
+  const apiBase = getApiBase();
+  const src = `${apiBase}${CREATIVE_RENDER_PATH}?taskId=${encodeURIComponent(taskId || sessionId)}`;
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex h-row-sm shrink-0 items-center gap-2 border-b border-border-main px-3 text-xs text-text-secondary">
-        <Palette className="size-3.5" />
-        <span className="truncate">{src}</span>
-        <a href={src} target="_blank" rel="noreferrer" className="ms-auto rounded-control p-1 text-text-tertiary hover:bg-fill-hover">
-          <ExternalLink className="size-3.5" />
-        </a>
-      </div>
-      <iframe src={src} title={t('Studio')} className="flex-1 border-0" sandbox="allow-scripts allow-same-origin" />
-    </div>
+    <iframe src={src} title={t('Studio')} className="h-full w-full border-0" sandbox="allow-scripts allow-same-origin allow-forms allow-downloads" />
   );
+}
+
+type DocBlock = {
+  type?: string;
+  text?: string;
+  alt?: string;
+  src?: string;
+  columns?: string[];
+  rows?: string[][];
+  items?: Array<{ value?: string; label?: string }>;
+};
+
+type OfficeArtifact =
+  | { kind: 'presentation'; title: string; content: { slides: SlideLike[] } }
+  | { kind: 'document'; title: string; content: { blocks: DocBlock[] } }
+  | { kind: 'spreadsheet'; title: string; content: { sheets: Array<{ name: string; cells: string[][] }> } };
+
+function isOfficeArtifact(value: unknown): value is OfficeArtifact {
+  if (!value || typeof value !== 'object') return false;
+  const kind = (value as { kind?: unknown }).kind;
+  return kind === 'presentation' || kind === 'document' || kind === 'spreadsheet';
+}
+
+function DocumentBlocks({ blocks }: { blocks: DocBlock[] }) {
+  const items: ReactNode[] = [];
+  let bullets: string[] = [];
+  const flush = () => {
+    if (!bullets.length) return;
+    items.push(
+      <ul key={`ul-${items.length}`} className="my-3 list-disc ps-6">
+        {bullets.map((text, index) => (
+          <li key={index} className="my-1.5 text-[15px] leading-[1.75]">{text}</li>
+        ))}
+      </ul>,
+    );
+    bullets = [];
+  };
+  blocks.forEach((block, index) => {
+    if (block.type === 'bullet') {
+      if (block.text) bullets.push(block.text);
+      return;
+    }
+    flush();
+    if (block.type === 'heading') {
+      items.push(<h2 key={index} className="mb-3 mt-8 text-[20px] font-bold leading-snug text-[#111]">{block.text}</h2>);
+      return;
+    }
+    if (block.type === 'image') {
+      items.push(
+        <figure key={index} className="my-6 rounded-md border border-[#e6e6e3] bg-[#fafafa] p-4">
+          {block.src ? <img src={block.src} alt={block.alt || ''} className="w-full" /> : null}
+          {block.alt ? <figcaption className="mt-2 text-center text-xs text-[#666]">{block.alt}</figcaption> : null}
+        </figure>,
+      );
+      return;
+    }
+    if (block.type === 'table' && block.rows) {
+      items.push(
+        <table key={index} className="my-4 w-full border-collapse text-[14px]">
+          {block.columns ? (
+            <thead>
+              <tr>{block.columns.map((column) => <th key={column} className="border border-[#e6e6e3] px-2 py-1 text-start">{column}</th>)}</tr>
+            </thead>
+          ) : null}
+          <tbody>
+            {block.rows.map((row, rowIndex) => (
+              <tr key={rowIndex}>{row.map((cell, cellIndex) => <td key={cellIndex} className="border border-[#e6e6e3] px-2 py-1">{cell}</td>)}</tr>
+            ))}
+          </tbody>
+        </table>,
+      );
+      return;
+    }
+    if (block.type === 'stats' && block.items) {
+      items.push(
+        <div key={index} className="my-4 grid grid-cols-3 gap-3">
+          {block.items.map((item, itemIndex) => (
+            <div key={itemIndex} className="rounded-md border border-[#e6e6e3] bg-[#fafafa] p-3">
+              <div className="text-lg font-bold">{item.value}</div>
+              <div className="text-xs text-[#666]">{item.label}</div>
+            </div>
+          ))}
+        </div>,
+      );
+      return;
+    }
+    if (block.text) items.push(<p key={index} className="my-3 text-[15px] leading-[1.85] text-[#222]">{block.text}</p>);
+  });
+  flush();
+  return <div className={DOCUMENT_TYPE}>{items}</div>;
+}
+
+function OfficeStudio({ taskId, live }: { taskId: string; live?: boolean }) {
+  const apiBase = useMemo(() => getApiBase(), []);
+  const [artifact, setArtifact] = useState<OfficeArtifact | null>(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let stop = false;
+    const load = async () => {
+      try {
+        const headers = await getApiHeaders();
+        const res = await fetch(`${apiBase}/api/studio?taskId=${encodeURIComponent(taskId)}`, { headers });
+        const data = (await res.json().catch(() => null)) as { artifact?: unknown; error?: unknown } | null;
+        if (stop) return;
+        if (!res.ok) {
+          setError(typeof data?.error === 'string' ? data.error : 'تعذر فتح التصميم');
+          return;
+        }
+        setError('');
+        setArtifact(isOfficeArtifact(data?.artifact) ? data.artifact : null);
+      } catch {
+        if (!stop) setError('تعذر فتح التصميم');
+      }
+    };
+    void load();
+    if (!live) return () => { stop = true; };
+    const timer = window.setInterval(() => { void load(); }, 2000);
+    return () => { stop = true; window.clearInterval(timer); };
+  }, [apiBase, taskId, live]);
+
+  if (error) return <p className="p-4 text-sm text-text-tertiary">{error}</p>;
+  if (!artifact) return <p className="p-4 text-sm text-text-tertiary">لا يوجد تصميم بعد.</p>;
+  if (artifact.kind === 'presentation') {
+    const slides = artifact.content.slides ?? [];
+    if (!slides.length) return <p className="p-4 text-sm text-text-secondary">{artifact.title} — لا توجد شريحة بعد.</p>;
+    return (
+      <div className="h-full space-y-3 overflow-auto p-3">
+        {slides.map((slide) => (
+          <div key={slide.id} className="overflow-hidden rounded-card border border-border-main">
+            {renderSlide(slide, 520)}
+          </div>
+        ))}
+      </div>
+    );
+  }
+  if (artifact.kind === 'document') {
+    return (
+      <div className={`h-full overflow-auto py-6 ${DOCUMENT_CANVAS}`}>
+        <article dir="auto" className={DOCUMENT_SHEET}>
+          <h1 className="mb-5 text-[26px] font-bold leading-snug text-[#111]">{artifact.title}</h1>
+          <DocumentBlocks blocks={artifact.content.blocks ?? []} />
+        </article>
+      </div>
+    );
+  }
+  if (artifact.kind === 'spreadsheet') {
+    const sheet = artifact.content.sheets[0];
+    const rows = sheet?.cells.slice(0, 30) ?? [];
+    return (
+      <div className="h-full overflow-auto p-3">
+        <h2 className="mb-2 text-sm font-semibold text-text-primary">{sheet?.name || artifact.title}</h2>
+        <table className="w-full border-collapse text-xs">
+          <tbody>
+            {rows.map((row, index) => (
+              <tr key={index}>
+                {row.map((cell, cellIndex) => (
+                  <td key={cellIndex} className="border border-border-main px-2 py-1 text-text-secondary">{cell}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+  const unreachable: never = artifact;
+  return unreachable;
 }
 
 function TerminalContent({ event }: { event: ToolUsedEvent }) {
@@ -516,6 +697,9 @@ function EditorContent({ event }: { event: ToolUsedEvent }) {
       </div>
     );
   }
+
+  const document = detail.content && isDocumentFile(extension, detail.content) ? splitDocument(detail.content, detail.path) : null;
+  if (document) return <DocumentPage title={document.title} body={document.body} />;
 
   return (
     <div className="flex h-full flex-col">
@@ -559,18 +743,24 @@ function BrowserContent({ event, sessionId }: { event: ToolUsedEvent; sessionId:
   const [state, setState] = useState<BrowserState | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const load = () => {
+  const load = useCallback(() => {
+    const controller = new AbortController();
     setLoading(true);
-    fetch(`${apiBase}/api/browser/state?taskId=${encodeURIComponent(sessionId)}`)
+    fetch(`${apiBase}/api/browser/state?taskId=${encodeURIComponent(sessionId)}`, { signal: controller.signal })
       .then((r) => (r.ok ? r.json() : null))
-      .then((data) => setState(data as BrowserState | null))
-      .catch(() => setState(null))
-      .finally(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    load();
+      .then((data) => {
+        if (!controller.signal.aborted) setState(data as BrowserState | null);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setState(null);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
   }, [apiBase, sessionId]);
+
+  useEffect(() => load(), [load]);
 
   const eventUrl = useMemo(() => extractUrl(event), [event]);
   const url = eventUrl ?? state?.pages?.[0]?.url ?? '';
@@ -824,6 +1014,8 @@ function extractEditorDetail(event: ToolUsedEvent): EditorDetail {
 }
 
 function extractFilePath(event: ToolUsedEvent): string | null {
+  const directPath = docPathOf(event);
+  if (directPath) return directPath;
   const detail = asRecord(event.detail);
   const args = asRecord(event.argumentsDetail);
   const d = asRecord(detail?.textEditor) ?? args ?? {};

@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { acceptSlideFacts, applySlideFacts, fallbackPlan, mergeSlideFacts, preferCanvasPlan, preferCreativePlan, preferDatasetPlan, preferDesignPlan, preferDevflowPlan, preferDocxPlan, preferHtmlSlidePlan, preferLandingPlan, preferLegalPlan, preferMarkdownPlan, preferPhotoPlan, preferResearchPlan, preferSecurityPlan, preferSheetsPlan, preferSubtitlesPlan, preferVideoPlan, presentationRequest, slidesEditLacksYear, type Plan } from "../planner.js";
+import { acceptSlideFacts, applySlideFacts, fallbackPlan, fallbackPresentationPlan, preferCanvasPlan, preferCreativePlan, preferDatasetPlan, preferDesignPlan, preferDevflowPlan, preferDocxPlan, preferHtmlSlidePlan, preferLandingPlan, preferLegalPlan, preferMarkdownPlan, preferPhotoPlan, preferResearchPlan, preferSecurityPlan, preferSheetsPlan, preferSubtitlesPlan, preferVideoPlan, placeholderText, presentationRequest, slidesEditNeedsContent, type Plan } from "../planner.js";
 
-function plan(body: string): Plan {
+function plan(body: string, title = "عنوان"): Plan {
   return {
     goal: "deck",
     trivial: false,
     source: "model",
     steps: [
       { id: "s1", title: "Open", instruction: "Call office_craft with action 'open' and app 'slides'.", successCriteria: "open" },
-      { id: "s2", title: "Edit", instruction: `Call office_craft with action 'edit' and app 'slides' and title 'عنوان' and body '${body}'.`, successCriteria: "text" },
+      { id: "s2", title: "Edit", instruction: `Call office_craft with action 'edit' and app 'slides' and title '${title}' and body '${body}'.`, successCriteria: "text" },
     ],
   };
 }
@@ -20,29 +20,34 @@ describe("slides plan facts", () => {
     assert.equal(presentationRequest("write a note"), false);
   });
 
-  it("asks for facts when the slide body has no year", () => {
-    assert.equal(slidesEditLacksYear(plan("يقع المتحف على الساحل")), true);
-    assert.equal(slidesEditLacksYear(plan("صممه I. M. Pei وافتتح عام 2008")), false);
+  it("requires real slide content without requiring an unrelated year", () => {
+    assert.equal(slidesEditNeedsContent(plan("الكويت عاصمتها مدينة الكويت وعملتها الدينار")), false);
+    assert.equal(slidesEditNeedsContent(plan("<Arabic body>")), true);
+    assert.equal(slidesEditNeedsContent(plan("نص حقيقي", "<title>")), true);
+    assert.equal(placeholderText("<the one slide>"), true);
   });
 
   it("replaces the edit instruction with the returned facts", () => {
-    const next = applySlideFacts(plan("وصف عام"), "متحف الفن الإسلامي", "صممه I. M. Pei عام 2008 في الدوحة");
-    assert.match(next.steps[1]!.instruction, /title 'متحف الفن الإسلامي'/);
-    assert.match(next.steps[1]!.instruction, /I\. M\. Pei عام 2008/);
+    const next = applySlideFacts(plan("<Arabic body>"), "دولة الكويت", "العاصمة مدينة الكويت والعملة الدينار الكويتي");
+    assert.match(next.steps[1]!.instruction, /title 'دولة الكويت'/);
+    assert.match(next.steps[1]!.instruction, /الدينار الكويتي/);
     assert.equal(next.steps[0]!.instruction.includes("open"), true);
   });
 
-  it("keeps the plan when the facts omit a year", () => {
-    const original = plan("وصف عام");
-    assert.equal(applySlideFacts(original, "عنوان", "بدون سنة"), original);
+  it("rejects placeholder facts and accepts useful content without a year", () => {
+    const original = plan("<Arabic body>");
+    assert.equal(applySlideFacts(original, "عنوان", "<Arabic body>"), original);
+    assert.equal(acceptSlideFacts("اعمل برزنتيشن عن الكويت", "دولة الكويت", "اللغة العربية والعملة الدينار"), true);
+    assert.equal(acceptSlideFacts("اعمل برزنتيشن عن الكويت", "Kuwait", "Arabic and dinar"), false);
   });
 
-  it("keeps the designer and the year when the Arabic rewrite drops them", () => {
-    const merged = mergeSlideFacts("اعمل برزنتيشن", "Museum", "يقع المتحف على الساحل", "Designer: I.M. Pei, Opening Year: 2008");
-    assert.ok(merged);
-    assert.match(merged.body, /2008/);
-    assert.match(merged.body, /I\.M\. Pei/);
-    assert.match(merged.title, /يقع المتحف/);
+  it("builds a deterministic open-edit-export presentation plan with real content", () => {
+    const next = fallbackPresentationPlan("اعمل برزنتيشن عن الكويت", "دولة الكويت", "العاصمة مدينة الكويت والعملة الدينار");
+    assert.equal(next.steps.length, 3);
+    assert.match(next.steps[0]!.instruction, /action 'open'/);
+    assert.match(next.steps[1]!.instruction, /الدينار/);
+    assert.match(next.steps[2]!.instruction, /دولة الكويت\.pptx/);
+    assert.doesNotMatch(next.steps.map((step) => step.instruction).join("\n"), /<Arabic body>/);
   });
 
   it("falls back to open, edit, and export for a docx memo", () => {

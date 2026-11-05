@@ -1,4 +1,4 @@
-import { getApiBase } from './rpc';
+import { getApiBase, getApiHeaders } from './rpc';
 
 export type CreditKind = 'grant' | 'usage' | 'referral' | 'purchase_mock';
 export type CreditPlan = 'free' | 'pro';
@@ -55,7 +55,9 @@ interface ErrorBody {
 }
 
 async function jsonFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${getApiBase()}${path}`, init);
+  const headers = new Headers(init?.headers);
+  for (const [name, value] of Object.entries(await getApiHeaders())) headers.set(name, value);
+  const res = await fetch(`${getApiBase()}${path}`, { ...init, headers });
   const body: unknown = await res.json().catch(() => ({}));
   if (!res.ok) {
     const message = (body as ErrorBody).error || `${res.status}`;

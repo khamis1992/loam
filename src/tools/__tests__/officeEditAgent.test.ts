@@ -90,7 +90,7 @@ function diffPaths(before: unknown, after: unknown, prefix = ""): string[] {
 
 /* ---------- op typing ---------- */
 
-const TARGETED_OPS = new Set(["set-title", "set-cell", "replace-text", "set-slide-title", "set-slide-notes", "set-block-text", "set-region-text"]);
+const TARGETED_OPS = new Set(["set-title", "set-cell", "replace-text", "set-slide-title", "set-slide-body", "set-slide-notes", "set-block-text", "set-region-text"]);
 
 /* ---------- tests ---------- */
 
@@ -117,6 +117,8 @@ describe("O2 office edit agent", () => {
     assert.deepEqual(cell.ops, [{ op: "set-cell", address: "B2", value: "42", sheet: "Sheet1" }]);
     const title = planOfficeEdits('Set slide 2 title to "Overview".', presentationArtifact());
     assert.deepEqual(title.ops, [{ op: "set-slide-title", slide: 2, value: "Overview" }]);
+    const body = planOfficeEdits('Set slide 1 body to "الدوحة"', presentationArtifact());
+    assert.deepEqual(body.ops, [{ op: "set-slide-body", slide: 1, value: "الدوحة" }]);
     const notes = planOfficeEdits("slide 2 notes to new speaker notes", presentationArtifact());
     assert.deepEqual(notes.ops, [{ op: "set-slide-notes", slide: 2, value: "new speaker notes" }]);
     const multi = planOfficeEdits('Set slide 1 title to "A"; set cell B3 to "9".', presentationArtifact());
@@ -166,6 +168,20 @@ describe("O2 office edit agent", () => {
     assert.equal(next.content.slides[0]!.sourceIndex, 0);
     assert.equal(next.content.slides[1]!.sourceIndex, 1);
     assert.equal(next.content.slides[1]!.background, "#FFFFFF");
+  });
+
+  it("creates the first slide when the deck is empty", () => {
+    const artifact: StudioArtifact = { kind: "presentation", title: "دولة قطر", revision: 1, content: { slides: [] } };
+    const result = applyOfficeEdits(artifact, [
+      { op: "set-slide-title", slide: 1, value: "دولة قطر" },
+      { op: "set-slide-body", slide: 1, value: "شبه جزيرة على الخليج العربي" },
+    ]);
+    assert.equal(result.applied.length, 2);
+    assert.equal(result.skipped.length, 0);
+    const next = result.artifact as Extract<StudioArtifact, { kind: "presentation" }>;
+    assert.equal(next.content.slides.length, 1);
+    assert.equal(next.content.slides[0]!.title, "دولة قطر");
+    assert.equal(next.content.slides[0]!.body, "شبه جزيرة على الخليج العربي");
   });
 
   it("applier reports skips instead of rewriting around unknown targets", () => {

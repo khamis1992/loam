@@ -165,7 +165,7 @@ export function planOfficeEdits(instruction: string, artifact: StudioArtifact): 
     scopes.add(op.op);
   }
   if (!ops.length) {
-    return { ops, scopes: [...scopes], error: "تعذر استخراج تعديل دقيق من التعليمة. الصيغة المدعومة: replace \"old\" with \"new\"، set cell B2 to \"value\" [in Sheet1]، set slide 2 title to \"value\"، slide 2 notes to \"value\"، paragraph 3 to \"value\"، set document title to \"value\"، header \"value\" to \"value\"." };
+    return { ops, scopes: [...scopes], error: "تعذر استخراج تعديل دقيق من التعليمة. الصيغة المدعومة: replace \"old\" with \"new\"، set cell B2 to \"value\" [in Sheet1]، set slide 2 title to \"value\"، set slide 2 body to \"value\"، slide 2 notes to \"value\"، paragraph 3 to \"value\"، set document title to \"value\"، header \"value\" to \"value\"." };
   }
   return { ops, scopes: [...scopes] };
 }
@@ -207,6 +207,11 @@ function planClause(clause: string, artifact: StudioArtifact): OfficeEditOp | st
   const slide = slideNum(clause);
   if (slide !== undefined && word("title|عنوان").test(clause) && !word("notes|ملاحظات").test(clause)) {
     return { op: "set-slide-title", slide, value: valueOf(clause) };
+  }
+
+  // 3b. set-slide-body: slide 1 body to "…" / متن الشريحة 1.
+  if (slide !== undefined && word("body|متن|محتوى").test(clause) && !word("title|عنوان|notes|ملاحظات").test(clause)) {
+    return { op: "set-slide-body", slide, value: valueOf(clause) };
   }
 
   // 4. set-slide-notes.
@@ -257,6 +262,19 @@ export const applyOfficeEdits: OfficeEditApplier = (artifact, ops) => {
   });
   return { artifact: next, applied, skipped };
 };
+
+/** The next missing slide can be created. A gap (slide 3 while only slide 1 exists) cannot. */
+function ensureSlide(artifact: Extract<StudioArtifact, { kind: "presentation" }>, number: number): Extract<StudioArtifact, { kind: "presentation" }>["content"]["slides"][number] | string {
+  const index = number - 1;
+  if (!Number.isInteger(index) || index < 0) return `slide ${number} does not exist`;
+  const slides = artifact.content.slides;
+  const existing = slides[index];
+  if (existing) return existing;
+  if (index !== slides.length) return `slide ${number} does not exist`;
+  const created = { id: `s${number}-${Date.now().toString(36)}`, title: "", body: "", notes: "", background: "#F7F3EA", accent: "#187665" };
+  slides.push(created);
+  return created;
+}
 
 /** Apply one op in place on the cloned artifact. Return null on success. */
 function applyOne(artifact: StudioArtifact, op: OfficeEditOp): string | null {
@@ -319,25 +337,15 @@ function applyOne(artifact: StudioArtifact, op: OfficeEditOp): string | null {
       }
       return touched ? null : `text not found: ${op.find}`;
     }
-    case "set-slide-title": {
-      if (artifact.kind !== "presentation") return "slides exist only in presentations";
-      const slide = artifact.content.slides[op.slide - 1];
-      if (!slide) return `slide ${op.slide} does not exist`;
-      slide.title = op.value;
-      return null;
-    }
-    case "set-slide-body": {
-      if (artifact.kind !== "presentation") return "slides exist only in presentations";
-      const slide = artifact.content.slides[op.slide - 1];
-      if (!slide) return `slide ${op.slide} does not exist`;
-      slide.body = op.value;
-      return null;
-    }
+    case "set-slide-title":
+    case "set-slide-body":
     case "set-slide-notes": {
       if (artifact.kind !== "presentation") return "slides exist only in presentations";
-      const slide = artifact.content.slides[op.slide - 1];
-      if (!slide) return `slide ${op.slide} does not exist`;
-      slide.notes = op.value;
+      const slide = ensureSlide(artifact, op.slide);
+      if (typeof slide === "string") return slide;
+      if (op.op === "set-slide-title") slide.title = op.value;
+      else if (op.op === "set-slide-body") slide.body = op.value;
+      else slide.notes = op.value;
       return null;
     }
     case "set-block-text": {
@@ -355,6 +363,10 @@ function applyOne(artifact: StudioArtifact, op: OfficeEditOp): string | null {
       if (!region) return `region not found: ${op.label}`;
       region.text = op.value;
       return null;
+    }
+    default: {
+      const unexpected: never = op;
+      return unexpected;
     }
   }
 }
@@ -385,7 +397,7 @@ function replaceInto(block: DocumentBlock, op: Extract<OfficeEditOp, { op: "repl
 const kindForExtension = (extension: string): StudioArtifact["kind"] | null =>
   extension === "docx" ? "document" : extension === "xlsx" ? "spreadsheet" : extension === "pptx" ? "presentation" : null;
 
-const OP_GRAMMAR = `الصيغة المدعومة: ‹replace "old" with "new"›، ‹set cell B2 to "…"[ in Sheet1]›، ‹set slide 2 title to "…"›، ‹slide 2 notes to "…"›، ‹paragraph 3 to "…"›، ‹set document title to "…"›، ‹header "…" to "…"›.`;
+const OP_GRAMMAR = `الصيغة المدعومة: ‹replace "old" with "new"›، ‹set cell B2 to "…"[ in Sheet1]›، ‹set slide 2 title to "…"›، ‹set slide 2 body to "…"›، ‹slide 2 notes to "…"›، ‹paragraph 3 to "…"›، ‹set document title to "…"›، ‹header "…" to "…"›.`;
 
 export function createOfficeEditTools(deps: OfficeEditDeps = {}): Tool[] {
   const doImport = deps.importStudio ?? importStudio;

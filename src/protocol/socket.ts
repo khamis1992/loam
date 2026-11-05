@@ -44,6 +44,9 @@ import type { ProtocolStore } from "./store.js";
 import { tokenToUserUid } from "./rpc.js";
 import { enqueue, newInputId, type InputDelivery } from "../server/inputQueue.js";
 import { markLegalSession } from "../legal/security/protection.js";
+import { resolvePackId } from "../packs/intent.js";
+import { readPackProject } from "../packs/present.js";
+import { visiblePackAttachment } from "../packs/attachments.js";
 
 // Re-export for callers.
 export { Server } from "socket.io";
@@ -128,7 +131,7 @@ const SKIP_WALK_DIRS = new Set([
 ]);
 
 /** Recursively list files under a task workspace, returning paths relative to the root. */
-function snapshotWorkspaceFiles(root: string): WorkspaceFileSnapshot[] {
+export function snapshotWorkspaceFiles(root: string): WorkspaceFileSnapshot[] {
   const files: WorkspaceFileSnapshot[] = [];
   const walk = (dir: string) => {
     let items: fs.Dirent[] = [];
@@ -852,6 +855,8 @@ export function createChatSocket(deps: SocketDeps): Server {
               ...(tierModel ? { model: tierModel } : {}),
               // Neo N10: output type, effort and A/B arms travel with the message.
               ...(um.extData.outputType ? { outputType: um.extData.outputType } : {}),
+              ...(typeof um.extData.studioGoal === "string" ? { studioGoal: um.extData.studioGoal } : {}),
+              ...(um.extData.studioOptions && typeof um.extData.studioOptions === "object" ? { studioOptions: um.extData.studioOptions } : {}),
               ...(um.extData.effort ? { effort: um.extData.effort } : {}),
               ...(um.extData.abModels && um.extData.abModels.length > 0 ? { abModels: um.extData.abModels } : {}),
             });
@@ -883,8 +888,18 @@ export function createChatSocket(deps: SocketDeps): Server {
             // Emit attachment events for files produced during this run.
             const afterFiles = snapshotWorkspaceFiles(taskRoot);
             const beforeSet = new Set(beforeFiles.map((f) => f.rel));
+            const packId = resolvePackId({
+              studioGoal: um.extData.studioGoal,
+              outputType: um.extData.outputType,
+              loamMode: resolvedMode,
+              prompt,
+              localEdit: um.extData.studioOptions?.mode === "edit" && Array.isArray(um.extData.studioOptions.localFiles),
+            });
+            const packProject = packId ? readPackProject(taskRoot, packId) : null;
+            const finalPaths = new Set(packProject?.items.flatMap((item) => item.state === "final" && item.path ? [item.path.replace(/\\/g, "/")] : []) ?? []);
             for (const file of afterFiles) {
               if (beforeSet.has(file.rel)) continue;
+              if (packId && !visiblePackAttachment(packId, file.rel, finalPaths)) continue;
               const attachment: AttachmentEvent = {
                 id: baseId(),
                 type: "attachment",

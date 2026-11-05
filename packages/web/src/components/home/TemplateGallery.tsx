@@ -1,16 +1,16 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import { Search } from 'lucide-react';
 import { t } from '@/i18n/t';
+import { getApiBase, getApiHeaders } from '@/services/rpc';
 import { TEMPLATES, type GalleryTemplate } from './templates';
 import { filterTemplates, templateCategories } from './templateGalleryFilter';
 
 /**
  * Template gallery (home option #16): every template beyond the 3 cards on
- * Home, backed by the static `templates` data module. Selecting a card calls
- * `onSelect(template)` so the host can pre-fill the composer prompt.
+ * Home, loaded from /api/studio-templates with the local data as a fallback.
  */
 export function TemplateGallery({
   templates = TEMPLATES,
@@ -21,11 +21,27 @@ export function TemplateGallery({
 }) {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<string | null>(null);
+  const [serverTemplates, setServerTemplates] = useState(templates);
 
-  const categories = useMemo(() => templateCategories(templates), [templates]);
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await fetch(`${getApiBase()}/api/studio-templates`, { headers: await getApiHeaders() });
+        if (!res.ok) return;
+        const data = await res.json() as { templates?: GalleryTemplate[] };
+        if (mounted && Array.isArray(data.templates) && data.templates.length > 0) setServerTemplates(data.templates);
+      } catch {
+        // The bundled templates remain available when the local API is unavailable.
+      }
+    })();
+    return () => { mounted = false; };
+  }, [templates]);
+
+  const categories = useMemo(() => templateCategories(serverTemplates), [serverTemplates]);
   const filtered = useMemo(
-    () => filterTemplates(templates, { query, category }),
-    [templates, query, category],
+    () => filterTemplates(serverTemplates, { query, category }),
+    [serverTemplates, query, category],
   );
 
   return (

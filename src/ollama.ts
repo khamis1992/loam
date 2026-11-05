@@ -47,7 +47,7 @@ export interface ChatOptions {
   timeoutMs?: number;
   signal?: AbortSignal;
   onToken?: (text: string) => void;
-  /** Optional constrained JSON output for local models. */
+  /** Optional constrained JSON output for local and OpenAI-compatible providers. */
   format?: Record<string, unknown>;
   /** Enable thinking mode for local models (Qwen etc.). */
   think?: boolean;
@@ -57,7 +57,7 @@ export interface ChatOptions {
   cacheControl?: boolean;
   /** Context window size for local models. */
   numCtx?: number;
-  /** Max prediction tokens for local models. */
+  /** Max prediction tokens (`num_predict` locally, `max_tokens` for cloud providers). */
   numPredict?: number;
   /** Nucleus sampling (top_p) for local models. */
   topP?: number;
@@ -280,6 +280,8 @@ export class OllamaClient {
       messages,
       ...(opts.tools && opts.tools.length > 0 ? { tools: opts.tools } : {}),
       temperature: opts.temperature ?? 0.2,
+      ...(opts.numPredict !== undefined ? { max_tokens: opts.numPredict } : {}),
+      ...(opts.format ? { response_format: { type: "json_object" } } : {}),
     };
 
     const signals: AbortSignal[] = [];

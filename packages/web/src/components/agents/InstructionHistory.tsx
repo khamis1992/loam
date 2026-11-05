@@ -151,26 +151,26 @@ export function useInstructionProposals(agentId: string) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (isActive: () => boolean = () => true) => {
     setLoading(true);
     setError(null);
     try {
-      setProposals(await fetchProposals(agentId));
+      const next = await fetchProposals(agentId);
+      if (isActive()) setProposals(next);
     } catch (err) {
-      setProposals([]);
-      setError(err instanceof Error ? err.message : String(err));
+      if (isActive()) {
+        setProposals([]);
+        setError(err instanceof Error ? err.message : String(err));
+      }
     } finally {
-      setLoading(false);
+      if (isActive()) setLoading(false);
     }
   }, [agentId]);
 
   useEffect(() => {
     if (!agentId) return;
     let mounted = true;
-    (async () => {
-      if (!mounted) return;
-      await refresh();
-    })();
+    void refresh(() => mounted);
     return () => {
       mounted = false;
     };

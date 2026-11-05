@@ -1,0 +1,21 @@
+{
+  "findingId": "005e1dc4379411600109c43a",
+  "check": "security_headers",
+  "target": "http://127.0.0.1:5195/nutrio/",
+  "severity": "medium",
+  "claim": "Missing response security headers can enable injection or clickjacking",
+  "detail": "Missing Content-Security-Policy, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy on HTTP 200",
+  "remediation": null,
+  "evidence": [
+    {
+      "id": "EV0012",
+      "kind": "request_response",
+      "at": "2026-10-27T12:20:03.906Z",
+      "url": "http://127.0.0.1:5195/nutrio/",
+      "method": "GET",
+      "status": 200,
+      "request": "GET http://127.0.0.1:5195/nutrio/",
+      "response": "<!doctype html>\r\n<html lang=\"en\">\r\n  <head>\n    <script type=\"module\">import { injectIntoGlobalHook } from \"/@react-refresh\";\ninjectIntoGlobalHook(window);\nwindow.$RefreshReg$ = () => {};\nwindow.$RefreshSig$ = () => (type) => type;</script>\n\n    <script type=\"module\" src=\"/@vite/client\"></script>\n\r\n    <meta charset=\"UTF-8\" />\r\n    <!-- Enhanced viewport configuration for mobile -->\r\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content\" />\r\n    <!-- App name -->\r\n    <title>Nutrio - Healthy Meal Delivery & Nutrition Tracking</title>\r\n    <meta name=\"description\" content=\"Order healthy meals, track your nutrition, and reach your fitness goals with Nutrio.\" />\r\n    <meta name=\"author\" content=\"Nutrio\" />\r\n\r\n    <!-- Theme color for mobile browsers -->\r\n    <meta name=\"theme-color\" content=\"#F6F8FC\" />\r\n    <meta name=\"msapplication-TileColor\" content=\"#F6F8FC\" />\r\n\r\n    <!-- Open Graph / Social Media -->\r\n    <meta property=\"og:title\" content=\"Nutrio - Healthy Meal Delivery\" />\r\n    <meta property=\"og:description\" content=\"Order healthy meals, track your nutrition, and reach your fitness goals with Nutrio.\" />\r\n    <meta property=\"og:type\" content=\"website\" />\r\n\r\n    <!-- Favicon -->\r\n    <link rel=\"icon\" type=\"image/png\" href=\"/favicon.png\" />\r\n    <link rel=\"apple-touch-icon\" href=\"/logo.png\" />\r\n\r\n    <!-- ن7 (2026-10-05) — الخطوط مستضافة محليًا (@font-face في index.css، الملفات في\r\n         /fonts). لا وصلات CDN: لا FOUT عند الإقلاع ولا انهيار طباعة بلا شبكة. -->\r\n    <!-- Performance: preload the critical first-paint subsets (Latin body/bold + Arabic regular/bold) -->\r\n    <link rel=\"preload\" href=\"/fonts/PlusJakartaSans-400-normal-latin-ext-or-latin-11.woff2\" as=\"font\" type=\"font/woff2\" crossorigin />\r\n    <link rel=\"preload\" href=\"/fonts/PlusJakartaSans-700-normal-latin-ext-or-latin-23.woff2\" as=\"font\" type=\"font/woff2\" crossorigin />\r\n    <link rel=\"preload\" href=\"/fonts/Changa-400-nor"
+    }
+  ]
+}

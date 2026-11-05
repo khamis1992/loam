@@ -16,6 +16,9 @@ export interface SavedRun {
   effort?: string;
   /** Neo N10: the composer's output type ("auto" when unset). */
   outputType?: OutputType;
+  packId?: import("../packs/types.js").PackId;
+  studioGoal?: string;
+  studioOptions?: Record<string, unknown>;
   /** Neo N10: the resolved effort level behind `effort` (fast|max|""). */
   routingEffort?: EffortLevel | "";
   workMode?: string;

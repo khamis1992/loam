@@ -1,0 +1,14 @@
+{
+  "schema": "loam.service-pack/v1",
+  "id": "loam-game",
+  "version": "1.0.0",
+  "modes": ["game", "game-dev"],
+  "skills": [{"name":"loam-game","path":"packs/loam-game/SKILL.md"}],
+  "wraps": ["file_write", "file_edit", "preview_serve"],
+  "ownedTools": [],
+  "wrappedTools": ["file_write", "file_edit", "preview_serve"],
+  "hostTools": ["game_present"],
+  "gate": {"tool":"game_present","timeoutMs":30000},
+  "legacyRoutes": "keep",
+  "update": "hot"
+}

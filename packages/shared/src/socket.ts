@@ -78,6 +78,8 @@ export interface UserMessage extends Base {
     knowledge?: boolean;
     /** Neo N10: composer output type (auto|text|image|video|slides|website). */
     outputType?: string;
+    studioGoal?: string;
+    studioOptions?: Record<string, unknown>;
     /** Neo N10: composer effort level (fast|max). */
     effort?: string;
     /** Neo N10: explicit A/B arm model ids for the fan-out run. */

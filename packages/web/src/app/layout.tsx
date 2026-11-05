@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" dir="ltr" className="light is-desktop" data-interface-density="compact" data-accent-color="default">
-      <body className="min-h-screen bg-bg-main">
+      <body className="min-h-dvh bg-bg-main">
         <StoreProvider>
           {children}
           <SettingsDialog />

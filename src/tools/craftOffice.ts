@@ -41,6 +41,7 @@ import { bool, str, type Tool, type ToolContext, type ToolResult } from "./regis
 // Share the audited command-id resolution helpers with `video_studio` instead of
 // duplicating them: both tools resolve an engine id against a live catalog.
 import { closeMatches, toCommandIdList } from "./videoStudio.js";
+import { craftCardOptions, designCraftCardSlide, readCraftCardImage } from "./craftSlideCards.js";
 
 // ---------------------------------------------------------------------------
 // Apps
@@ -604,6 +605,8 @@ export function createCraftOfficeTool(options: CraftOfficeToolOptions = {}): Too
         title: { type: "string", description: "edit: the slide title, in the user's language." },
         body: { type: "string", description: "edit: the slide body, the document page, or a spreadsheet grid (rows separated by ';' and cells by '|')." },
         text: { type: "string", description: "edit: body text used when body is omitted." },
+        background: { type: "string", description: "edit/export slides: optional slide background color as #RRGGBB." },
+        accent: { type: "string", description: "export slides: optional accent bar color as #RRGGBB." },
         params: { type: "object", description: "execute / export: parameters for the command." },
         steps: { type: "array", items: STEP_SCHEMA, description: "batch: the ordered commands to run." },
         search: { type: "string", description: "commands: keep only ids, labels or menu paths containing this text." },
@@ -856,7 +859,11 @@ export function createCraftOfficeTool(options: CraftOfficeToolOptions = {}): Too
           if (!isCraftOfficeFormat(formatArg)) {
             return failure({ message: `office_craft export format must be one of: ${CRAFT_OFFICE_FORMATS.join(", ")}` });
           }
-          const byteExport = app === "slides" ? { format: "pptx", fileName: "presentation.pptx" } : app === "sheets" ? { format: "xlsx", fileName: "workbook.xlsx" } : null;
+          const titleArg = str(args, "title").trim();
+          const titleName = titleArg && !placeholderCraftText(titleArg) ? titleArg : "";
+          const requestedName = path.basename(file || (typeof paramsArg["path"] === "string" ? paramsArg["path"] : "") || titleName);
+          const byteExport = app === "slides" ? { format: "pptx", fileName: requestedName || "presentation.pptx" } : app === "sheets" ? { format: "xlsx", fileName: requestedName || "workbook.xlsx" } : null;
+          if (byteExport && !byteExport.fileName.toLowerCase().endsWith(`.${byteExport.format}`)) byteExport.fileName += `.${byteExport.format}`;
           if (byteExport && formatArg === "native" && catalog.includes("file.saveBytes")) {
             let raw: unknown;
             try {
@@ -866,8 +873,10 @@ export function createCraftOfficeTool(options: CraftOfficeToolOptions = {}): Too
             }
             const bytes = slideExportBytes(raw);
             if (!bytes) return failure({ message: `${appName} did not return ${byteExport.format} bytes. Do not retry this same call.`, retry: false });
+            const invalid = await validateOfficePackage(bytes, app);
+            if (invalid) return failure({ message: invalid, retry: false });
             const storedPath = writeSlideUpload(ctx.workspace, taskId, bytes, byteExport.fileName);
-            if (app === "slides") await markExportedArabicSlides(storedPath.absolute);
+            if (app === "slides") await markExportedArabicSlides(storedPath.absolute, { accent: str(args, "accent").trim(), background: str(args, "background").trim() });
             return jsonResult({
               app,
               name: appName,
@@ -945,7 +954,6 @@ export function createCraftOfficeTool(options: CraftOfficeToolOptions = {}): Too
           if (formatArg === "native" && saveId === "file.save" && app === "slides" && typeof exportParams["format"] !== "string") {
             exportParams["format"] = "pptx";
           }
-          const requestedName = path.basename(file || (typeof paramsArg["path"] === "string" ? paramsArg["path"] : ""));
           let stored: unknown;
           try {
             stored = await relay.enqueue(taskId, app, "craft.waitSave", {
@@ -957,8 +965,24 @@ export function createCraftOfficeTool(options: CraftOfficeToolOptions = {}): Too
             return relayErrorResult(err, appName);
           }
           const storedPath = storedPathOf(stored);
-          if (app === "slides" && storedPath && storedPath.toLowerCase().endsWith(".pptx")) {
-            await markExportedArabicSlides(storedPath);
+          if (!storedPath) {
+            return failure({ retry: false, message: `${appName} export did not return a task file path. Treat the export as failed.` });
+          }
+          let taskRoot: string;
+          try {
+            taskRoot = requireTaskWorkspace(taskId, ctx.workspace);
+          } catch (error) {
+            if (!(error instanceof Error) || error.message !== "task not found") throw error;
+            taskRoot = path.join(ctx.workspace, ".loam-tasks", taskId);
+          }
+          const exportedFile = taskPath(taskRoot, storedPath);
+          if (!fs.existsSync(exportedFile) || fs.statSync(exportedFile).size === 0) {
+            return failure({ retry: false, message: `${appName} export returned ${storedPath}, but the task file is missing or empty.` });
+          }
+          if (app === "slides" && storedPath.toLowerCase().endsWith(".pptx")) {
+            const invalid = await validateOfficePackage(fs.readFileSync(exportedFile), app);
+            if (invalid) return failure({ message: invalid, retry: false });
+            await markExportedArabicSlides(exportedFile, { accent: str(args, "accent").trim(), background: str(args, "background").trim() });
           }
           const after = await readCraftState(app, taskId, relay);
           return jsonResult({
@@ -1047,6 +1071,23 @@ export function createCraftOfficeTool(options: CraftOfficeToolOptions = {}): Too
                 "office_craft action \"edit\" needs title and body for the one slide. Do not retry this same call.",
             });
           }
+          if (placeholderCraftText(title) || placeholderCraftText(bodyText)) {
+            return failure({ retry: false, message: "office_craft action \"edit\" needs real slide content, not an angle-bracket placeholder." });
+          }
+          if (str(args, "layout").trim() === "cards") {
+            const sections = Array.isArray(args["sections"]) ? args["sections"].filter((value): value is string => typeof value === "string" && value.trim().length > 0) : [];
+            const background = str(args, "background").trim() || "#F7F3EA";
+            if (!title || sections.length === 0) return failure({ retry: false, message: "The card layout needs a title and text sections." });
+            if (!/^#[0-9a-f]{6}$/i.test(background)) return failure({ retry: false, message: "office_craft slide background must be a #RRGGBB color." });
+            const image = readCraftCardImage(args["image"]);
+            try {
+              await designCraftCardSlide(relay, taskId, { title, sections, background, arabic: /[\u0590-\u08ff]/.test(`${title}\n${bodyText}`), ...craftCardOptions(args), ...(image ? { image } : {}) });
+            } catch (err) {
+              return relayErrorResult(err, appName);
+            }
+            const after = await readCraftState(app, taskId, relay);
+            return jsonResult({ app, name: appName, action, layout: "cards", sections: sections.length, summary: after?.summary ?? before?.summary ?? null });
+          }
           for (const id of ["slide.inspect", "text.set"]) {
             if (catalog.length > 0 && !catalog.includes(id)) {
               return failure({ message: unknownCommandMessage("edit", catalog, [id]) });
@@ -1069,6 +1110,13 @@ export function createCraftOfficeTool(options: CraftOfficeToolOptions = {}): Too
                 "The slide has no text shapes to edit. Call office_craft with action \"state\", then action \"execute\" with text.set. Do not retry this same call.",
             });
           }
+          const background = str(args, "background").trim();
+          if (background && !/^#[0-9a-f]{6}$/i.test(background)) {
+            return failure({ retry: false, message: "office_craft slide background must be a #RRGGBB color." });
+          }
+          if (background && catalog.length > 0 && !catalog.includes("design.background")) {
+            return failure({ message: unknownCommandMessage("edit", catalog, ["design.background"]) });
+          }
           const written: Array<{ command: string; ok: boolean; id: string | number; result?: unknown }> = [];
           for (const write of writes) {
             try {
@@ -1081,7 +1129,24 @@ export function createCraftOfficeTool(options: CraftOfficeToolOptions = {}): Too
               return relayErrorResult(err, appName);
             }
           }
+          if (background) {
+            try {
+              await relay.enqueue(taskId, app, "engine.execute", { command: "design.background", params: { color: background } });
+            } catch (err) {
+              return relayErrorResult(err, appName);
+            }
+          }
           const after = await readCraftState(app, taskId, relay);
+          let confirmedShapes: Array<Record<string, unknown>>;
+          try {
+            confirmedShapes = collectSlideShapes(await relay.enqueue(taskId, app, "engine.execute", { command: "slide.inspect", params: { index: 0 } }));
+          } catch (err) {
+            return relayErrorResult(err, appName);
+          }
+          const unconfirmed = writes.filter((write) => !confirmedShapes.some((shape) => shapeId(shape) === write.id && shape["text"] === write.text));
+          if (unconfirmed.length > 0) {
+            return failure({ retry: false, message: "Loam Slides did not confirm the requested title and body after editing.", details: { unconfirmed } });
+          }
           return jsonResult({
             app,
             name: appName,
@@ -1523,8 +1588,20 @@ function shapeId(shape: Record<string, unknown>): string | number | null {
   return typeof id === "string" || typeof id === "number" ? id : null;
 }
 
-/** The slides editor does not mark Arabic paragraphs rtl. Match the studio export post-pass. */
-async function markExportedArabicSlides(file: string): Promise<void> {
+function readableArabicFontSizes(xml: string): string {
+  return xml.replace(/<p:sp\b[^>]*>[\s\S]*?<\/p:sp>/g, (shape) => {
+    const placeholder = shape.match(/<p:ph\b[^>]*\btype="(ctrTitle|subTitle)"[^>]*\/>/);
+    if (!placeholder) return shape;
+    const size = placeholder[1] === "ctrTitle" ? "4000" : "2400";
+    return shape.replace(/<a:rPr\b([^>]*?)\/>/g, (_run, attributes: string) => {
+      const clean = attributes.replace(/\s+sz="[^"]*"/g, "").trim();
+      return `<a:rPr${clean ? ` ${clean}` : ""} sz="${size}"/>`;
+    });
+  });
+}
+
+/** Apply RTL and any explicitly requested slide theme to the exported package. */
+async function markExportedArabicSlides(file: string, design: { accent?: string; background?: string } = {}): Promise<void> {
   try {
     const abs = path.resolve(file);
     if (!fs.existsSync(abs)) return;
@@ -1537,18 +1614,52 @@ async function markExportedArabicSlides(file: string): Promise<void> {
       const entry = zip.file(name);
       if (!entry) continue;
       let xml = await entry.async("string");
-      if (!arabic.test(xml) || xml.includes('rtl="1"')) continue;
-      xml = xml.replace(/<a:pPr\b([^>]*?)>/g, '<a:pPr rtl="1"$1>');
-      if (!xml.includes('rtl="1"')) xml = xml.replace(/<a:p\b/g, '<a:p rtl="1"');
-      xml = xml.replace(/<a:latin typeface="[^"]*"/g, '<a:latin typeface="Segoe UI"');
-      if (!xml.includes("<a:cs ")) xml = xml.replace(/<a:latin typeface="Segoe UI"\/>/g, '<a:latin typeface="Segoe UI"/><a:cs typeface="Segoe UI"/>');
+      if (arabic.test(xml) && !xml.includes('rtl="1"')) {
+        xml = xml.replace(/<a:pPr\b([^>]*?)>/g, '<a:pPr rtl="1"$1>');
+        if (!xml.includes('rtl="1"')) xml = xml.replace(/<a:p\b/g, '<a:p rtl="1"');
+        xml = xml.replace(/<a:latin typeface="[^"]*"/g, '<a:latin typeface="Segoe UI"');
+        if (!xml.includes("<a:cs ")) xml = xml.replace(/<a:latin typeface="Segoe UI"\/>/g, '<a:latin typeface="Segoe UI"/><a:cs typeface="Segoe UI"/>');
+        changed = true;
+      }
+      if (arabic.test(xml)) {
+        xml = readableArabicFontSizes(xml);
+        changed = true;
+      }
+      if (design.background && /^#[0-9a-f]{6}$/i.test(design.background)) {
+        xml = xml.replace(/<p:bgPr>[\s\S]*?<\/p:bgPr>/, `<p:bgPr><a:solidFill><a:srgbClr val="${design.background.slice(1).toUpperCase()}"/></a:solidFill><a:effectLst/></p:bgPr>`);
+        changed = true;
+      }
+      if (design.accent && /^#[0-9a-f]{6}$/i.test(design.accent)) {
+        const accent = design.accent.slice(1).toUpperCase();
+        const bar = (id: number, name: string, width: number, color: string) => `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="${name}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="0" y="6570000"/><a:ext cx="${width}" cy="288000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="${color}"/></a:solidFill><a:ln><a:noFill/></a:ln></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr/></a:p></p:txBody></p:sp>`;
+        xml = xml.replace("</p:spTree>", `${bar(9001, "Flag green", 12192000, "007A33")}${bar(9002, "Flag accent", 2000000, accent)}</p:spTree>`);
+        changed = true;
+      }
       zip.file(name, xml);
-      changed = true;
     }
     if (!changed) return;
     fs.writeFileSync(abs, Buffer.from(await zip.generateAsync({ type: "nodebuffer" })));
   } catch {
     // The exported file remains the editor's bytes when the post-pass cannot rewrite it.
+  }
+}
+
+function placeholderCraftText(value: string): boolean {
+  return /^<[^>]{1,120}>$/.test(value.trim());
+}
+
+async function validateOfficePackage(bytes: Buffer, app: CraftOfficeApp): Promise<string | null> {
+  if (app !== "slides" && app !== "sheets") return null;
+  const expected = app === "slides" ? "ppt/presentation.xml" : "xl/workbook.xml";
+  try {
+    const zip = await JSZip.loadAsync(bytes);
+    if (!zip.file(expected)) return `${CRAFT_OFFICE_APP_NAMES[app]} export is not a valid Office package: ${expected} is missing.`;
+    if (app === "slides" && !Object.keys(zip.files).some((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name))) {
+      return "Loam Slides export contains no slides.";
+    }
+    return null;
+  } catch {
+    return `${CRAFT_OFFICE_APP_NAMES[app]} export is not a readable Office package.`;
   }
 }
 

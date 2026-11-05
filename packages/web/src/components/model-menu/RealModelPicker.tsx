@@ -47,7 +47,7 @@ export function useModelDirectory() {
 }
 
 export function RealModelPicker({ onTier, forceFlexForm = false }: {
-  onTier: (tier: PickTier) => void;
+  onTier: (tier: PickTier, opts?: { keepOpen?: boolean }) => void;
   forceFlexForm?: boolean;
 }) {
   const { directory, failed, activeId } = useModelDirectory();
@@ -86,7 +86,7 @@ function RealModels({ directory, failed, activeId, onPicked }: {
   directory: ModelDirectory | null;
   failed: boolean;
   activeId: string;
-  onPicked: (tier: PickTier) => void;
+  onPicked: (tier: PickTier, opts?: { keepOpen?: boolean }) => void;
 }) {
   const [query, setQuery] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -133,7 +133,7 @@ function RealModels({ directory, failed, activeId, onPicked }: {
     if ('error' in result) { setError(result.error); return; }
     rememberRunModel(result.model);
     setNeedsKey(result.needsKey);
-    onPicked(result.tier);
+    onPicked(result.tier, result.needsKey ? { keepOpen: true } : undefined);
   };
 
   return (

@@ -8,6 +8,8 @@ export interface SchedulerDeps {
   intervalMs?: number;
   /** MF2: delay before the single retry of a failed run (default 2 minutes). */
   retryDelayMs?: number;
+  /** Interactive runs get priority; due routines stay pending while this is false. */
+  canRun?: () => boolean;
 }
 
 export function startScheduler(deps: SchedulerDeps): () => void {
@@ -16,7 +18,7 @@ export function startScheduler(deps: SchedulerDeps): () => void {
   let busy = false;
 
   const tick = async (): Promise<void> => {
-    if (busy) return;
+    if (busy || !(deps.canRun?.() ?? true)) return;
     busy = true;
     try {
       for (const schedule of dueSchedules()) {

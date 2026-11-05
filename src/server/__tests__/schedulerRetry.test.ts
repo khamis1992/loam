@@ -155,4 +155,28 @@ describe("scheduler retry policy (MF2)", () => {
       stop();
     }
   });
+
+  it("keeps due routines pending while interactive work owns the queue", async () => {
+    const s = db.addSchedule("wait for interactive work", 3600);
+    db.setScheduleNextRunAt(s.id, new Date(Date.now() - 1000).toISOString());
+    let allowed = false;
+    let calls = 0;
+    const stop = scheduler.startScheduler({
+      canRun: () => allowed,
+      runScheduled: async () => {
+        calls += 1;
+        return "task_after_interactive";
+      },
+      intervalMs: 20,
+    });
+    try {
+      await new Promise((r) => setTimeout(r, 100));
+      assert.equal(calls, 0, "background routine must not compete with an interactive run");
+      allowed = true;
+      await waitFor(() => calls === 1);
+      assert.equal(find(s.id).lastTaskId, "task_after_interactive");
+    } finally {
+      stop();
+    }
+  });
 });

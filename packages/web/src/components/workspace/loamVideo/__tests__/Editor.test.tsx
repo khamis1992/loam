@@ -1,9 +1,7 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { WorkspaceEditorProps } from '../../types';
 
-// The bridge never reports an API, so the panel must fall back to the built-in
-// video editor. Both the bridge module and the legacy editor are mocked.
 vi.mock('@/lib/filmcraft', () => {
   class FakeBridge {
     async waitForApi(): Promise<{ hasApi: boolean }> {
@@ -23,6 +21,12 @@ vi.mock('../../video/Editor', () => ({
   },
 }));
 
+vi.mock('../VideoFilePreview', () => ({
+  VideoFilePreview: function VideoFilePreviewStub() {
+    return <div data-testid="light-video-player">Light video player</div>;
+  },
+}));
+
 import { Editor } from '../Editor';
 
 const props: WorkspaceEditorProps = {
@@ -33,9 +37,13 @@ const props: WorkspaceEditorProps = {
 };
 
 describe('loam-video workspace editor', () => {
-  it('falls back to the built-in editor when the bridge is unavailable', async () => {
+  it('opens a finished video in the lightweight player before starting the advanced studio', async () => {
     render(<Editor {...props} />);
+    expect(await screen.findByTestId('light-video-player')).toBeInTheDocument();
+    expect(screen.queryByTestId('legacy-video-editor')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Loam Effects')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('open-advanced-video-studio'));
+    expect(await screen.findByText(/built-in video editor/i)).toBeInTheDocument();
     expect(await screen.findByTestId('legacy-video-editor')).toBeInTheDocument();
-    expect(screen.getByText(/built-in video editor/i)).toBeInTheDocument();
   });
 });

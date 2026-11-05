@@ -3,12 +3,21 @@ import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 const root=path.resolve(import.meta.dirname,'..');
+const releaseDir=process.env.LOAM_RELEASE_DIR||'release';
 const version=JSON.parse(await fs.readFile(path.join(root,'package.json'),'utf8')).version;
 const profile=process.env.LOAM_USER_DATA_DIR||path.join(process.env.APPDATA||path.join(os.homedir(),'AppData','Roaming'),'manus-local');
 const destination=path.join(profile,'updates');await fs.mkdir(destination,{recursive:true});
-const file=`Loam-Setup-${version}.exe`,source=path.join(root,'release',file);
+const file=`Loam-Setup-${version}.exe`,source=path.join(root,releaseDir,file);
 const data=await fs.readFile(source),sha512=crypto.createHash('sha512').update(data).digest('base64');
-const packagedVersion=JSON.parse(await fs.readFile(path.join(root,'release/win-unpacked/resources/app/package.json'),'utf8')).version;
+let packagedVersion;
+try {
+  packagedVersion=JSON.parse(await fs.readFile(path.join(root,releaseDir,'win-unpacked/resources/app/package.json'),'utf8')).version;
+} catch (error) {
+  if (error.code!=='ENOENT') throw error;
+  const built=await fs.readFile(path.join(root,releaseDir,'latest.yml'),'utf8');
+  packagedVersion=built.match(/^version:\s*(\S+)/m)?.[1];
+}
+if (!packagedVersion) throw new Error('Packaged version does not match package.json. Build the installer before publishing.');
 if(packagedVersion!==version)throw new Error('Packaged version does not match package.json. Build the installer before publishing.');
 let previous='';try{previous=await fs.readFile(path.join(destination,'latest.yml'),'utf8');}catch(error){if(error.code!=='ENOENT')throw error;}
 const previousVersion=previous.match(/^version:\s*(\S+)/m)?.[1];

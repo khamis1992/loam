@@ -55,6 +55,29 @@ for dep in ["js-sys", "wasm-bindgen"]:
 (web / "Cargo.toml").write_text(c)
 # upstream wasm fixups (std::process::id() panics on wasm32 with current std)
 if app == "deckcraft":
+    f = repo / "crates/fonts/build.rs"; t = f.read_text()
+    old = 'if wasm && !matches!((*family, *style), ("BIZ UDPGothic", "Regular") | ("Inter", "Regular" | "Bold" | "Variable")) {'
+    new = 'if wasm && !matches!((*family, *style), ("BIZ UDPGothic", "Regular") | ("Inter", "Regular" | "Bold" | "Variable") | ("Noto Sans Arabic", "Regular")) {'
+    assert old in t, "deckcraft wasm font allowlist not found"
+    f.write_text(t.replace(old, new, 1))
+    f = repo / "crates/fonts/src/fallback.rs"; t = f.read_text()
+    test = r'''
+    #[test]
+    fn loam_arabic_face_is_required_for_web_documents() {
+        assert!(CRAFT_FONTS.iter().any(|f| f.family == "Noto Sans Arabic" && f.scripts.contains(&"Arab")));
+        let db = FontDb::with_font_dirs(Vec::new());
+        db.set_system_fallback(false);
+        let inter = db.face(crate::DEFAULT_FAMILY, "Regular");
+        let cluster = ['\u{0628}', '\u{064E}'];
+        let face = db.cascade(&cluster, std::slice::from_ref(&inter), "Regular");
+        assert_eq!(face.family, "Noto Sans Arabic");
+        assert!(covers_cluster(&face, &cluster));
+        let glyphs = crate::shape(&face, "مَتَحُ الفَنِّ الإِسْلَامِيُّ 2008", &[], |c| c);
+        assert!(!glyphs.is_empty() && glyphs.iter().all(|g| g.gid != 0));
+    }
+'''
+    t = t[:t.rfind("\n}")] + test + "\n}\n"
+    f.write_text(t)
     f = repo / "crates/engine/src/recovery.rs"; t = f.read_text()
     t = t.replace("        h.write_u32(std::process::id());\n", "        #[cfg(not(target_arch = \"wasm32\"))]\n        h.write_u32(std::process::id());\n", 1)
     f.write_text(t)

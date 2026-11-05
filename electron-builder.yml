@@ -60,6 +60,14 @@ extraResources:
     to: app.asar.unpacked/addons/memory-skills-mcp/dist
     filter:
       - "server.cjs*"
+  - from: resources/recorder
+    to: app.asar.unpacked/resources/recorder
+    filter:
+      - "**/*"
+  - from: resources/slides
+    to: app.asar.unpacked/resources/slides
+    filter:
+      - "kuwait-towers.jpg"
   - from: node_modules/ffmpeg-static
     to: app.asar.unpacked/node_modules/ffmpeg-static
     filter:

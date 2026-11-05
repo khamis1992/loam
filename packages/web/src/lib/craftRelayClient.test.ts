@@ -75,6 +75,29 @@ describe('CraftRelayClient', () => {
     live.stop();
   });
 
+  it('executes only the targets announced by this panel', async () => {
+    const { bridge } = fakeBridge();
+    const posted: Array<{ body: Record<string, unknown> }> = [];
+    const fetchFn = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      if (String(url).includes('/stream')) return sseResponse([craftFrame('ws_docs', 'engine.execute', {}, 'docs'), craftFrame('ws_slides', 'engine.execute', {}, 'slides')]);
+      posted.push({ body: JSON.parse(String(init?.body)) as Record<string, unknown> });
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    });
+    const live = new CraftRelayClient({
+      taskId: 'task-1',
+      relayTargets: ['slides'],
+      getBridge: () => bridge,
+      fetchFn: fetchFn as unknown as typeof fetch,
+      headers: () => ({}),
+      autoReconnect: false,
+    });
+    await live.start();
+    await vi.waitFor(() => expect(posted).toHaveLength(1));
+    expect(bridge.call).toHaveBeenCalledTimes(1);
+    expect(posted[0]?.body).toMatchObject({ id: 'ws_slides', ok: true });
+    live.stop();
+  });
+
   it('craft.waitSave runs file.save and resolves with the stored task-file path', async () => {
     const { bridge } = fakeBridge();
     const uploadBytes = vi.fn(async () => undefined);

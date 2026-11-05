@@ -5,7 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import {
   SquarePen, Monitor, Search, BookOpen, Layers, Workflow, LayoutGrid, MoreHorizontal,
   ChevronRight, Share2, MonitorSmartphone, Clapperboard, Palette, Store, KanbanSquare, Brain,
-  PanelLeftClose, PanelLeftOpen, Scale, Landmark,
+  PanelLeft, PanelLeftClose, PanelLeftOpen, ArrowLeft, ArrowRight, Scale, Landmark,
 } from 'lucide-react';
 import { useAppSelector, useAppDispatch, toggleSidebar } from '@/store';
 import { selectSession, startNewTask, loadSessions, type AgentSession } from '@/store/sessionsSlice';
@@ -17,6 +17,7 @@ import { AccountPopover } from '@/components/dialogs/AccountPopover';
 import { SearchDialog } from '@/components/dialogs/SearchDialog';
 import { ReferralDialog } from '@/components/dialogs/ReferralDialog';
 import { NotificationBell } from '@/components/shell/NotificationBell';
+import { UpdateButton } from '@/components/update/UpdateButton';
 import { SidebarTaskItem } from './SidebarTaskItem';
 
 type NavItem = {
@@ -135,16 +136,45 @@ export function Sidebar() {
         collapsed ? 'w-14' : 'w-[192px]',
       )}
     >
-      <button
-        type="button"
-        aria-label={t(collapsed ? 'Expand sidebar' : 'Collapse sidebar')}
-        title={t(collapsed ? 'Expand sidebar' : 'Collapse sidebar')}
-        data-testid="sidebar-collapse-toggle"
-        onClick={toggleCollapsed}
-        className="mt-1 flex h-7 w-7 items-center justify-center self-start rounded-control text-text-secondary hover:bg-fill-hover"
-      >
-        {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
-      </button>
+      <div className="mt-1 flex items-center gap-1">
+        <button
+          type="button"
+          aria-label={t('Toggle sidebar')}
+          title={t('Toggle sidebar')}
+          onClick={() => dispatch(toggleSidebar())}
+          className="flex h-7 w-7 items-center justify-center rounded-control text-text-secondary hover:bg-fill-hover"
+        >
+          <PanelLeft className="size-4" />
+        </button>
+        <button
+          type="button"
+          aria-label={t(collapsed ? 'Expand sidebar' : 'Collapse sidebar')}
+          title={t(collapsed ? 'Expand sidebar' : 'Collapse sidebar')}
+          data-testid="sidebar-collapse-toggle"
+          onClick={toggleCollapsed}
+          className="flex h-7 w-7 items-center justify-center rounded-control text-text-secondary hover:bg-fill-hover"
+        >
+          {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
+        </button>
+        <button
+          type="button"
+          aria-label={t('Back')}
+          title={t('Back')}
+          onClick={() => window.history.back()}
+          className="flex h-7 w-7 items-center justify-center rounded-control text-text-tertiary hover:bg-fill-hover"
+        >
+          <ArrowLeft className="size-4" />
+        </button>
+        <button
+          type="button"
+          aria-label={t('Forward')}
+          title={t('Forward')}
+          onClick={() => window.history.forward()}
+          className="flex h-7 w-7 items-center justify-center rounded-control text-text-tertiary hover:bg-fill-hover"
+        >
+          <ArrowRight className="size-4" />
+        </button>
+      </div>
 
       <div className="flex flex-col gap-0.5 py-1.5">
         {nav.map((item) => (
@@ -209,6 +239,7 @@ export function Sidebar() {
       )}
 
       <div className={clsx('mt-2 shrink-0 space-y-2', collapsed && 'flex flex-col items-center gap-1')}>
+        <UpdateButton collapsed={collapsed} />
         {!collapsed && (
           <button
             type="button"

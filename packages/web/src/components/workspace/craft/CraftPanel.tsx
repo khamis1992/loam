@@ -1,13 +1,14 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertCircle, CheckCircle, Loader2, Save, X } from 'lucide-react';
+import { AlertCircle, CheckCircle, Download, Loader2, Pencil, Play, Save, X } from 'lucide-react';
 import { t } from '@/i18n/t';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
 import { CRAFT_APPS, CraftBridge, type CraftApp, type CraftReady, type CraftSave } from '@/lib/craftBridge';
 import { CraftRelayClient } from '@/lib/craftRelayClient';
 import type { WorkspaceEditorProps, WorkspaceFile, WorkspaceKind } from '../types';
 import { isPreviewOnlyExt, unsupportedNoticeFor } from '../craft';
+import { openCraftPresenter } from './presenter';
 
 /** How long the embedded app gets to announce `craft:ready` before we fall back. */
 export const CRAFT_READY_TIMEOUT_MS = 20_000;
@@ -23,6 +24,7 @@ export interface CraftPanelProps {
   /** Path of the task file to open as soon as the app is ready. */
   path: string;
   onClose: () => void;
+  live?: boolean;
   /** Render the built-in fallback instead of the Craft app (tests / non-Electron). */
   forceFallback?: boolean;
   /** Fetch the file that is opened in the editor. */
@@ -216,6 +218,7 @@ export function CraftPanel({
   app,
   path,
   onClose,
+  live = false,
   forceFallback,
   fetchBytes = (filePath) => fetchTaskFileBytes(taskId, filePath),
   uploadBytes = uploadSave,
@@ -228,6 +231,11 @@ export function CraftPanel({
   const fallbackKind = fallbackKindFor(app);
   const notice = unsupportedNoticeFor(path);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const [frameNode, setFrameNode] = useState<HTMLIFrameElement | null>(null);
+  const assignFrame = useCallback((node: HTMLIFrameElement | null) => {
+    iframeRef.current = node;
+    setFrameNode(node);
+  }, []);
   const bridgeRef = useRef<CraftBridge | null>(null);
 
   const [status, setStatus] = useState<PanelStatus>(forceFallback ? 'fallback' : 'loading');
@@ -235,6 +243,35 @@ export function CraftPanel({
   const [savedName, setSavedName] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [Fallback, setFallback] = useState<CraftFallbackEditor | null>(null);
+  const canPreview = app === 'slides' && !/^__loam_craft_[a-z]+__\.[a-z0-9]+$/i.test(path);
+  const [viewMode, setViewMode] = useState<'preview' | 'edit'>(canPreview ? 'preview' : 'edit');
+  const previewRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    setViewMode(live || !canPreview ? 'edit' : 'preview');
+  }, [canPreview, live]);
+
+  const [slidePreviewSrc, setSlidePreviewSrc] = useState<string | null>(null);
+  useEffect(() => {
+    if (!canPreview) return;
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    setSlidePreviewSrc(null);
+    void (async () => {
+      try {
+        const bytes = await fetchBytes('previews/slide-1.png');
+        if (bytes.length === 0) throw new Error('preview unavailable');
+        objectUrl = URL.createObjectURL(new Blob([bytes as unknown as BlobPart]));
+        if (!cancelled) setSlidePreviewSrc(objectUrl);
+      } catch {
+        if (!cancelled) setViewMode('edit');
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [canPreview, taskId, path]);
 
   // Store one `craft:save` in the task's files (the existing task-files API).
   const storeSave = useCallback(
@@ -311,6 +348,12 @@ export function CraftPanel({
     };
   }, [app, forceFallback]);
 
+  // Only announce an executing relay after the bridge is ready to answer commands.
+  useEffect(() => {
+    if (forceFallback || status !== 'ready') return;
+    return retainCraftRelay(taskId, app);
+  }, [app, forceFallback, status, taskId]);
+
   // Mount the bridge for this iframe and wait for the app to become ready.
   useEffect(() => {
     if (forceFallback) return;
@@ -319,7 +362,6 @@ export function CraftPanel({
     const bridge = new CraftBridge(iframe);
     bridgeRef.current = bridge;
     registerCraftBridge(taskId, app, { bridge, ready: null });
-    const releaseRelay = retainCraftRelay(taskId, app);
     let disposed = false;
 
     bridge
@@ -344,15 +386,14 @@ export function CraftPanel({
       unsubscribeSave();
       bridgeRef.current = null;
       registerCraftBridge(taskId, app, null);
-      releaseRelay();
       bridge.dispose();
     };
-    // Callbacks are read through a ref. A new upload function must not tear down the live editor.
-  }, [app, forceFallback, taskId]);
+    // frameNode retries this effect if the iframe was not in the first commit.
+  }, [app, forceFallback, frameNode, taskId]);
 
   // Open the task file once the app is ready.
   useEffect(() => {
-    if (status !== 'ready' || !path) return;
+    if (status !== 'ready' || !path || /^__loam_craft_[a-z]+__\.[a-z0-9]+$/i.test(path)) return;
     const bridge = bridgeRef.current;
     if (!bridge) return;
     let cancelled = false;
@@ -361,8 +402,11 @@ export function CraftPanel({
         const bytes = await fetchBytes(path);
         if (cancelled || !bridgeRef.current) return;
         bridge.open(path.split(/[\\/]/).pop() ?? path, bytes);
-      } catch {
-        /* nothing to open: the app simply starts empty */
+      } catch (error) {
+        if (!cancelled) {
+          setStatus('error');
+          setError(error instanceof Error && error.message ? error.message : t('The file could not be loaded. Open the task files and try again.'));
+        }
       }
     })();
     return () => {
@@ -484,9 +528,52 @@ export function CraftPanel({
   // overlay, so the embedded editor can announce `craft:ready` at any moment.
   const loading = status === 'loading';
 
+  const editorFrame = (
+    <iframe
+      ref={assignFrame}
+      src={craftFrameUrl(app)}
+      title={info.displayName}
+      className="h-full w-full border-0"
+      allow="autoplay; fullscreen"
+    />
+  );
+  const downloadFile = async () => {
+    const bytes = await fetchBytes(path);
+    const objectUrl = URL.createObjectURL(new Blob([bytes as unknown as BlobPart], { type: craftSaveMime(path) }));
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = path.split(/[\\/]/).pop() ?? path;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+  };
+
   return (
     <div className="flex h-full w-full flex-col border-s border-border-main bg-bg-menu">
-      {hideHeader ? null : (
+      {viewMode === 'preview' ? (
+        <div className="flex h-row shrink-0 items-center justify-between border-b border-border-main px-4">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium text-text-primary">{path.split(/[\\/]/).pop()}</p>
+            <p className="truncate text-[11px] text-text-tertiary">{info.displayName}</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            <button type="button" onClick={() => { void downloadFile(); }} title={t('Download')} aria-label={t('Download')} className="rounded-control p-1.5 text-text-secondary hover:bg-fill-hover">
+              <Download className="size-4" />
+            </button>
+            <button type="button" onClick={() => setViewMode('edit')} className="flex items-center gap-1 rounded-control px-2 py-1 text-xs text-text-secondary hover:bg-fill-hover">
+              <Pencil className="size-3.5" /> {t('Edit')}
+            </button>
+            <button type="button" onClick={() => { openCraftPresenter(app, () => { void previewRef.current?.requestFullscreen?.(); }); }} className="flex items-center gap-1 rounded-control px-2 py-1 text-xs text-text-secondary hover:bg-fill-hover">
+              <Play className="size-3.5" /> {t('Present')}
+            </button>
+          </div>
+        </div>
+      ) : hideHeader && canPreview ? (
+        <div className="flex h-row shrink-0 items-center justify-end border-b border-border-main px-4">
+          <button type="button" onClick={() => setViewMode('preview')} className="flex items-center gap-1.5 rounded-control px-3 py-1.5 text-sm text-text-secondary hover:bg-fill-hover">
+            <Play className="size-3.5" /> {t('Preview')}
+          </button>
+        </div>
+      ) : hideHeader ? null : (
         <PanelHeader
           name={info.displayName}
           statusLabel={error ?? (loading ? t('Loading {name}', { name: info.displayName }) : t('Ready'))}
@@ -494,33 +581,52 @@ export function CraftPanel({
           saving={saving}
           onClose={onClose}
           onSave={() => void handleSave()}
+          onPreview={canPreview ? () => setViewMode('preview') : undefined}
         />
       )}
       <div className="relative min-h-0 flex-1 overflow-hidden">
-        <iframe
-          ref={iframeRef}
-          src={craftFrameUrl(app)}
-          title={info.displayName}
-          className="h-full w-full border-0"
-          allow="autoplay; fullscreen"
-        />
-        {loading && (
+        {editorFrame}
+        {viewMode === 'preview' ? (
+          <div ref={previewRef} className="absolute inset-0 flex flex-col bg-bg-main">
+            <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-6">
+              {slidePreviewSrc ? (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={slidePreviewSrc} alt={path} onError={() => setViewMode('edit')} className="aspect-video w-full object-contain shadow-card" />
+                </>
+              ) : <Loader2 className="size-5 animate-spin text-text-tertiary" />}
+            </div>
+            <div className="flex shrink-0 items-center gap-2 border-t border-border-main bg-bg-menu px-4 py-3">
+              <div className="relative h-14 w-24 overflow-hidden rounded-control border border-icon-blue">
+                {slidePreviewSrc && (
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={slidePreviewSrc} alt="" className="h-full w-full object-cover" />
+                  </>
+                )}
+                <span className="absolute bottom-0 end-0 bg-icon-blue px-1.5 text-[11px] text-white">1</span>
+              </div>
+            </div>
+          </div>
+        ) : loading ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-bg-menu/90 text-text-secondary">
             <Loader2 className="size-5 animate-spin" />
             <p>{t('Loading {name}', { name: info.displayName })}</p>
           </div>
-        )}
+        ) : null}
       </div>
-      <div className="flex items-center gap-2 border-t border-border-main px-4 py-1.5 text-[11px] text-text-tertiary">
-        {savedName ? (
-          <>
-            <CheckCircle className="size-3.5 text-function-success" />
-            <span className="truncate">{t('Saved {name}', { name: savedName })}</span>
-          </>
-        ) : (
-          <span className="truncate">{t('Changes are saved into the task files.')}</span>
-        )}
-      </div>
+      {viewMode === 'edit' && (
+        <div className="flex items-center gap-2 border-t border-border-main px-4 py-1.5 text-[11px] text-text-tertiary">
+          {savedName ? (
+            <>
+              <CheckCircle className="size-3.5 text-function-success" />
+              <span className="truncate">{t('Saved {name}', { name: savedName })}</span>
+            </>
+          ) : (
+            <span className="truncate">{t('Changes are saved into the task files.')}</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -533,6 +639,7 @@ function PanelHeader({
   saving,
   onClose,
   onSave,
+  onPreview,
 }: {
   name: string;
   statusLabel: string;
@@ -540,6 +647,7 @@ function PanelHeader({
   saving: boolean;
   onClose: () => void;
   onSave?: () => void;
+  onPreview?: () => void;
 }) {
   return (
     <div className="flex h-row shrink-0 items-center justify-between border-b border-border-main px-4">
@@ -550,6 +658,11 @@ function PanelHeader({
         </p>
       </div>
       <div className="flex shrink-0 items-center gap-2">
+        {status === 'ready' && onPreview && (
+          <button type="button" onClick={onPreview} className="flex items-center gap-1.5 rounded-control px-3 py-1.5 text-sm text-text-secondary hover:bg-fill-hover">
+            <Play className="size-3.5" /> {t('Preview')}
+          </button>
+        )}
         {status === 'ready' && onSave && (
           <button
             type="button"

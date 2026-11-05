@@ -55,6 +55,7 @@ async function main() {
     target: "node22",
     outfile: "dist/server.cjs",
     external: [
+      "esbuild",
       "playwright",
       "node-pty",
       "@modelcontextprotocol/sdk",

@@ -9,6 +9,7 @@ import { createChatSocket } from "./socket.js";
 import { makeRpcHandlers, rpcError, tokenToUserUid, consumeLoginToken, issueLoginToken } from "./rpc.js";
 import { getCurrentLocalToken } from "../security/localAuth.js";
 import { shortUid } from "./events.js";
+import { attachRecordingDelivery } from "./recorderDelivery.js";
 import { storeBlob, getBlob, hasBlob, BLOB_STORE_MAX_BYTES } from "./blobStore.js";
 
 export interface ProtocolAdapterDeps {
@@ -254,6 +255,7 @@ export async function startProtocolAdapter(deps: ProtocolAdapterDeps): Promise<P
   });
 
   const io = createChatSocket({ httpServer: server, store, runTask: deps.runTask, getTask: deps.getTask, workspace: deps.cfg.workspace });
+  const unbindRecording = attachRecordingDelivery(store, io);
 
   let port = deps.port ?? (Number(process.env.AS_PROTOCOL_PORT) || 8787);
 
@@ -275,6 +277,7 @@ export async function startProtocolAdapter(deps: ProtocolAdapterDeps): Promise<P
     port,
     close: () =>
       new Promise((resolve) => {
+        unbindRecording();
         io.close(() => {
           server.close(() => resolve());
         });

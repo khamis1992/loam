@@ -86,6 +86,13 @@ describe("Neo N10 output type -> pipeline mode", () => {
     assert.ok(image.tools.includes("loam_canvas"), "the image mode must expose loam_canvas");
   });
 
+  it("lets a presentation-video CTA override the PPTX keyword with the real video pipeline", () => {
+    const prompt = "أنشئ فيديو MP4 من العرض التقديمي uploads/deck.pptx باستخدام video_studio";
+    assert.equal(resolveLoamMode(um({ loamMode: "media", outputType: "video" }), prompt), "media");
+    assert.equal(resolveLoamMode(um({ outputType: "video" }), prompt), "media");
+    assert.equal(resolveLoamMode(um({}), "create a presentation"), "write");
+  });
+
   it("keeps an explicit loamMode above the output type", () => {
     assert.equal(resolveLoamMode(um({ loamMode: "research", outputType: "slides" }), "build me an app"), "research");
     assert.equal(resolveLoamMode(um({ loamMode: "media", outputType: "text" }), "hello"), "media");

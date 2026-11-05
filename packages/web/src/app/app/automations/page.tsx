@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Loader2, Clock, Zap, Play, Pencil, Trash2, Plus, X, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Loader2, Clock, Zap, Play, Pencil, Trash2, Plus, X, AlertCircle, ArrowUp, CalendarClock, GitPullRequest, Workflow } from 'lucide-react';
 import clsx from 'clsx';
 import { t } from '@/i18n/t';
 import {
@@ -52,6 +52,7 @@ export default function AutomationsPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [newPrompt, setNewPrompt] = useState('');
 
   const refresh = useCallback(async () => {
     try {
@@ -130,9 +131,9 @@ export default function AutomationsPage() {
     }
   };
 
-  const openNew = () => {
+  const openNew = (prompt = '', kind: DraftKind = 'interval') => {
     setFormError(null);
-    setDraft({ prompt: '', kind: 'interval', intervalSeconds: '3600', cron: '', at: '' });
+    setDraft({ prompt, kind, intervalSeconds: '3600', cron: kind === 'cron' ? '0 9 * * *' : '', at: '' });
   };
 
   return (
@@ -148,13 +149,73 @@ export default function AutomationsPage() {
         <h1 className="text-title-lg text-text-primary">{t('Automations')}</h1>
         <button
           type="button"
-          onClick={openNew}
+          onClick={() => openNew()}
           className="ms-auto flex items-center gap-1 rounded-control bg-fill-hover px-3 py-1.5 text-sm font-medium text-text-primary"
         >
           <Plus className="size-4" /> {t('New automation')}
         </button>
       </div>
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="mx-auto w-full max-w-3xl flex-1 overflow-y-auto p-4">
+        <section className="pt-6" aria-label={t('Automate your work')}>
+          <h2 className="text-center font-serif text-[32px] leading-tight text-text-primary">{t('Automate your work')}</h2>
+          <div className="mt-5 rounded-composer border border-border-main bg-bg-menu p-3">
+            <label htmlFor="automation-brief" className="sr-only">{t('Give Loam a task to work on')}</label>
+            <textarea
+              id="automation-brief"
+              value={newPrompt}
+              onChange={(event) => setNewPrompt(event.target.value)}
+              placeholder={t('Give Loam a task to work on')}
+              rows={2}
+              data-testid="automation-brief"
+              className="w-full resize-none bg-transparent px-1 py-1 text-sm text-text-primary outline-none placeholder:text-text-tertiary"
+            />
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => openNew(newPrompt)}
+                aria-label={t('Send')}
+                className="rounded-full bg-fill-tsp p-2 text-text-secondary hover:bg-fill-hover"
+              >
+                <ArrowUp className="size-4" />
+              </button>
+            </div>
+          </div>
+          <div className="mt-5 grid gap-3 sm:grid-cols-3">
+            <button
+              type="button"
+              data-testid="automation-kind-schedule"
+              onClick={() => openNew(newPrompt, 'interval')}
+              className="rounded-card border border-border-main bg-bg-menu p-4 text-start hover:bg-fill-hover"
+            >
+              <CalendarClock className="mb-5 size-5 text-text-secondary" />
+              <span className="block text-sm font-medium text-text-primary">{t('Schedule')}</span>
+              <span className="mt-1 block text-xs text-text-tertiary">{t('Set a recurring schedule')}</span>
+            </button>
+            <button
+              type="button"
+              data-testid="automation-kind-triggered"
+              onClick={() => openNew(newPrompt, 'cron')}
+              className="rounded-card border border-border-main bg-bg-menu p-4 text-start hover:bg-fill-hover"
+            >
+              <GitPullRequest className="mb-5 size-5 text-text-secondary" />
+              <span className="block text-sm font-medium text-text-primary">{t('Triggered task')}</span>
+              <span className="mt-1 block text-xs text-text-tertiary">{t('Run a task on demand')}</span>
+            </button>
+            <button
+              type="button"
+              data-testid="automation-kind-advanced"
+              onClick={() => openNew(newPrompt, 'cron')}
+              className="rounded-card border border-border-main bg-bg-menu p-4 text-start hover:bg-fill-hover"
+            >
+              <Workflow className="mb-5 size-5 text-text-secondary" />
+              <span className="block text-sm font-medium text-text-primary">{t('Advanced automation')}</span>
+              <span className="mt-1 block text-xs text-text-tertiary">{t('Build a custom workflow')}</span>
+            </button>
+          </div>
+        </section>
+        <div className="mb-3 mt-8">
+          <h2 className="text-sm font-medium text-text-primary">{t('Recent automations')}</h2>
+        </div>
         {loading ? (
           <div className="flex h-full items-center justify-center text-text-secondary">
             <Loader2 className="mr-2 size-5 animate-spin" /> {t('Loading')}
@@ -171,7 +232,7 @@ export default function AutomationsPage() {
             <p className="text-sm">{t('No automations yet.')}</p>
             <button
               type="button"
-              onClick={openNew}
+              onClick={() => openNew()}
               className="flex items-center gap-1 rounded-control bg-fill-hover px-3 py-1.5 text-sm font-medium text-text-primary"
             >
               <Plus className="size-4" /> {t('Create your first automation')}

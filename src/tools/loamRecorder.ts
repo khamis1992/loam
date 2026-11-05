@@ -57,6 +57,8 @@ export function createLoamRecorderTools(options: LoamRecorderToolOptions = {}): 
       const params = args.params && typeof args.params === "object" ? { ...args.params as Record<string, unknown> } : {};
       if (typeof ctx.workspace === "string" && ctx.workspace.trim()) params.workspace = ctx.workspace;
       else delete params.workspace;
+      if (typeof ctx.taskId === "string" && ctx.taskId.trim()) params.taskId = ctx.taskId.trim();
+      else delete params.taskId;
       return textResult(await session.call(method, params));
     },
   }];

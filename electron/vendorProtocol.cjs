@@ -14,11 +14,17 @@ const VENDOR_MIME = {
   ".mjs": "text/javascript",
   ".json": "application/json",
   ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".gif": "image/gif",
+  ".svg": "image/svg+xml",
   ".ico": "image/x-icon",
   ".ttf": "font/ttf",
   ".woff": "font/woff",
   ".woff2": "font/woff2",
   ".wasm": "application/wasm",
+  ".mp4": "video/mp4",
 };
 
 /** The five internal Craft app ids served by loamcraft://. */
@@ -80,6 +86,33 @@ function vendorResponse(filePath) {
   });
 }
 
+/** Same as vendorResponse, and answers a byte Range so a video element can decode. */
+function vendorMediaResponse(filePath, request) {
+  const data = fs.readFileSync(filePath);
+  const headers = {
+    "Content-Type": vendorMime(filePath),
+    "Accept-Ranges": "bytes",
+    "Content-Length": String(data.length),
+  };
+  const range = request && request.headers ? request.headers.get("range") : "";
+  const match = range ? /^bytes=(\d*)-(\d*)$/.exec(range) : null;
+  if (!match) return new Response(data, { headers });
+  const start = match[1] ? Number(match[1]) : 0;
+  const end = match[2] ? Math.min(Number(match[2]), data.length - 1) : data.length - 1;
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start > end || start >= data.length) {
+    return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${data.length}` } });
+  }
+  const slice = Buffer.from(data.subarray(start, end + 1));
+  return new Response(slice, {
+    status: 206,
+    headers: {
+      ...headers,
+      "Content-Length": String(slice.length),
+      "Content-Range": `bytes ${start}-${end}/${data.length}`,
+    },
+  });
+}
+
 module.exports = {
   VENDOR_MIME,
   CRAFT_APP_IDS,
@@ -90,4 +123,5 @@ module.exports = {
   resolveCraftFile,
   vendorNotFound,
   vendorResponse,
+  vendorMediaResponse,
 };

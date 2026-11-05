@@ -19,6 +19,8 @@ export interface ToolContext {
   ollama?: OllamaClient;
   /** Active task id, so long-running tools can poll for cancellation. */
   taskId?: string;
+  packId?: import("../packs/types.js").PackId;
+  studioOptions?: Record<string, unknown>;
   /** Owning companion agent id (vault/memory scope). Optional: tools fall back
    *  to a neutral scope when the run context does not carry one. */
   agentId?: string;

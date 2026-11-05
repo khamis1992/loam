@@ -81,6 +81,8 @@ export interface UserMessage extends Base {
     legalMatterId?: string;
     /** Neo N10: composer output type (Auto/Text/Image/Video/Slides/Website). */
     outputType?: string;
+    studioGoal?: string;
+    studioOptions?: Record<string, unknown>;
     /** Neo N10: composer effort level (Fast/Max). */
     effort?: string;
     /** Neo N10: explicit A/B arm model ids, when the composer asked for a fan-out. */

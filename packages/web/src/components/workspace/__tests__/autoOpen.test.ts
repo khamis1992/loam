@@ -17,6 +17,12 @@ registerEditor({
   load: async () => ({ default: () => null }),
 });
 registerEditor({
+  kind: 'craft',
+  label: 'Craft',
+  extensions: ['pptx'],
+  load: async () => ({ default: () => null }),
+});
+registerEditor({
   kind: 'video',
   label: 'Video',
   extensions: ['mp4'],
@@ -58,10 +64,37 @@ describe('workspace auto-open decision', () => {
     expect(decideWorkspaceOpen(ev)).toBeNull();
   });
 
+  it('opens Loam Video when a recorder handoff names an mp4', () => {
+    const ev = toolEvent({
+      tool: 'loam_recorder',
+      description: JSON.stringify({ target: 'loam-video', path: 'C:\\rec\\clip.mp4' }),
+    });
+    expect(decideWorkspaceOpen(ev)).toEqual({
+      path: 'C:\\rec\\clip.mp4',
+      kind: 'loam-video',
+      importPath: 'C:\\rec\\clip.mp4',
+    });
+  });
+
+  it('opens the recorder panel when the recording has not been handed off', () => {
+    const ev = toolEvent({ tool: 'loam_recorder', description: 'waiting for consent' });
+    expect(decideWorkspaceOpen(ev)).toEqual({ path: null, kind: 'loam-recorder' });
+  });
+
   it('finds a path inside a description when structured fields are absent', () => {
     const ev = toolEvent({ tool: 'office_export', description: 'Saved deck to slides/keynote.pptx.' });
     const target = decideWorkspaceOpen(ev);
     expect(target?.path).toBe('slides/keynote.pptx');
+  });
+
+  it('opens the actual exported file when the tool detail is a JSON string', () => {
+    const ev = toolEvent({ tool: 'office_craft', argumentsDetail: JSON.stringify({ action: 'export', path: 'uploads/kuwait.pptx' }) as never });
+    expect(decideWorkspaceOpen(ev)).toEqual({ path: 'uploads/kuwait.pptx', kind: 'craft', craftApp: 'slides' });
+  });
+
+  it('finds an Arabic filename inside an export result', () => {
+    const ev = toolEvent({ tool: 'office_craft', description: '{"action":"export","path":"uploads/1793720772450-دولة الكويت.pptx"}' });
+    expect(decideWorkspaceOpen(ev)).toEqual({ path: 'uploads/1793720772450-دولة الكويت.pptx', kind: 'craft', craftApp: 'slides' });
   });
 
   it('latestWorkspaceDecision returns the newest qualifying event', () => {

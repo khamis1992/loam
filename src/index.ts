@@ -43,6 +43,17 @@ import { chatCommandPrompt, lazyLevelAnnouncement, parseChatCommand, setSessionL
 import { videoStudioRelay } from "./server/videoStudioRelay.js";
 import { formatIssues, scanEncoding } from "./scripts/check-encoding.js";
 import { isBudgetStopError, runAgent } from "./agent/loop.js";
+import { singleSlideRequest, runSingleSlideFastPath } from "./agent/singleSlide.js";
+import { presentationVideoRequest, runPresentationVideoFastPath } from "./agent/presentationVideo.js";
+import { staticWebsiteRequest, runStaticWebsiteFastPath } from "./agent/staticWebsite.js";
+import { svgImageRequest, runSvgImageFastPath } from "./agent/svgImage.js";
+import { resolvePackId } from "./packs/intent.js";
+import { toolsForPack } from "./packs/loader.js";
+import { getPackManifest } from "./packs/registry.js";
+import { createServicePackTools } from "./packs/tools.js";
+import { imageProviderFromConfig } from "./creative/imageProvider.js";
+import { withPackGuard } from "./packs/guard.js";
+import { packSystemGuidance } from "./packs/guidance.js";
 import { isOutputType, modelAbChain, normalizeEffort, type EffortLevel } from "./llm/router.js";
 import { runOrchestratedAgent, type VerdictRecord } from "./agent/orchestrator.js";
 import { createOrchestrationCore } from "./orchestration/core.js";
@@ -322,6 +333,14 @@ async function main(): Promise<void> {
     // Neo N10: the composer's output type and effort level are resolved once, here,
     // so the loop, the prompt and the routing map all agree on the same values.
     const runOutputType = isOutputType(opts.outputType) ? opts.outputType : "auto";
+    const activePackId = resolvePackId({
+      packId: opts.savedRun.packId,
+      studioGoal: opts.savedRun.studioGoal,
+      outputType: runOutputType,
+      loamMode: effectiveMode,
+      prompt: effectivePrompt,
+      localEdit: opts.savedRun.studioOptions?.mode === "edit" && Array.isArray(opts.savedRun.studioOptions.localFiles),
+    });
     const routingEffort: EffortLevel | "" = normalizeEffort(opts.effort ?? agent?.effort ?? "");
     // Neo N10 A/B: an explicit arm list wins; otherwise the routing map's own
     // models (per-tool specialists + effort model) become the sibling arms.
@@ -474,6 +493,7 @@ async function main(): Promise<void> {
       const suffix = [
         `You are Loam. Active mode: ${modeDefinition.labelAr}. ${modeDefinition.description} Only use the provided tool capabilities.`,
         modeDefinition.outputHint,
+        packSystemGuidance(activePackId),
         workModeDefinition.policy,
         memoryContextSuffix,
         memoryIndexSummary,
@@ -507,7 +527,19 @@ async function main(): Promise<void> {
       // N16: recall/recall_status are always-on names (runTools.ts) but the
       // run-scoped instances above are the ones that can attach a hit to THIS
       // run, so they replace the process-wide copies instead of colliding.
-      const agentTools = registry.forAllowlist(knowledgeRunAllow).withBound([...deviceToolInstances, ...memoryToolInstances, ...teamToolInstances, ...recallToolInstances].filter((t) => dynamicAllow.has(t.name) && runAllowSet.has(t.name)));
+      const unscopedAgentTools = registry.forAllowlist(knowledgeRunAllow).withBound([...deviceToolInstances, ...memoryToolInstances, ...teamToolInstances, ...recallToolInstances].filter((t) => dynamicAllow.has(t.name) && runAllowSet.has(t.name)));
+      const packManifest = activePackId ? getPackManifest(activePackId) : undefined;
+      const runImageGenerator = effectiveCfg.policy?.networkEnabled === false ? undefined : imageProviderFromConfig(effectiveCfg.cloudModel);
+      const packToolInstances = packManifest
+        ? createServicePackTools({ ...(runImageGenerator ? { imageGenerator: runImageGenerator } : {}) }).filter((tool) => packManifest.modelTools.includes(tool.name) || packManifest.hostTools.includes(tool.name))
+        : [];
+      const scopedAgentTools = activePackId
+        ? withPackGuard(toolsForPack(unscopedAgentTools.withBound(packToolInstances), activePackId, knowledgeRunAllow), activePackId)
+        : unscopedAgentTools;
+      const agentTools = scopedAgentTools;
+      const fastPathAgentTools = activePackId
+        ? withPackGuard(toolsForPack(unscopedAgentTools.withBound(packToolInstances), activePackId, knowledgeRunAllow, { includeWrapped: true }), activePackId)
+        : agentTools;
 
       // Sensitive host-input actions need an explicit user decision first (section 18).
       // MF4 (option 14): the gate resolves each request idempotently — replay of a
@@ -651,7 +683,7 @@ async function main(): Promise<void> {
         history,
         memories,
         ...(suffix ? { systemSuffix: suffix } : {}),
-        ...(effortMaxSteps ? { maxSteps: effortMaxSteps } : {}),
+        ...(effortMaxSteps || activePackId ? { maxSteps: Math.min(effortMaxSteps ?? 24, 24) } : {}),
         model: quickEditRoute.model,
         // Neo N10: output type narrows the tool set, effort picks the model and
         // the A/B arms fan the same prompt out on the canvas.
@@ -660,6 +692,8 @@ async function main(): Promise<void> {
         ...(hasAbArms ? { abModels } : {}),
         signal: runSignal,
         taskId: task,
+        ...(activePackId ? { packId: activePackId } : {}),
+        ...(opts.savedRun.studioOptions ? { studioOptions: opts.savedRun.studioOptions } : {}),
         sandboxMode: sandboxPolicy.mode,
         // O6: drain the durable inbound queue at each step boundary so a message
         // sent while this run was busy becomes a durable `input` event exactly once.
@@ -691,12 +725,53 @@ async function main(): Promise<void> {
           },
         } : {}),
       };
+      const fastSingleSlide = !missionRun && singleSlideRequest(commandPrompt, effectiveMode);
+      const fastPresentationVideo = !missionRun && presentationVideoRequest(commandPrompt, effectiveMode);
+      const fastStaticWebsite = !missionRun && activePackId === "loam-build" && staticWebsiteRequest(commandPrompt, effectiveMode);
+      const fastSvgImage = !missionRun && activePackId === "loam-image" && svgImageRequest(commandPrompt, effectiveMode);
       // Orchestration Core §4.0.3: one Core per run (root span loam.run) for
       // orchestrated runs; plain runAgent runs keep today's behaviour untouched.
-      const core = opts.savedRun.orchestrated ? createOrchestrationCore(effectiveCfg, ollama, task, task) : undefined;
+      const core = !fastSvgImage && !fastStaticWebsite && !fastSingleSlide && !fastPresentationVideo && opts.savedRun.orchestrated && !activePackId ? createOrchestrationCore(effectiveCfg, ollama, task, task) : undefined;
       if (core) emit({ type: "trace_started", traceId: core.runSpan.context.traceId, traceparent: core.traceparentEnv().TRACEPARENT ?? "" });
       try {
-      const result = opts.savedRun.orchestrated ? await runOrchestratedAgent({
+      const result = fastSvgImage ? await runSvgImageFastPath({
+        cfg: effectiveCfg,
+        ollama: runOllama,
+        tools: fastPathAgentTools,
+        emit: wrappedEmit,
+        prompt: commandPrompt,
+        taskId: task,
+        signal: runSignal,
+        ...(quickEditRoute.model ? { model: quickEditRoute.model } : {}),
+      }) : fastStaticWebsite ? await runStaticWebsiteFastPath({
+        cfg: effectiveCfg,
+        ollama: runOllama,
+        tools: fastPathAgentTools,
+        emit: wrappedEmit,
+        prompt: commandPrompt,
+        taskId: task,
+        signal: runSignal,
+        packId: "loam-build",
+        ...(quickEditRoute.model ? { model: quickEditRoute.model } : {}),
+      }) : fastPresentationVideo ? await runPresentationVideoFastPath({
+        cfg: effectiveCfg,
+        tools: fastPathAgentTools,
+        emit: wrappedEmit,
+        prompt: commandPrompt,
+        taskId: task,
+        signal: runSignal,
+        ...(activePackId ? { packId: activePackId } : {}),
+      }) : fastSingleSlide ? await runSingleSlideFastPath({
+        cfg: effectiveCfg,
+        ollama: runOllama,
+        tools: fastPathAgentTools,
+        emit: wrappedEmit,
+        prompt: commandPrompt,
+        taskId: task,
+        signal: runSignal,
+        ...(activePackId ? { packId: activePackId } : {}),
+        ...(quickEditRoute.model ? { model: quickEditRoute.model } : {}),
+      }) : opts.savedRun.orchestrated && !activePackId ? await runOrchestratedAgent({
         ...agentOpts, verdicts: verdicts as VerdictRecord[], resume: opts.savedRun.checkpoint, lifecycleHooks: true,
         ...(core ? { core } : {}),
         saveCheckpoint: (checkpoint) => {
@@ -842,6 +917,8 @@ async function main(): Promise<void> {
         statusWritten = false;
         log.warn(`lease-fenced status write rejected for ${task}: ${String(writeError)}`);
       }
+      sessionRuntime.markIdle(task);
+      sessionHibernation.markIdle(task);
       if (statusWritten) {
         if (!legalRun) recordWikiSession(effectiveCfg, task);
         if (cancelled) {
@@ -902,6 +979,9 @@ async function main(): Promise<void> {
         // Neo N10: the composer's output type and the resolved routing effort
         // survive the queue, so a resumed run keeps the same model map.
         outputType: isOutputType(opts.outputType) ? opts.outputType : undefined,
+        packId: resolvePackId({ studioGoal: opts.studioGoal, outputType: opts.outputType, loamMode: opts.mode, prompt: opts.prompt, localEdit: opts.studioOptions?.mode === "edit" && Array.isArray(opts.studioOptions.localFiles) }),
+        studioGoal: opts.studioGoal,
+        studioOptions: opts.studioOptions,
         routingEffort: normalizeEffort(opts.effort ?? agent?.effort ?? ""),
         workMode: normalizeWorkMode(opts.workMode ?? agent?.workMode),
         orchestrated: cfg.orchestrator.enabled, started: false,
@@ -1107,7 +1187,9 @@ async function main(): Promise<void> {
   registerBuiltInConnectors();
   const stopUrlWatchers = startUrlWatchers({ run: scheduledRunObj });
 
-  const stopScheduler = startScheduler({ runScheduled: scheduledRun });
+  const backgroundStartedAt = Date.now();
+  const backgroundCanRun = () => Date.now() - backgroundStartedAt >= 60_000 && executionQueue.snapshot().actives.length === 0;
+  const stopScheduler = startScheduler({ runScheduled: scheduledRun, canRun: backgroundCanRun });
 
   // MF11 messaging channels: Telegram/Email inbound -> agent thread task, reply -> channel.
   const stopChannelRouter = startChannelRouter({
@@ -1125,7 +1207,7 @@ async function main(): Promise<void> {
     let lastEvalAt = Number.isFinite(previousAt) ? previousAt : Date.now();
     evalTimer = setInterval(() => {
       if (Date.now() - lastEvalAt < intervalMs) return;
-      if (evalBusy()) return;
+      if (!backgroundCanRun() || evalBusy()) return;
       lastEvalAt = Date.now();
       void (async (): Promise<void> => {
         try {

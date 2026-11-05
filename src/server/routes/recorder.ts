@@ -6,6 +6,8 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { ROOT } from "../../config.js";
 import { readRecorderStatus } from "../recorderStatus.js";
 import { createFfmpegCapture } from "../recorder/ffmpegCapture.js";
+import { createWgcCapture, wgcHelperPath } from "../recorder/wgcCapture.js";
+import { createSpeechCaptionEngine } from "../recorder/speechCaptions.js";
 import { RecorderSession, type ConsentRequest } from "../recorder/session.js";
 
 export interface RecorderRouteOptions {
@@ -26,12 +28,13 @@ export function getRecorderSession(root: string, existing?: RecorderSession): Re
   const cached = sessions.get(root);
   if (cached) return cached;
   const status = readRecorderStatus(root);
+  const helper = wgcHelperPath(root);
   const created = new RecorderSession({
     distInstalled: status.installed,
     helperOk: status.helper === "ok",
     compositorOk: status.compositor === "ok",
-    captionsBackend: "missing",
-  }, Date.now, createFfmpegCapture());
+    captionsBackend: "creative_subtitles",
+  }, Date.now, (helper ? createWgcCapture(helper) : null) ?? createFfmpegCapture(), createSpeechCaptionEngine());
   sessions.set(root, created);
   return created;
 }

@@ -143,6 +143,11 @@ export function editorKindForExtension(ext: string): WorkspaceKind | null {
     case 'pptx':
     case 'ppt':
       return 'slides';
+    case 'mp4':
+    case 'mov':
+    case 'webm':
+    case 'mkv':
+      return 'loam-video';
     default:
       return null;
   }

@@ -130,6 +130,18 @@ interface WorkerOutcome {
   ledgerHint?: string;
 }
 
+/**
+ * A ledger "finish" aborts the worker before it can write a closing answer.
+ * The worker's own text wins; otherwise the ledger reason is the draft the
+ * final verifier judges. An empty reason stays empty so the run still fails
+ * instead of inventing a completion.
+ */
+export function answerAfterLedgerFinish(workerText: string, reason: string): string {
+  const text = workerText.trim();
+  if (text) return text;
+  return reason.trim();
+}
+
 /** C1: thrown into the worker's abort signal; a ledger stop is not a cancellation. */
 class LedgerStop extends Error {
   constructor(readonly outcome: LedgerOutcome) {
@@ -811,7 +823,8 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
           const stop = outcome.ledgerStop;
           if (o.budget) consumeTokens(o.budget, 0, stop.tokens);
           if (stop.decision === "finish") {
-            if (outcome.text.trim().length > 0) lastText = outcome.text;
+            const drafted = answerAfterLedgerFinish(outcome.text, stop.reason);
+            if (drafted) lastText = drafted;
             ledgerFinish = true;
             break;
           }

@@ -1,0 +1,103 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "Loam Security",
+          "rules": [
+            {
+              "id": "red_fuzz_discovery",
+              "shortDescription": {
+                "text": "red_fuzz_discovery"
+              }
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "red_fuzz_discovery",
+          "ruleIndex": 0,
+          "level": "warning",
+          "message": {
+            "text": "Hidden content discovered by fuzzing (60 path(s))\n/admin -> HTTP 200; /administrator -> HTTP 200; /api -> HTTP 200; /assets -> HTTP 200; /auth -> HTTP 200; /backup -> HTTP 200; /bin -> HTTP 200; /cgi-bin -> HTTP 200; /config -> HTTP 200; /console -> HTTP 200; /dashboard -> HTTP 200; /db -> HTTP 200; /debug -> HTTP 200; /dev -> HTTP 200; /docs -> HTTP 200; /downloads -> HTTP 200; /env -> HTTP 200; /etc -> HTTP 200; /git -> HTTP 200; /health -> HTTP 200\nRemove or protect content that should not be reachable; deny-list common backup/hidden paths."
+          },
+          "partialFingerprints": {
+            "loamFingerprint": "175ad553a43b78880c75b20a"
+          },
+          "properties": {
+            "target": "http://localhost:5195/nutrio",
+            "severity": "low",
+            "confidence": "observed",
+            "workflow": {
+              "state": "open",
+              "owner": "",
+              "note": ""
+            },
+            "evidence": [
+              "EV0012",
+              "EV0013",
+              "EV0014",
+              "EV0015",
+              "EV0016",
+              "EV0017",
+              "EV0018",
+              "EV0019",
+              "EV0020",
+              "EV0021",
+              "EV0022",
+              "EV0023",
+              "EV0024",
+              "EV0025",
+              "EV0026",
+              "EV0027",
+              "EV0028",
+              "EV0029",
+              "EV0030",
+              "EV0031",
+              "EV0032",
+              "EV0033",
+              "EV0034",
+              "EV0035",
+              "EV0036",
+              "EV0037",
+              "EV0038",
+              "EV0039",
+              "EV0040",
+              "EV0041",
+              "EV0042",
+              "EV0043",
+              "EV0044",
+              "EV0045",
+              "EV0046",
+              "EV0047",
+              "EV0048",
+              "EV0049",
+              "EV0050",
+              "EV0051",
+              "EV0052",
+              "EV0053",
+              "EV0054",
+              "EV0055",
+              "EV0056",
+              "EV0057",
+              "EV0058",
+              "EV0059",
+              "EV0060",
+              "EV0061"
+            ],
+            "browserEvidence": []
+          }
+        }
+      ]
+    }
+  ]
+}

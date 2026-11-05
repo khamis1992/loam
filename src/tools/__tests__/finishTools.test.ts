@@ -17,6 +17,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 
 import { createFinishTools, type GateResult } from "../finishTools.js";
+import { writePackProject } from "../../packs/present.js";
 import type { AgentEvent } from "../../agent/events.js";
 import type { Tool, ToolContext } from "../registry.js";
 
@@ -206,5 +207,50 @@ describe("finish verification gate", () => {
     assert.equal(res.ok, false);
     assert.match(res.content, /verify\.json/);
     assert.deepEqual(events, []);
+  });
+
+  it("publishes a final pack artifact and refuses done while an item is pending", async () => {
+    const events: AgentEvent[] = [];
+    const ctx = { ...makeCtx((event) => events.push(event)), packId: "loam-slides" as const };
+    writePackProject(tmpDir, { projectId: "task_1", packId: "loam-slides", revision: 0, items: [{ id: "slide-1", state: "pending", path: "uploads/deck.pptx" }] });
+    const blocked = await tool("finish").run({ summary: "done", confidence: "high" }, ctx);
+    assert.equal(blocked.ok, false);
+    assert.match(blocked.content, /slide-1/);
+    assert.equal(events.length, 0);
+
+    fs.mkdirSync(path.join(tmpDir, "uploads"), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, "uploads", "deck.pptx"), "real deck");
+    writePackProject(tmpDir, { projectId: "task_1", packId: "loam-slides", revision: 1, items: [{ id: "slide-1", state: "final", path: "uploads/deck.pptx" }] });
+    const finished = await tool("finish").run({ summary: "done", confidence: "high" }, ctx);
+    assert.equal(finished.ok, true);
+    assert.equal(events.filter((event) => event.type === "artifact_published").length, 1);
+    assert.equal(events.filter((event) => event.type === "done").length, 1);
+    assert.deepEqual(parse(finished.content).pack, { ok: true, uri: "loam-resource://loam-slides/deck/task_1", artifacts: ["uploads/deck.pptx"] });
+  });
+
+  it("does not publish a pack artifact when the finish verification gate fails", async () => {
+    const events: AgentEvent[] = [];
+    const ctx = { ...makeCtx((event) => events.push(event)), packId: "loam-slides" as const };
+    fs.mkdirSync(path.join(tmpDir, "uploads"), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, "uploads", "deck.pptx"), "real deck");
+    writePackProject(tmpDir, { projectId: "task_1", packId: "loam-slides", revision: 1, items: [{ id: "slide-1", state: "final", path: "uploads/deck.pptx" }] });
+    writeVerify(tmpDir, { commands: [{ name: "fail", cmd: "exit 1" }] });
+    const result = await tool("finish", async () => ({ code: 1, output: "failed" })).run({ summary: "done", confidence: "high" }, ctx);
+    assert.equal(result.ok, false);
+    assert.deepEqual(events, []);
+  });
+
+  it("bridges a legacy office result through the pack gate only when proof exists", async () => {
+    const events: AgentEvent[] = [];
+    const ctx = { ...makeCtx((event) => events.push(event)), packId: "loam-office" as const };
+    const blocked = await tool("finish").run({ summary: "done", confidence: "high" }, ctx);
+    assert.equal(blocked.ok, false);
+    assert.match(blocked.content, /proof/);
+    fs.mkdirSync(path.join(tmpDir, "uploads"), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, "uploads", "report.docx"), "real document");
+    const finished = await tool("finish").run({ summary: "done", confidence: "high", proof: ["uploads/report.docx"] }, ctx);
+    assert.equal(finished.ok, true, finished.content);
+    assert.equal(events.filter((event) => event.type === "artifact_published").length, 1);
+    assert.equal(events.filter((event) => event.type === "done").length, 1);
   });
 });

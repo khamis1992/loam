@@ -7,15 +7,24 @@ import path from "node:path";
 import { ffmpegAvailable, ffmpegPath } from "../workspace/videoRender.js";
 
 export interface ActiveCapture {
+  /** Resolves once frames are actually being written. Absent for an instant start. */
+  ready?: Promise<void>;
   pause(): Promise<void>;
   resume(): Promise<void>;
-  stop(): Promise<{ file: string }>;
+  stop(): Promise<{ file: string; audio?: boolean; cursor?: boolean }>;
   discard(): Promise<void>;
 }
 
+export interface CaptureStart {
+  directory: string;
+  cursor: boolean;
+  systemAudio: boolean;
+}
+
 export interface CaptureFactory {
-  start(input: { directory: string; cursor: boolean }): ActiveCapture;
-  transcode?(input: string, output: string, format: "gif" | "webm"): Promise<void>;
+  kind?: "ffmpeg" | "helper";
+  start(input: CaptureStart): ActiveCapture;
+  transcode?(input: string, output: string, format: "gif" | "webm" | "mp4", resolution?: "720p" | "1080p" | "1440p"): Promise<void>;
 }
 
 export function desktopGrabArgs(file: string, cursor: boolean): string[] {
@@ -59,6 +68,17 @@ function waitForQuit(child: ChildProcess): Promise<void> {
 async function closeGrab(child: ChildProcess): Promise<void> {
   try { child.stdin?.write("q"); } catch { child.kill(); }
   await waitForQuit(child);
+}
+
+export async function transcodeRecording(input: string, output: string, format: "gif" | "webm" | "mp4", resolution?: "720p" | "1080p" | "1440p"): Promise<void> {
+  const height = resolution === "720p" ? 720 : resolution === "1080p" ? 1080 : resolution === "1440p" ? 1440 : 0;
+  const scale = height ? `scale=-2:${height}` : "";
+  const args = format === "gif"
+    ? ["-hide_banner", "-loglevel", "error", "-y", "-i", input, "-vf", [scale, "fps=12"].filter(Boolean).join(","), output]
+    : format === "webm"
+      ? ["-hide_banner", "-loglevel", "error", "-y", "-i", input, ...(scale ? ["-vf", scale] : []), "-c:v", "libvpx-vp9", "-crf", "36", "-b:v", "0", output]
+      : ["-hide_banner", "-loglevel", "error", "-y", "-i", input, ...(scale ? ["-vf", scale] : []), "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-c:a", "copy", output];
+  await runFfmpeg(args);
 }
 
 export function createFfmpegCapture(): CaptureFactory | null {
@@ -125,11 +145,6 @@ export function createFfmpegCapture(): CaptureFactory | null {
         },
       };
     },
-    async transcode(input, output, format) {
-      const args = format === "gif"
-        ? ["-hide_banner", "-loglevel", "error", "-y", "-i", input, "-vf", "fps=12,scale=720:-1", output]
-        : ["-hide_banner", "-loglevel", "error", "-y", "-i", input, "-c:v", "libvpx-vp9", "-crf", "36", "-b:v", "0", output];
-      await runFfmpeg(args);
-    },
+    transcode: transcodeRecording,
   };
 }

@@ -56,7 +56,7 @@ function normalizeDirection(value: string): "ltr" | "rtl" | undefined {
  */
 export function formatDesignBriefResult(
   brief: DesignBrief,
-  meta: { source: "model" | "fallback"; model: string; warnings: string[] },
+  meta: { source: "model" | "fallback"; model: string; warnings: string[]; usage?: import("../agent/events.js").Usage },
   tokensPath?: string,
 ): string {
   return JSON.stringify({
@@ -64,6 +64,7 @@ export function formatDesignBriefResult(
     source: meta.source,
     model: meta.model,
     warnings: meta.warnings,
+    ...(meta.usage ? { usage: meta.usage } : {}),
     paletteSize: brief.palette.length,
     fontCount: brief.fonts.length,
     rtl: brief.rtl,
@@ -92,6 +93,8 @@ export function createDesignBriefTools(options: DesignBriefToolOptions = {}): To
         writeTokens: { type: "boolean", description: `Persist the token map to the workspace (default ${DESIGN_TOKENS_DEFAULT_PATH}). Default false.` },
         tokensPath: { type: "string", description: `Workspace-relative path for the token file (default ${DESIGN_TOKENS_DEFAULT_PATH}).` },
         maxAttempts: { type: "integer", minimum: 1, maximum: 4, description: "Model repair attempts before the deterministic fallback (default 2)." },
+        timeoutMs: { type: "integer", minimum: 1, description: "Optional per-attempt timeout for latency-sensitive pipelines." },
+        numPredict: { type: "integer", minimum: 128, description: "Optional response token cap (900 is sufficient for the complete brief)." },
       },
       required: ["brief"],
     },
@@ -109,6 +112,8 @@ export function createDesignBriefTools(options: DesignBriefToolOptions = {}): To
           constraints: str(args, "constraints"),
           signal: ctx.signal,
           maxAttempts: num(args, "maxAttempts", 2),
+          ...(num(args, "timeoutMs", 0) > 0 ? { timeoutMs: num(args, "timeoutMs", 20_000) } : {}),
+          ...(num(args, "numPredict", 0) > 0 ? { numPredict: num(args, "numPredict", 900) } : {}),
         });
 
         // The generator already validates; re-check defensively so the tool can
@@ -141,7 +146,7 @@ export function createDesignBriefTools(options: DesignBriefToolOptions = {}): To
           ok: true,
           content: formatDesignBriefResult(
             result.brief,
-            { source: result.source, model: result.model, warnings: result.warnings },
+            { source: result.source, model: result.model, warnings: result.warnings, usage: result.usage },
             tokensPath,
           ),
         };

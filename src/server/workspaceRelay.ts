@@ -18,7 +18,7 @@
  *
  * Guarantees:
  *  - one command at a time per task+target, in FIFO order;
- *  - a per-command timeout (default 120 s, configurable);
+ *  - a per-command timeout (default 30 s, configurable);
  *  - PANEL_NOT_OPEN when no client is attached to the task stream, published
  *    together with an `open_request` event so the client can auto-open the
  *    right panel (cr-03) and retry;
@@ -100,7 +100,7 @@ export class WorkspaceRelayError extends Error {
 export const VideoStudioRelayError = WorkspaceRelayError;
 
 export interface WorkspaceRelayOptions {
-  /** Per-command timeout in milliseconds (default 120000). */
+  /** Per-command timeout in milliseconds (default 30000). */
   timeoutMs?: number;
   /** How long to wait for a panel to attach after the open request (default 15000). */
   attachTimeoutMs?: number;
@@ -127,7 +127,7 @@ interface PendingCommand {
   timer: NodeJS.Timeout;
 }
 
-const DEFAULT_TIMEOUT_MS = 120_000;
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 /** Human-readable editor name used in errors and open requests. */
 function targetLabel(target: WorkspaceRelayTarget): string {

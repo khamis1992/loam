@@ -14,6 +14,7 @@ const recorderFeed = require("./recorder/indicator.cjs").createFeed({
   clear: () => recorderHud.clear(),
 });
 const { isTrustedExternalUrl } = require("./externalUrl.cjs");
+const { isRecorderChannel } = require("./recorder/allowlist.cjs");
 const { IPC_INVOKE, IPC_EVENT_PREFIX, IPC_META, IPC_SYNC, NAMESPACES } = require("./ipc-constants.cjs");
 const { sampleRendererRssMB, selectRendererMetrics } = require("./memorySampler.cjs");
 
@@ -126,7 +127,7 @@ const MIME_TYPES = {
   ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".svg": "image/svg+xml",
   ".ico": "image/x-icon", ".webp": "image/webp", ".woff": "font/woff", ".woff2": "font/woff2",
   ".ttf": "font/ttf", ".otf": "font/otf", ".eot": "application/vnd.ms-fontobject",
-  ".wasm": "application/wasm",
+  ".wasm": "application/wasm", ".mp4": "video/mp4",
 };
 
 // Non-failing vendored-dist check: when a dist is missing, print how to fetch it.
@@ -223,20 +224,38 @@ function prepareUserData() {
   }
 }
 
+function requestLocal(pathname, timeoutMs) {
+  return new Promise((resolve) => {
+    const req = http.get(BASE + pathname, { headers: authHeader(localAuthToken) }, (res) => {
+      let body = "";
+      res.on("data", chunk => { body += chunk; });
+      res.on("end", () => resolve({ kind: "response", status: res.statusCode || 0, body }));
+    });
+    req.on("error", () => resolve({ kind: "down" }));
+    req.setTimeout(timeoutMs, () => { req.destroy(); resolve({ kind: "timeout" }); });
+  });
+}
+
 function ping() {
   const dataPath = path.resolve(process.env.LOAM_DATA_DIR || process.env.MANUS_LOCAL_DATA_DIR || path.join(ROOT, "data"));
   const profileId = createHash("sha256").update(process.platform === "win32" ? dataPath.toLowerCase() : dataPath).digest("hex");
-  return new Promise((resolve) => {
-    const req = http.get(BASE + "/api/identity", { headers: authHeader(localAuthToken) }, (res) => {
-      let body = "";
-      res.on("data", chunk => { body += chunk; });
-      res.on("end", () => {
-        try { const data = JSON.parse(body); resolve(res.statusCode === 200 && data.application === "Loam" && data.version === EXPECTED_VERSION && data.apiVersion === 1 && data.profileId === profileId); }
-        catch { resolve(false); }
-      });
-    });
-    req.on("error", () => resolve(false));
-    req.setTimeout(4000, () => { req.destroy(); resolve(false); });
+  return requestLocal("/api/identity", 4000).then((result) => {
+    if (result.kind !== "response" || result.status !== 200) return false;
+    try {
+      const data = JSON.parse(result.body);
+      return data.application === "Loam" && data.version === EXPECTED_VERSION && data.apiVersion === 1 && data.profileId === profileId;
+    } catch {
+      return false;
+    }
+  });
+}
+
+/** up: health answered. busy: the socket was accepted but the loop is in a model call. down: nothing is listening. */
+function serverLiveness() {
+  return requestLocal("/api/health", 8000).then((result) => {
+    if (result.kind === "timeout") return "busy";
+    if (result.kind === "response" && result.status === 200) return "up";
+    return "down";
   });
 }
 
@@ -290,11 +309,14 @@ async function ensureServer() {
     const startupDeadline = Date.now() + 120_000;
     while (Date.now() < startupDeadline) {
       if (await ping()) return attempt === 1 ? "spawned" : "spawned-retry" + attempt;
+      const live = await serverLiveness();
+      if (live === "up" || live === "busy") return attempt === 1 ? "spawned" : "spawned-retry" + attempt;
       if (exited) break;
       await new Promise((r) => setTimeout(r, 500));
     }
     if (!exited) {
-      // Keep ownership of this live child; never overwrite it with another attempt.
+      const live = await serverLiveness();
+      if (live === "up" || live === "busy") return "spawned";
       try { serverChild.kill(); } catch {}
       throw new Error("انتهت مهلة بدء خادم Loam. راجع اتصال خدمات MCP ثم أعد التشغيل.");
     }
@@ -574,8 +596,14 @@ const ipcHandlers = {
   },
   updater: {
     getStatus: () => updater.getStatus(),
-    checkForUpdates: () => updater.check(),
-    restartNow: () => updater.installNow(),
+    checkForUpdates: () => updater.checkInteractive(),
+    restartNow: async () => {
+      try { return await updater.installNow(); }
+      catch (error) {
+        await dialog.showMessageBox({ type: "warning", title: "التحديثات", message: error && error.message ? error.message : "تعذّر تثبيت التحديث." });
+        return false;
+      }
+    },
     getPolicyContext: () => ({ storeManaged: false, platform: process.platform, channel: updater.feedUrl() }),
   },
   theme: {
@@ -713,6 +741,19 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 // Native folder picker for choosing the working repo/folder.
+ipcMain.handle("recorder:call", async (_event, payload) => {
+  const method = payload && typeof payload.method === "string" ? payload.method : "";
+  if (!isRecorderChannel(method)) {
+    return { ok: false, error: { code: "UNKNOWN_CHANNEL", message: "Rejected recorder channel: " + method, retrySafe: false } };
+  }
+  const response = await fetch(`${BASE}/api/recorder/call`, {
+    method: "POST",
+    headers: { ...authHeader(localAuthToken), "content-type": "application/json" },
+    body: JSON.stringify({ method, params: payload && payload.params ? payload.params : {} }),
+  });
+  return response.json();
+});
+
 ipcMain.handle("pick-folder", async () => {
   try {
     const res = await dialog.showOpenDialog(win ?? undefined, {
@@ -973,6 +1014,7 @@ app.whenReady().then(async () => {
       return new Response("Not Found", { status: 404 });
     }
     const ext = path.extname(filePath).toLowerCase();
+    if (ext === ".mp4") return vendorProtocol.vendorMediaResponse(filePath, request);
     const mime = MIME_TYPES[ext] || "application/octet-stream";
     if (ext === ".html") {
       const boot = `<script>window.__AGENT_STUDIO_ENV__=Object.assign({},window.__AGENT_STUDIO_ENV__,{apiBase:${JSON.stringify(AGENT_STUDIO_BACKEND)},socketBase:${JSON.stringify(AGENT_STUDIO_BACKEND)},loamBase:${JSON.stringify(BASE)}});</script>`;
@@ -1031,7 +1073,10 @@ app.whenReady().then(async () => {
     const url = new URL(request.url);
     let pathname = decodeURIComponent(url.pathname);
     if (pathname === "/" || pathname.endsWith("/")) pathname += "index.html";
-    const filePath = vendorProtocol.resolveVendorFile(pathname, [RECORDER_DIST, RECORDER_OVERLAY]);
+    const RECORDER_SAMPLE = fs.existsSync(path.join(UNPACKED_ROOT, "resources", "recorder", "sample"))
+      ? path.join(UNPACKED_ROOT, "resources", "recorder", "sample")
+      : path.join(ROOT, "resources", "recorder", "sample");
+    const filePath = vendorProtocol.resolveVendorFile(pathname, [RECORDER_DIST, RECORDER_OVERLAY, RECORDER_SAMPLE]);
     if (!filePath) return vendorProtocol.vendorNotFound();
     const ext = path.extname(filePath).toLowerCase();
     if (ext === ".html") {
@@ -1041,9 +1086,15 @@ app.whenReady().then(async () => {
           ? html.replace(/<\/head>/i, '<script src="bridge-relay.js"></script></head>')
           : html + '<script src="bridge-relay.js"></script>';
       }
+      const lang = url.searchParams.get("lang");
+      if ((lang === "ar" || lang === "en") && !html.includes("loamrecorder-locale-boot")) {
+        const dir = lang === "ar" ? "rtl" : "ltr";
+        const boot = `<script id="loamrecorder-locale-boot">try{localStorage.setItem("loamrecorder-locale","${lang}");document.documentElement.lang="${lang}";document.documentElement.dir="${dir}";}catch(e){}</script>`;
+        html = /<\/head>/i.test(html) ? html.replace(/<\/head>/i, `${boot}</head>`) : html + boot;
+      }
       return new Response(html, { headers: { "Content-Type": vendorProtocol.vendorMime(filePath), "Cache-Control": "no-store" } });
     }
-    return vendorProtocol.vendorResponse(filePath);
+    return vendorProtocol.vendorMediaResponse(filePath, request);
   });
 
   protocol.handle("loamcraft", async (request) => {
@@ -1112,15 +1163,6 @@ app.whenReady().then(async () => {
     return new Response(body, { headers });
   });
 
-  // Health-check the Agent Studio backend; do not block the UI if it is down.
-  try {
-    const health = await fetch(AGENT_STUDIO_BACKEND + "/api/health", { signal: AbortSignal.timeout(3000) });
-    if (!health.ok) console.warn("[electron] Agent Studio backend health returned " + health.status);
-    else console.log("[electron] Agent Studio backend ready");
-  } catch (err) {
-    console.warn("[electron] Agent Studio backend not reachable at " + AGENT_STUDIO_BACKEND + "/api/health: " + err.message);
-  }
-
   buildMenu();
   createTray();
   await mcpBridge.start(ROOT, BRIDGE_PORT, DISK_ROOT);
@@ -1135,6 +1177,16 @@ app.whenReady().then(async () => {
       dialog.showErrorBox("Loam — تعذّر بدء التشغيل", err.message);
       app.quit();
       return;
+    }
+  }
+  // The protocol adapter starts with the Loam server, so check it only after readiness.
+  if (loamServerReady) {
+    try {
+      const health = await fetch(AGENT_STUDIO_BACKEND + "/api/health", { signal: AbortSignal.timeout(3000) });
+      if (!health.ok) console.warn("[electron] Agent Studio backend health returned " + health.status);
+      else console.log("[electron] Agent Studio backend ready");
+    } catch (err) {
+      console.warn("[electron] Agent Studio backend not reachable at " + AGENT_STUDIO_BACKEND + "/api/health: " + err.message);
     }
   }
   if (loamServerReady) await ensureLocalSession();
@@ -1187,19 +1239,19 @@ let watchdogRestarting = false;
 function startServerWatchdog() {
   setInterval(async () => {
     if (watchdogRestarting || quitting) return;
-    const ok = await ping();
-    if (ok) {
+    const live = await serverLiveness();
+    if (live === "up" || live === "busy") {
       watchdogFailures = 0;
       return;
     }
     watchdogFailures += 1;
-    if (watchdogFailures < 12) return;
+    if (watchdogFailures < 6) return;
     watchdogFailures = 0;
     if (!serverChild) {
-      console.error("[electron] watchdog: external server unresponsive (not ours to restart)");
+      console.error("[electron] watchdog: external server unreachable (not ours to restart)");
       return;
     }
-    console.error("[electron] watchdog: server unresponsive 3x — killing and respawning server child");
+    console.error("[electron] watchdog: server unreachable — restarting server child");
     try { serverChild.kill(); } catch (e) {}
     serverChild = null;
     watchdogRestarting = true;

@@ -45,6 +45,7 @@ import { AttachmentCard, kindFromName, type AttachmentKind } from '@/components/
 import { ComputerPanel } from '@/components/computer/ComputerPanel';
 import { ComputerDock } from '@/components/computer/ComputerDock';
 import { CompletionCard } from '@/components/chat/CompletionCard';
+import { PresentationVideoCard, type PresentationVideoRequest } from '@/components/chat/PresentationVideoCard';
 import {
   WorkspacePanel,
   latestWorkspaceDecision,
@@ -77,6 +78,7 @@ import type {
   ModeEvent,
 } from '@shared/socket';
 import { formatDuration, formatTime } from '@/utils/format';
+import { computeTaskClockDuration, taskVisualStatus } from '@/components/chat/taskStatus';
 
 function getSocketBase(): string {
   if (typeof window === 'undefined') return '/';
@@ -84,15 +86,6 @@ function getSocketBase(): string {
   if (injected?.socketBase) return injected.socketBase;
   if ((window as unknown as { __apis?: unknown }).__apis) return 'http://localhost:8787';
   return '/';
-}
-
-function computeClockDuration(clockEvent: CascadeTaskClockEvent): number {
-  const { clock, timestamp } = clockEvent;
-  const end = clock.phase === 'open' ? Date.now() : timestamp;
-  if (clock.startedAt && end > clock.startedAt) return end - clock.startedAt;
-  // Fall back to the backend accumulated value, guarding against values stored in seconds.
-  const ms = clock.accumulatedMs ?? 0;
-  return ms > 1_000_000_000 ? Math.floor(ms / 1000) : ms;
 }
 
 function parseAttachments(raw: string | null): Attachment[] {
@@ -179,6 +172,12 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   const [knowledgeOn, setKnowledgeOn] = useState(false);
   // D19 session runtime: sleep state + compute budget, shown by the badge.
   const runtime = useSessionRuntime(sessionUid);
+  const terminalState = `${running}:${status}`;
+  const previousTerminalState = useRef(terminalState);
+  useEffect(() => {
+    if (previousTerminalState.current !== terminalState) void runtime.refresh();
+    previousTerminalState.current = terminalState;
+  }, [terminalState, runtime.refresh]);
   // J7: hibernation state for this chat view (derived-cache release + wake).
   const hibernation = useSessionHibernation(sessionUid, events);
   // J7: expose the hibernate/wake surface for the e2e suite and the RSS bench.
@@ -355,6 +354,17 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
 
   const hasResult = useMemo(() => events.some((e) => e.type === 'chat' && e.sender === 'assistant' && e.deliveryKind === 'result'), [events]);
   const hasClockClosed = useMemo(() => events.some((e) => e.type === 'cascadeTaskClock' && e.clock.phase === 'closed'), [events]);
+  const terminalErrorAt = useMemo(() => [...events].reverse().find((event) => {
+    const candidate = event as unknown as { type?: string; agentStatus?: string };
+    return candidate.type === 'error' || (candidate.type === 'statusUpdate' && candidate.agentStatus === 'error');
+  })?.timestamp, [events]);
+  const terminalStatusError = useMemo(() => [...events].reverse().find((event): event is StatusUpdateEvent => event.type === 'statusUpdate' && event.agentStatus === 'error'), [events]);
+  const errorMessage = error ?? terminalStatusError?.brief ?? '';
+  const failed = Boolean(errorMessage) || status === 'error';
+  const visualStatus = taskVisualStatus({ running, wasStoppedByUser, failed, hasResult, hasClockClosed });
+  const badgeSnapshot = ['Task completed', 'Task failed', 'Stopped'].includes(visualStatus) && runtime.snapshot
+    ? { ...runtime.snapshot, state: 'idle', sleeping: false }
+    : runtime.snapshot;
   const [selectedTool, setSelectedTool] = useState<ToolUsedEvent | null>(null);
   const [workspaceTarget, setWorkspaceTarget] = useState<WorkspaceOpenTarget | null>(null);
   const workspaceOpenActionRef = useRef<string>('');
@@ -374,7 +384,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   const taskId = useMemo(() => {
     const fromAttachment = events.find((e): e is AttachmentEvent => e.type === 'attachment');
     const fromClock = events.find((e): e is CascadeTaskClockEvent => e.type === 'cascadeTaskClock');
-    return fromAttachment?.taskId ?? fromClock?.clock.taskId;
+    return fromClock?.clock.taskId ?? fromAttachment?.taskId;
   }, [events]);
 
   // Cap G: resolve (and keep fresh) the App project bound to this task, and load
@@ -395,6 +405,12 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   }, [appProject, raceBranches]);
 
   const attachmentEvents = useMemo(() => events.filter((e): e is AttachmentEvent => e.type === 'attachment'), [events]);
+  const presentationAttachment = useMemo(() => [...attachmentEvents].reverse().find((attachment) =>
+    Boolean(attachment.taskId)
+    && attachment.path?.toLowerCase().endsWith('.pptx')
+    && attachmentEvents.some((preview) => preview.taskId === attachment.taskId && preview.path === 'previews/slide-1.png'),
+  ), [attachmentEvents]);
+  const eventListEvents = useMemo(() => presentationAttachment ? events.filter((event) => event.type !== 'attachment') : events, [events, presentationAttachment]);
 
   const loadTaskFiles = async () => {
     if (!taskId) return;
@@ -474,6 +490,9 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
     // The badge should react immediately rather than waiting for the poll.
     void runtime.refresh();
   };
+
+  const handlePresentationVideo = (request: PresentationVideoRequest) =>
+    handleSend(request.text, request.mode, [], request.extData);
 
   const handleStop = () => {
     const socket = socketRef.current;
@@ -638,7 +657,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
     setSelectedTool({
       id: `open-${file.path}`,
       type: 'toolUsed',
-      tool: kind === 'craft' ? 'office_craft' : 'office_open',
+      tool: kind === 'craft' ? 'office_craft' : kind === 'loam-video' ? 'video_studio' : 'office_open',
       actionId: `open-${file.path}`,
       status: 'success',
       timestamp: Date.now(),
@@ -707,7 +726,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
         </div>
       )}
 
-      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+      <div className="flex h-dvh min-h-0 w-full flex-none overflow-hidden">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="mx-auto w-full max-w-[min(100%,48rem)] px-4 py-4 sm:px-6">
@@ -718,7 +737,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
               {/* D19: sleep state + compute budget for this session. */}
               <div className="mb-2">
                 <SessionStatusBadge
-                  snapshot={runtime.snapshot}
+                  snapshot={badgeSnapshot}
                   onRaiseBudget={() => void runtime.raiseBudget()}
                   onWake={() => void runtime.wake()}
                 />
@@ -727,22 +746,37 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
               <HibernationNotice hibernated={hibernation.hibernated} />
               <ThinkingTrace
                 text={([...events].reverse().find((event): event is Extract<(typeof events)[number], { type: 'liveStatus' }> => event.type === 'liveStatus')?.text) ?? ''}
-                active={running || Boolean(userText && !assistantText && !running && !wasStoppedByUser && !error)}
+                active={running || Boolean(userText && !assistantText && !running && !wasStoppedByUser && !errorMessage)}
               />
               {clockEvent && !running && (
                 <div className="mb-2 text-sm text-text-tertiary">
-                  {t('Worked for {duration}', { duration: formatDuration(computeClockDuration(clockEvent)) })} ›
+                  {t('Worked for {duration}', { duration: formatDuration(computeTaskClockDuration(clockEvent, errorMessage ? terminalErrorAt : undefined)) })} ›
                 </div>
               )}
-              {error && !draftText && (
-                <div className="mb-2 rounded-control bg-function-error-tsp px-3 py-2 text-sm text-function-error">
-                  {error}
+              {errorMessage && !draftText && (
+                <div className="mb-2 rounded-control bg-function-error-tsp px-3 py-2 text-sm text-function-error" role="alert">
+                  <strong>{t('Task failed')}</strong>
+                  <p className="mt-1">{t('The task stopped before producing a verified result.')}</p>
+                  {userText && (
+                    <button
+                      type="button"
+                      disabled={running}
+                      onClick={() => void handleSend(userText, (resolvedLoamMode?.mode as TaskMode) || draftMode, [])}
+                      className="mt-2 inline-flex items-center gap-1 rounded-control border border-current px-2 py-1 disabled:opacity-40"
+                    >
+                      <Repeat2 className="size-4" /> {t('Retry')}
+                    </button>
+                  )}
+                  <details className="mt-2">
+                    <summary className="cursor-pointer">{t('Technical details')}</summary>
+                    <pre className="mt-1 whitespace-pre-wrap break-words font-mono text-xs">{errorMessage}</pre>
+                  </details>
                 </div>
               )}
               <TaskMetricsBand taskId={taskId} />
               <StepTimeline events={events} selectedActionId={selectedActionId} onSelect={handleSelectStep} />
               <EventList
-                events={events}
+                events={eventListEvents}
                 sessionId={sessionUid}
                 socket={socketRef.current}
                 hibernated={hookHibernated || hibernation.hibernated}
@@ -764,7 +798,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
                   )}
                   {attachmentEvents.length > 0 && (
                     <div className="mb-3 grid gap-2 sm:grid-cols-2">
-                      {attachmentEvents.map((a) => (
+                      {attachmentEvents.filter((a) => a.path !== 'previews/slide-1.png' && !a.path?.startsWith('assets/') && !a.path?.startsWith('generated-assets/')).map((a) => (
                         <AttachmentCard
                           key={a.id}
                           name={a.name}
@@ -772,6 +806,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
                           size={a.sizeBytes}
                           taskId={a.taskId}
                           path={a.path}
+                          previewPath={kindFromName(a.name) === 'slide' && attachmentEvents.some((preview) => preview.taskId === a.taskId && preview.path === 'previews/slide-1.png') ? 'previews/slide-1.png' : undefined}
                           openLabel={openLabelForAttachment(a.path)}
                           onOpen={
                             a.taskId && a.path
@@ -820,6 +855,16 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
                     <span className="ms-auto">{t('How was this result?')}</span>
                     {[0, 1, 2, 3, 4].map((i) => <Star key={i} className="size-4 text-[#d4d4d4]" />)}
                   </div>
+                  {presentationAttachment?.taskId && presentationAttachment.path && (
+                    <PresentationVideoCard
+                      taskId={presentationAttachment.taskId}
+                      path={presentationAttachment.path}
+                      previewPath="previews/slide-1.png"
+                      name={presentationAttachment.name}
+                      disabled={running}
+                      onCreateVideo={handlePresentationVideo}
+                    />
+                  )}
                 </div>
               )}
             </div>
@@ -827,10 +872,10 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
 
           <div className="mx-auto w-full max-w-[min(100%,48rem)] shrink-0 px-4 pb-4 sm:px-6">
             <div className="mb-2 flex min-h-8 items-center gap-2 rounded-control bg-fill-tsp px-2 py-1 text-sm text-text-secondary">
-              <span className={running ? 'animate-pulse text-icon-blue' : wasStoppedByUser ? 'text-function-warning' : hasResult && hasClockClosed ? 'text-func-success' : 'text-text-tertiary'}>
-                {running ? '●' : wasStoppedByUser ? '◼' : hasResult && hasClockClosed ? '✓' : '○'}
+              <span className={running ? 'animate-pulse text-icon-blue' : wasStoppedByUser ? 'text-function-warning' : errorMessage ? 'text-function-error' : hasResult && hasClockClosed ? 'text-func-success' : 'text-text-tertiary'}>
+                {running ? '●' : wasStoppedByUser ? '◼' : errorMessage ? '✕' : hasResult && hasClockClosed ? '✓' : '○'}
               </span>
-              {running ? t('Working') : wasStoppedByUser ? t('Stopped') : hasResult && hasClockClosed ? t('Task completed') : t('Thinking')}
+              {t(visualStatus)}
               {running && (
                 <button
                   type="button"
@@ -1014,6 +1059,7 @@ function videoStudioStub(event: ChatEvent): ToolUsedEvent {
 function openLabelForAttachment(path: string): string | undefined {
   const kind = editorKindForExtension(craftExtOf(path));
   if (!kind) return undefined;
+  if (kind === 'loam-video') return t('Loam Video');
   if (kind !== 'craft') return t('Open in editor');
   const app = craftAppForExtension(craftExtOf(path));
   return app ? t(`Open in ${CRAFT_APPS[app].displayName}`) : t('Open in editor');

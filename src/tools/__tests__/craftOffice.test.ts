@@ -12,6 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import zlib from "node:zlib";
 import { after, describe, it } from "node:test";
+import JSZip from "jszip";
 
 import type { ToolContext } from "../../tools/registry.js";
 import type { CraftOfficeApp, CraftOfficeRelayLike } from "../../tools/craftOffice.js";
@@ -40,6 +41,21 @@ class MockRelay implements CraftOfficeRelayLike {
   /** Answer for `document.pixel`. */
   pixel: unknown = null;
   slide: unknown = { shapes: [] };
+  exportBytes: Buffer | null = null;
+  applyTextEdits = true;
+
+  private async officeBytes(target: CraftOfficeApp): Promise<Buffer> {
+    if (this.exportBytes) return this.exportBytes;
+    const zip = new JSZip();
+    if (target === "slides") {
+      zip.file("ppt/presentation.xml", "<p:presentation/>");
+      zip.file("ppt/slides/slide1.xml", "<p:sld><p:cSld><p:bg><p:bgPr><a:solidFill><a:srgbClr val=\"FFFFFF\"/></a:solidFill><a:effectLst/></p:bgPr></p:bg><p:spTree><p:sp><p:nvSpPr><p:nvPr><p:ph type=\"ctrTitle\"/></p:nvPr></p:nvSpPr><p:txBody><a:p><a:pPr/><a:r><a:rPr lang=\"ar-SA\"/><a:t>دولة الكويت</a:t></a:r></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:nvPr><p:ph type=\"subTitle\"/></p:nvPr></p:nvSpPr><p:txBody><a:p><a:pPr/><a:r><a:rPr sz=\"1800\" lang=\"ar-SA\"/><a:t>العاصمة مدينة الكويت</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>");
+    } else {
+      zip.file("xl/workbook.xml", "<workbook/>");
+    }
+    this.exportBytes = await zip.generateAsync({ type: "nodebuffer" });
+    return this.exportBytes;
+  }
 
   async enqueue(
     taskId: string,
@@ -53,7 +69,16 @@ class MockRelay implements CraftOfficeRelayLike {
     }
     if (method === "engine.commands") return this.commands;
     if (method === "ui.screenshot") return { base64: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==" };
-    if (method === "craft.waitSave") return this.saved;
+    if (method === "craft.waitSave") {
+      const saved = this.saved as { path?: unknown } | null;
+      if (saved && typeof saved.path === "string" && saved.path) {
+        const absolute = path.join(ws, ".loam-tasks", taskId, saved.path);
+        fs.mkdirSync(path.dirname(absolute), { recursive: true });
+        const bytes = saved.path.toLowerCase().endsWith(".pptx") ? await this.officeBytes("slides") : Buffer.from("stored-export");
+        fs.writeFileSync(absolute, bytes);
+      }
+      return this.saved;
+    }
     if (method === "document.inspect") return this.document;
     if (method === "sheet.read") return this.sheet;
     if (method === "ui.inspect") return this.ui;
@@ -67,8 +92,17 @@ class MockRelay implements CraftOfficeRelayLike {
       return this.document;
     }
     if (method === "engine.execute" && params["command"] === "slide.inspect") return this.slide;
+    if (method === "engine.execute" && params["command"] === "text.set" && this.applyTextEdits) {
+      const edit = params["params"] as { id?: string | number; text?: string };
+      for (const holder of [this.slide, this.document]) {
+        if (!holder || typeof holder !== "object") continue;
+        for (const shape of (holder as { shapes?: Array<Record<string, unknown>> }).shapes ?? []) {
+          if (shape.id === edit.id) shape.text = edit.text;
+        }
+      }
+    }
     if (method === "engine.execute" && params["command"] === "file.saveBytes") {
-      return { data: Buffer.from("pptx-bytes").toString("base64") };
+      return { data: (await this.officeBytes(target)).toString("base64") };
     }
     if (method === "engine.execute" && params["command"] === "file.exportPdf" && target === "design") {
       return { base64: Buffer.from("%PDF-1.4 flyer").toString("base64"), bytes: 14 };
@@ -1089,19 +1123,20 @@ describe("craftOffice relay error mapping", () => {
 });
 
 describe("craftOffice slide edit", () => {
-  it("writes the title and body of the current slide", async () => {
+  it("writes and confirms the title and body of the current slide", async () => {
     freshRoot();
     installAllApps();
     relay = new MockRelay();
-    relay.commands = [...CATALOG, "slide.inspect", "text.set", "file.export"];
+    relay.commands = [...CATALOG, "slide.inspect", "text.set", "file.export", "design.background"];
     relay.slide = {
       shapes: [
         { id: 10, kind: "placeholder", placeholder: "ctrTitle", text: "" },
         { id: 11, kind: "placeholder", placeholder: "body", text: "" },
       ],
     };
+    relay.document = relay.slide;
     const res = await tool().run(
-      { app: "slides", action: "edit", title: "متحف الفن الإسلامي", body: "صممه آي. إم. باي عام 2008." },
+      { app: "slides", action: "edit", title: "متحف الفن الإسلامي", body: "صممه آي. إم. باي عام 2008.", background: "#E8F5E9" },
       ctx(),
     );
     assert.equal(res.ok, true, res.content);
@@ -1113,21 +1148,77 @@ describe("craftOffice slide edit", () => {
         { id: 11, text: "صممه آي. إم. باي عام 2008." },
       ],
     );
+    assert.deepEqual(relay.dispatched.find((call) => call.params["command"] === "design.background")?.params["params"], { color: "#E8F5E9" });
   });
 
-  it("exports a slides deck as pptx", async () => {
+  it("rejects placeholder slide content before issuing an edit", async () => {
+    freshRoot();
+    installAllApps();
+    relay = new MockRelay();
+    relay.commands = [...CATALOG, "slide.inspect", "text.set"];
+    const res = await tool().run({ app: "slides", action: "edit", title: "دولة الكويت", body: "<Arabic body>" }, ctx());
+    assert.equal(res.ok, false);
+    assert.match(res.content, /real slide content/);
+    assert.equal(relay.dispatched.some((call) => call.params["command"] === "text.set"), false);
+  });
+
+  it("fails when the live slide does not confirm the edit", async () => {
+    freshRoot();
+    installAllApps();
+    relay = new MockRelay();
+    relay.commands = [...CATALOG, "slide.inspect", "text.set"];
+    relay.applyTextEdits = false;
+    relay.slide = { shapes: [{ id: 10, kind: "placeholder", placeholder: "ctrTitle", text: "" }, { id: 11, kind: "placeholder", placeholder: "body", text: "" }] };
+    relay.document = relay.slide;
+    const res = await tool().run({ app: "slides", action: "edit", title: "دولة الكويت", body: "العاصمة مدينة الكويت" }, ctx());
+    assert.equal(res.ok, false);
+    assert.match(res.content, /did not confirm/);
+  });
+
+  it("exports a valid slides deck with a meaningful filename", async () => {
     freshRoot();
     installAllApps();
     relay = new MockRelay();
     relay.commands = [...CATALOG, "file.export", "file.save", "file.saveBytes"];
-    const res = await tool().run({ app: "slides", action: "export" }, ctx());
+    const res = await tool().run({ app: "slides", action: "export", title: "دولة الكويت", accent: "#CE1126", background: "#F7F3EA" }, ctx());
     assert.equal(res.ok, true, res.content);
     const body = JSON.parse(res.content) as { command: string; path: string };
     assert.equal(body.command, "file.saveBytes");
-    assert.match(body.path, /^uploads\/\d+-presentation\.pptx$/);
+    assert.match(body.path, /^uploads\/\d+-دولة الكويت\.pptx$/);
     const written = fs.readFileSync(path.join(ws, ".loam-tasks", "task_1", body.path));
-    assert.equal(written.toString(), "pptx-bytes");
+    const zip = await JSZip.loadAsync(written);
+    assert.ok(zip.file("ppt/presentation.xml"));
+    assert.ok(zip.file("ppt/slides/slide1.xml"));
+    const slide = await zip.file("ppt/slides/slide1.xml")!.async("string");
+    assert.match(slide, /CE1126/);
+    assert.match(slide, /007A33/);
+    assert.match(slide, /F7F3EA/);
+    assert.match(slide, /<a:rPr lang="ar-SA" sz="4000"\/>/);
+    assert.match(slide, /<a:rPr lang="ar-SA" sz="2400"\/>/);
+    assert.doesNotMatch(slide, /sz="1800"/);
     assert.equal(relay.dispatched.some((call) => call.method === "craft.waitSave"), false);
+  });
+
+  it("rejects invalid Office bytes instead of writing a fake pptx", async () => {
+    freshRoot();
+    installAllApps();
+    relay = new MockRelay();
+    relay.commands = [...CATALOG, "file.saveBytes"];
+    relay.exportBytes = Buffer.from("not-a-pptx");
+    const res = await tool().run({ app: "slides", action: "export" }, ctx());
+    assert.equal(res.ok, false);
+    assert.match(res.content, /not a readable Office package/);
+  });
+
+  it("fails an export that returns no stored path", async () => {
+    freshRoot();
+    installAllApps();
+    relay = new MockRelay();
+    relay.commands = CATALOG;
+    relay.saved = { path: null };
+    const res = await tool().run({ app: "docs", action: "export" }, ctx());
+    assert.equal(res.ok, false);
+    assert.match(res.content, /did not return a task file path/);
   });
 
   it("inserts a document page and exports a workbook from bytes", async () => {

@@ -55,8 +55,8 @@ export async function exportStudio(input: StudioArtifact, workspace?: string): P
         }
       }else{
       slide.addShape(deck.ShapeType.rect, { x: .55, y: .55, w: .12, h: 6.35, line: { color: item.accent.slice(1), transparency: 100 }, fill: { color: item.accent.slice(1) } });
-      slide.addText(item.title, { x: .95, y: .65, w: 11.4, h: 1.1, fontSize: 30, bold: true, color: item.accent.slice(1), breakLine: false, fit: "shrink", rtlMode: isRtl(item.title), align: isRtl(item.title) ? "right" : "left", margin: 0 });
-      slide.addText(item.body, { x: .95, y: 2, w: 11.4, h: 4.65, fontSize: 22, color: foreground(item.background), fit: "shrink", valign: "top", rtlMode: isRtl(item.body), align: isRtl(item.body) ? "right" : "left", margin: 0 });
+      slide.addText(item.title, { x: .95, y: .65, w: 11.4, h: 1.1, fontSize: 40, bold: true, color: item.accent.slice(1), breakLine: false, fit: "shrink", rtlMode: isRtl(item.title), align: isRtl(item.title) ? "right" : "left", margin: 0 });
+      slide.addText(item.body, { x: .95, y: 2, w: 11.4, h: 4.65, fontSize: 24, color: foreground(item.background), fit: "shrink", valign: "top", rtlMode: isRtl(item.body), align: isRtl(item.body) ? "right" : "left", margin: 0 });
       }
       for(const image of item.images||[])slide.addImage({data:image.src,altText:image.alt,x:image.x*13.333333/100,y:image.y*7.5/100,w:image.w*13.333333/100,h:image.h*7.5/100});
       for(const table of item.tables||[]){

@@ -1,0 +1,11 @@
+{
+  "schema": "loam.service-pack/v1",
+  "id": "loam-video",
+  "version": "1.0.0",
+  "modes": ["video", "media"],
+  "skills": [{"name":"loam-video","path":"packs/loam-video/SKILL.md"}],
+  "wraps": ["video_studio", "creative_timeline", "video_edit", "ffmpeg-static"],
+  "gate": {"tool":"video_present","timeoutMs":120000},
+  "legacyRoutes": "keep",
+  "update": "hot"
+}

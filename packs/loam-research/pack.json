@@ -1,0 +1,11 @@
+{
+  "schema": "loam.service-pack/v1",
+  "id": "loam-research",
+  "version": "1.0.0",
+  "modes": ["research"],
+  "skills": [{"name":"loam-research","path":"packs/loam-research/SKILL.md"}],
+  "wraps": ["wide_research", "deep_research"],
+  "gate": {"tool":"research_present","timeoutMs":60000},
+  "legacyRoutes": "keep",
+  "update": "hot"
+}

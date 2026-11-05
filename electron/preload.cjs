@@ -150,6 +150,10 @@ contextBridge.exposeInMainWorld("loam", {
     status: () => ipcRenderer.invoke("loam-updates", "status"),
     check: () => ipcRenderer.invoke("loam-updates", "check"),
     install: () => ipcRenderer.invoke("loam-updates", "install"),
+    apply: () => ipcRenderer.invoke("loam-updates", "apply"),
+  },
+  recorder: {
+    call: (method, params) => ipcRenderer.invoke("recorder:call", { method, params }),
   },
 });
 contextBridge.exposeInMainWorld("manusLocal", {
@@ -158,5 +162,6 @@ contextBridge.exposeInMainWorld("manusLocal", {
     status: () => ipcRenderer.invoke("loam-updates", "status"),
     check: () => ipcRenderer.invoke("loam-updates", "check"),
     install: () => ipcRenderer.invoke("loam-updates", "install"),
+    apply: () => ipcRenderer.invoke("loam-updates", "apply"),
   },
 });

@@ -6,7 +6,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { readStudio, saveStudio } from "../studio/store.js";
+import { readStudio, saveStudio, type StudioArtifact } from "../studio/store.js";
 import { exportStudio } from "../studio/export.js";
 import { taskPath } from "../server/taskWorkspace.js";
 import { str, type ToolContext, type ToolResult } from "./registry.js";
@@ -17,6 +17,12 @@ function kindOf(app: string): "document" | "presentation" | "spreadsheet" {
   if (app === "slides") return "presentation";
   if (app === "sheets") return "spreadsheet";
   return "document";
+}
+
+function studioIsEmpty(artifact: StudioArtifact): boolean {
+  if (artifact.kind === "presentation") return artifact.content.slides.length === 0;
+  if (artifact.kind === "document") return artifact.content.blocks.length === 0;
+  return artifact.content.sheets.length === 0 || artifact.content.sheets.every((sheet) => sheet.cells.every((row) => row.every((cell) => cell === "")));
 }
 
 function starter(app: string, title: string, body: string): { kind: "document" | "presentation" | "spreadsheet"; title: string; content: unknown } {
@@ -61,20 +67,50 @@ export async function runNativeCraftFallback(
       }),
     };
   }
-  const title = str(args, "title").trim() || (app === "slides" ? "عرض" : app === "sheets" ? "جدول" : "مستند");
+  const requestedTitle = str(args, "title").trim();
   const body = str(args, "instruction").trim() || str(args, "body").trim();
+  const action = str(args, "action").trim();
   const current = readStudio(ctx.workspace);
   const kind = kindOf(app);
-  if (!current || current.kind !== kind) {
+  const sameKind = current?.kind === kind;
+  // An earlier loam_studio call often creates the right kind with no slides.
+  // Exporting that artifact writes a blank Office file, so fill it here.
+  if (!sameKind || (current && studioIsEmpty(current))) {
+    const title = requestedTitle || (sameKind && current ? current.title : "") || (app === "slides" ? "عرض" : app === "sheets" ? "جدول" : "مستند");
     saveStudio(ctx.workspace, starter(app, title, body), current?.revision ?? 0);
   }
-  const artifact = readStudio(ctx.workspace);
+  let artifact = readStudio(ctx.workspace);
   if (!artifact) {
     return { ok: false, content: JSON.stringify({ ok: false, reason: "fallback_unavailable", retry: false, message: "The built-in studio did not save." }) };
   }
+  if (action === "edit" || action === "export") {
+    const updated = structuredClone(artifact);
+    if (requestedTitle) updated.title = requestedTitle;
+    if (updated.kind === "presentation") {
+      const slide = updated.content.slides[0];
+      if (slide) {
+        if (requestedTitle) slide.title = requestedTitle;
+        if (body && action === "edit") slide.body = body;
+        const background = str(args, "background").trim();
+        const accent = str(args, "accent").trim();
+        if (/^#[0-9a-f]{6}$/i.test(background)) slide.background = background;
+        if (/^#[0-9a-f]{6}$/i.test(accent)) slide.accent = accent;
+      }
+    } else if (updated.kind === "document" && action === "edit") {
+      if (requestedTitle) updated.content.blocks[0] = { type: "heading", text: requestedTitle };
+      if (body) updated.content.blocks[1] = { type: "paragraph", text: body };
+    } else if (updated.kind === "spreadsheet" && action === "edit") {
+      const sheet = updated.content.sheets[0];
+      if (sheet) sheet.cells = [[requestedTitle || updated.title], [body]];
+    }
+    saveStudio(ctx.workspace, updated, artifact.revision);
+    artifact = readStudio(ctx.workspace) ?? updated;
+  }
   const output = await exportStudio(artifact, ctx.workspace);
   const ext = kind === "presentation" ? ".pptx" : kind === "document" ? ".docx" : ".xlsx";
-  const requested = str(args, "path").trim();
+  const requestedPath = str(args, "path").trim();
+  const requestedFile = path.basename(str(args, "file").trim());
+  const requested = requestedPath || (requestedFile ? `uploads/${requestedFile}` : "");
   const rel = requested.endsWith(ext) ? requested : `uploads/${output.filename}`;
   const out = taskPath(ctx.workspace, rel);
   fs.mkdirSync(path.dirname(out), { recursive: true });

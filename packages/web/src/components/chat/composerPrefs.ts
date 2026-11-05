@@ -8,7 +8,7 @@
  *   and returns an Arabic one-line explanation for the composer chip.
  */
 
-import { getApiBase, getLoamAuthHeaders } from '@/services/rpc';
+import { getLoamBase, getLoamAuthHeaders } from '@/services/rpc';
 
 const PREFS_KEY = 'loam.composer.prefs';
 const ADVANCED_OPEN_KEY = 'loam.composer.advancedOpen';
@@ -71,7 +71,7 @@ export interface IntentRouteResult {
  *  Returns null on any failure — the caller sends with its default mode. */
 export async function routeIntentApi(text: string): Promise<IntentRouteResult | null> {
   try {
-    const response = await fetch(`${getApiBase()}/api/intent/route`, {
+    const response = await fetch(`${getLoamBase()}/api/intent/route`, {
       method: 'POST',
       headers: { ...(await getLoamAuthHeaders()), 'content-type': 'application/json' },
       body: JSON.stringify({ text: text.slice(0, 4000) }),

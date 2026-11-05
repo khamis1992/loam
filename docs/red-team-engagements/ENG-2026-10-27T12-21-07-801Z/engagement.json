@@ -1,0 +1,74 @@
+{
+  "id": "ENG-2026-10-27T12-21-07-801Z",
+  "at": "2026-10-27T12:21:07.804Z",
+  "targets": [
+    "http://127.0.0.1:5195/nutrio/"
+  ],
+  "planner": "rule",
+  "engines": [
+    {
+      "id": "red.ssrf",
+      "status": "ready"
+    },
+    {
+      "id": "red.deser.node",
+      "status": "ready"
+    },
+    {
+      "id": "red.sqli",
+      "status": "ready"
+    },
+    {
+      "id": "red.dast",
+      "status": "ready"
+    },
+    {
+      "id": "red.fuzz",
+      "status": "ready"
+    },
+    {
+      "id": "red.templates",
+      "status": "ready"
+    },
+    {
+      "id": "red.deser",
+      "status": "ready"
+    }
+  ],
+  "findings": [
+    {
+      "check": "security_headers",
+      "severity": "medium",
+      "title": "Missing response security headers can enable injection or clickjacking",
+      "target": "http://127.0.0.1:5195/nutrio/",
+      "fingerprint": "005e1dc4379411600109c43a"
+    },
+    {
+      "check": "red_fuzz_discovery",
+      "severity": "low",
+      "title": "Hidden content discovered by fuzzing (60 path(s))",
+      "target": "http://127.0.0.1:5195/nutrio/",
+      "fingerprint": "3cb7f2e76305ebb75e6d32be"
+    }
+  ],
+  "unverifiedCount": 6,
+  "stats": {
+    "requestsSent": 2,
+    "targetsProcessed": 1,
+    "killed": false,
+    "aborted": null
+  },
+  "retest": {
+    "baselineId": "ENG-2026-10-24T21-35-30-824Z",
+    "new": [
+      "005e1dc4379411600109c43a",
+      "3cb7f2e76305ebb75e6d32be"
+    ],
+    "persistent": [],
+    "notObserved": [],
+    "unverified": [
+      "c7be981a060f53b127bc7594"
+    ]
+  },
+  "reportDir": "ENG-2026-10-27T12-21-07-801Z"
+}

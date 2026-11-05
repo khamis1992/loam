@@ -4,6 +4,8 @@ import path from "node:path";
 import { isInside, resolveRead } from "../policy/paths.js";
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { str, strs } from "./registry.js";
+import { publishPackPresentation, readPackProject, validatePackPresentation, writePackProject, type PreparedPackPresentation } from "../packs/present.js";
+import type { PackId, PresentResult } from "../packs/types.js";
 
 // ---------------------------------------------------------------------------
 // `think` and `finish`.
@@ -124,7 +126,7 @@ function readVerifyConfig(workspace: string): VerifyConfig | null {
   return { commands, timeoutSec };
 }
 
-function report(summary: string, confidence: Confidence, proof: string[], followups: string[], gates: VerifyCommand[]): string {
+function report(summary: string, confidence: Confidence, proof: string[], followups: string[], gates: VerifyCommand[], pack?: PresentResult): string {
   return JSON.stringify(
     {
       summary,
@@ -133,10 +135,71 @@ function report(summary: string, confidence: Confidence, proof: string[], follow
       followups,
       gatesPassed: gates.length,
       gates: gates.map((g) => ({ name: g.name, cmd: g.cmd, ok: true })),
+      ...(pack ? { pack } : {}),
     },
     null,
     2,
   );
+}
+
+const PACK_OUTPUT: Readonly<Record<PackId, { resource: string; artifact: "report" | "page" | "deck" | "sheet" | "image" | "video" | "file" }>> = {
+  "loam-slides": { resource: "deck", artifact: "deck" },
+  "loam-video": { resource: "video", artifact: "video" },
+  "loam-build": { resource: "page", artifact: "page" },
+  "loam-localfile": { resource: "file", artifact: "file" },
+  "loam-image": { resource: "image", artifact: "image" },
+  "loam-audio": { resource: "audio", artifact: "file" },
+  "loam-office": { resource: "file", artifact: "file" },
+  "loam-research": { resource: "report", artifact: "report" },
+  "loam-schedule": { resource: "file", artifact: "file" },
+  "loam-mobile": { resource: "app", artifact: "file" },
+  "loam-game": { resource: "page", artifact: "page" },
+};
+
+function mimeFor(file: string): string {
+  const extension = path.extname(file).toLowerCase();
+  if (extension === ".pptx") return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+  if (extension === ".mp4") return "video/mp4";
+  if (extension === ".mp3") return "audio/mpeg";
+  if (extension === ".wav") return "audio/wav";
+  if (extension === ".webp") return "image/webp";
+  if (extension === ".docx") return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  if (extension === ".xlsx") return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  if (extension === ".html") return "text/html";
+  if (extension === ".png") return "image/png";
+  if (extension === ".jpg" || extension === ".jpeg") return "image/jpeg";
+  if (extension === ".svg") return "image/svg+xml";
+  if (extension === ".json") return "application/json";
+  if (extension === ".txt" || extension === ".md") return "text/plain";
+  return "application/octet-stream";
+}
+
+function presentForFinish(ctx: ToolContext, proof: string[]): PreparedPackPresentation | Exclude<PresentResult, { ok: true }> | undefined {
+  if (!ctx.packId) return undefined;
+  let project = readPackProject(ctx.workspace, ctx.packId);
+  if (!project && ["loam-office", "loam-research", "loam-schedule"].includes(ctx.packId)) {
+    if (proof.length === 0) return { ok: false, missing: ["artifacts"], errors: ["finish requires real output files in proof for this pack"], retry: true };
+    project = {
+      projectId: ctx.taskId ?? `legacy-${ctx.packId}`,
+      packId: ctx.packId,
+      revision: 0,
+      items: proof.map((file) => ({ id: path.basename(file), state: "final", path: file })),
+    };
+    writePackProject(ctx.workspace, project);
+  }
+  if (!project) return undefined;
+  const output = PACK_OUTPUT[ctx.packId];
+  return validatePackPresentation({
+    workspace: ctx.workspace,
+    packId: ctx.packId,
+    kind: output.resource,
+    artifacts: project.items.filter((item) => item.state === "final" && item.path).map((item) => ({
+      path: item.path!,
+      kind: output.artifact,
+      title: item.id,
+      mime: mimeFor(item.path!),
+    })),
+  });
 }
 
 function thinkTool(): Tool {
@@ -161,6 +224,41 @@ function thinkTool(): Tool {
       return { ok: true, content: "noted" };
     },
   };
+}
+
+export async function completePackTask(
+  ctx: ToolContext,
+  proof: string[],
+  runGate: GateRunner = defaultGateRunner,
+): Promise<{ ok: true; pack?: PresentResult; gates: VerifyCommand[] } | { ok: false; content: string }> {
+  let prepared: PreparedPackPresentation | Exclude<PresentResult, { ok: true }> | undefined;
+  try {
+    prepared = presentForFinish(ctx, proof);
+  } catch (err) {
+    return { ok: false, content: `pack presentation failed: ${err instanceof Error ? err.message : String(err)}` };
+  }
+  if (prepared && !prepared.ok) return { ok: false, content: JSON.stringify(prepared) };
+
+  let config: VerifyConfig;
+  try {
+    config = readVerifyConfig(ctx.workspace) ?? { commands: [], timeoutSec: DEFAULT_GATE_TIMEOUT_SEC };
+  } catch (err) {
+    return { ok: false, content: err instanceof Error ? err.message : String(err) };
+  }
+  for (const gate of config.commands) {
+    let result: GateResult;
+    try {
+      result = await runGate(gate.cmd, { cwd: gate.cwd, timeoutMs: config.timeoutSec * 1000 });
+    } catch (err) {
+      return { ok: false, content: `verification gate "${gate.name}" could not run (${gate.cmd}): ${err instanceof Error ? err.message : String(err)}` };
+    }
+    if (result.code !== 0) {
+      return { ok: false, content: `verification gate "${gate.name}" failed (exit ${result.code}): ${gate.cmd}\n${tail(result.output)}` };
+    }
+  }
+
+  const pack = prepared?.ok ? publishPackPresentation(prepared, ctx.workspace, ctx.emit) : undefined;
+  return { ok: true, gates: config.commands, ...(pack ? { pack } : {}) };
 }
 
 function finishTool(options: FinishToolsOptions): Tool {
@@ -206,34 +304,12 @@ function finishTool(options: FinishToolsOptions): Tool {
         return { ok: false, content: `finish proof path(s) invalid: ${missing.join("; ")}` };
       }
 
-      let config: VerifyConfig;
-      try {
-        config = readVerifyConfig(ctx.workspace) ?? { commands: [], timeoutSec: DEFAULT_GATE_TIMEOUT_SEC };
-      } catch (err) {
-        return { ok: false, content: err instanceof Error ? err.message : String(err) };
-      }
-
-      for (const gate of config.commands) {
-        let result: GateResult;
-        try {
-          result = await runGate(gate.cmd, { cwd: gate.cwd, timeoutMs: config.timeoutSec * 1000 });
-        } catch (err) {
-          return {
-            ok: false,
-            content: `verification gate "${gate.name}" could not run (${gate.cmd}): ${err instanceof Error ? err.message : String(err)}`,
-          };
-        }
-        if (result.code !== 0) {
-          return {
-            ok: false,
-            content: `verification gate "${gate.name}" failed (exit ${result.code}): ${gate.cmd}\n${tail(result.output)}`,
-          };
-        }
-      }
-
+      const completion = await completePackTask(ctx, proof, runGate);
+      if (!completion.ok) return { ok: false, content: completion.content };
       const followups = strs(args, "followups");
-      ctx.emit({ type: "done", text: summary, steps: 0, model: ctx.cfg.model });
-      return { ok: true, content: report(summary, confidence, proof, followups, config.commands) };
+      const finalSummary = completion.pack?.ok ? `${summary}\n\n${completion.pack.uri}` : summary;
+      ctx.emit({ type: "done", text: finalSummary, steps: 0, model: ctx.cfg.model });
+      return { ok: true, content: report(summary, confidence, proof, followups, completion.gates, completion.pack) };
     },
   };
 }

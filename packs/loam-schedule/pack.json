@@ -1,0 +1,11 @@
+{
+  "schema": "loam.service-pack/v1",
+  "id": "loam-schedule",
+  "version": "1.0.0",
+  "modes": ["automate"],
+  "skills": [{"name":"loam-schedule","path":"packs/loam-schedule/SKILL.md"}],
+  "wraps": ["schedule_create", "schedule_update"],
+  "gate": {"tool":"schedule_present","timeoutMs":30000},
+  "legacyRoutes": "keep",
+  "update": "hot"
+}

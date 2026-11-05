@@ -147,6 +147,8 @@ export interface RunOptions {
   signal?: AbortSignal;
   /** Active task id — lets long-running tools poll for cancellation. */
   taskId?: string;
+  packId?: import("../packs/types.js").PackId;
+  studioOptions?: Record<string, unknown>;
   /** Stable id of THIS agent session inside its workspace. Distinct sessions
    *  (orchestrator workers, sub-agents, map-reduce children) get distinct ids so
    *  a write by one notifies the others (jcode J8 file-touch notifications).
@@ -455,8 +457,8 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
   if (effortLevel) opts = { ...opts, maxSteps: opts.maxSteps ?? effortStepBudget(effortLevel) };
   // An output type pins the run to its pipeline: only the tools that can produce
   // that deliverable stay in the registry, so a Slides run cannot drift into a
-  // file-writing detour. `auto` keeps the whole run scope untouched.
-  if (outputType !== "auto") {
+  // file-writing detour. `auto` and run-bound service packs keep their explicit scope.
+  if (outputType !== "auto" && !opts.packId) {
     const wanted = outputTypeTools(outputType, opts.tools.names());
     if (wanted.length > 0) opts = { ...opts, tools: opts.tools.forAllowlist(wanted) };
   }
@@ -1052,6 +1054,8 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
             prunedStore,
             ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
             ...(opts.taskId ? { taskId: opts.taskId } : {}),
+            ...(opts.packId ? { packId: opts.packId } : {}),
+            ...(opts.studioOptions ? { studioOptions: opts.studioOptions } : {}),
           });
         noteToolOutcome(opts.taskId, item.name, item.args, toolResult.ok, toolResult.content ?? "");
         return toolResult;
@@ -1121,6 +1125,8 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
             prunedStore,
             ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
             ...(opts.taskId ? { taskId: opts.taskId } : {}),
+            ...(opts.packId ? { packId: opts.packId } : {}),
+            ...(opts.studioOptions ? { studioOptions: opts.studioOptions } : {}),
           });
         noteToolOutcome(opts.taskId, name, args, toolResult.ok, toolResult.content ?? "");
 

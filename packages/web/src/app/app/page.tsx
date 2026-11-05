@@ -2,10 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import {
-  PanelRight, Hammer, Pencil, AppWindow, Video, LayoutGrid, Database, Shield, BookOpenText, Play,
-  ChevronRight,
-} from 'lucide-react';
+import { PanelRight, Hammer } from 'lucide-react';
 import clsx from 'clsx';
 import { useAppDispatch } from '@/store';
 import { addSession, loadSessions } from '@/store/sessionsSlice';
@@ -13,25 +10,25 @@ import { t } from '@/i18n/t';
 import { Composer, ComposerContextBar, type ComposerHandle, type ProjectOption } from '@/components/chat/Composer';
 import { HomeCard } from '@/components/home/HomeCard';
 import { CreditsPopover } from '@/components/home/CreditsPopover';
-import { FlowPlaybook } from '@/components/home/FlowPlaybook';
 import { TemplateCard } from '@/components/home/TemplateCard';
-import { TemplateGalleryDialog } from '@/components/home/TemplateGalleryDialog';
+import { TEMPLATE_PREVIEWS, TemplatePreviewDialog, type TemplatePreview } from '@/components/home/TemplatePreviewDialog';
 import { ModelMenu, type AgentModel } from '@/components/home/ModelMenu';
-import { StartFromFileCard } from '@/components/home/StartFromFileCard';
-import { StarterMenu, type StarterItem } from '@/components/home/StarterMenu';
+import { StartFromFileCard, type LocalFileSelection } from '@/components/home/StartFromFileCard';
+import { StudioGoalDialog, StudioPickerDialog } from '@/components/home/StudioGoalDialogs';
+import { BUILD_GOALS, CREATE_GOALS, type StudioGoal } from '@/components/home/studioGoals';
 import { SidePanel } from '@/components/home/SidePanel';
-import { PromoBanner } from '@/components/home/PromoBanner';
+import { PromoBanner, type PromoTarget } from '@/components/home/PromoBanner';
 import { LogoMark } from '@/components/home/LogoMark';
-import { BuildIllustration, CreateIllustration } from '@/components/home/BuildIllustration';
+import { BuildIllustration, CreateIllustration, CreateMark } from '@/components/home/BuildIllustration';
 import { useBranch } from '@/components/home/useBranch';
 import { uploadFile, type Attachment } from '@/services/upload';
 import { desktopApis, isDesktop } from '@/services/desktopApis';
-import { getSessionToken, getApiBase } from '@/services/rpc';
+import { getSessionToken, getApiBase, getApiHeaders } from '@/services/rpc';
 import { fetchProjects } from '@/services/projectContextApi';
 import { shortUid } from '@/utils/uid';
 import type { TaskMode } from '@shared/socket';
+import { craftFrameUrl } from '@/lib/craftBridge';
 
-const UPLOAD_BASE = 'http://localhost:8787';
 const MODEL_KEY = 'agent-studio:model';
 
 function readStoredModel(): AgentModel {
@@ -61,8 +58,12 @@ export default function HomePage() {
   const dispatch = useAppDispatch();
   const composerRef = useRef<ComposerHandle>(null);
 
-  const [galleryOpen, setGalleryOpen] = useState(false);
-  const [playbookOpen, setPlaybookOpen] = useState(false);
+  const [picker, setPicker] = useState<'build' | 'create' | null>(null);
+  const [activeGoal, setActiveGoal] = useState<StudioGoal | null>(null);
+  const [previewTemplate, setPreviewTemplate] = useState<TemplatePreview | null>(null);
+  const [goalDraft, setGoalDraft] = useState<string | undefined>(undefined);
+  const [localSelection, setLocalSelection] = useState<LocalFileSelection | null>(null);
+  const [homeNotice, setHomeNotice] = useState('');
   const [model, setModel] = useState<AgentModel>(readStoredModel);
   const [panelOpen, setPanelOpen] = useState(false);
   const [activeFolder, setActiveFolder] = useState<'project' | 'downloads' | null>(null);
@@ -82,6 +83,21 @@ export default function HomePage() {
   }, [model]);
 
   useEffect(() => {
+    if (!isDesktop()) return;
+    const frame = document.createElement('iframe');
+    frame.src = craftFrameUrl('slides');
+    frame.setAttribute('aria-hidden', 'true');
+    frame.tabIndex = -1;
+    frame.style.cssText = 'position:fixed;width:1px;height:1px;inset-inline-start:-2px;bottom:0;border:0;visibility:hidden;pointer-events:none;';
+    document.body.appendChild(frame);
+    const timer = window.setTimeout(() => frame.remove(), 15_000);
+    return () => {
+      window.clearTimeout(timer);
+      frame.remove();
+    };
+  }, []);
+
+  useEffect(() => {
     let mounted = true;
     fetchProjects()
       .then((list) => { if (mounted) setProjects(list); })
@@ -93,7 +109,8 @@ export default function HomePage() {
 
   useEffect(() => {
     let cancelled = false;
-    const loadLocalCredits = fetch(`${getApiBase()}/api/credits`)
+    const loadLocalCredits = getApiHeaders()
+      .then((headers) => fetch(`${getApiBase()}/api/credits`, { headers }))
       .then(async (res) => {
         if (!res.ok) return null;
         const data = await res.json();
@@ -102,7 +119,7 @@ export default function HomePage() {
       .catch(() => null);
     const loadProtocolCredits = getSessionToken().then((token) => {
       if (!token) return null;
-      return fetch(`${UPLOAD_BASE}/user.v1.UserService/GetAvailableCredits`, {
+      return fetch(`${getApiBase()}/user.v1.UserService/GetAvailableCredits`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -200,8 +217,13 @@ export default function HomePage() {
     setDefaultLoamMode(loamMode);
   };
 
-  const addFilesToComposer = (files: File[]) => {
+  const addFilesToComposer = (files: File[], selection: LocalFileSelection) => {
     composerRef.current?.addFiles(files);
+    setLocalSelection(selection);
+    if (selection.mode === 'edit') {
+      composerRef.current?.setText(t('Edit the selected local files in place, preserve their format, and create backups before writing.'));
+      composerRef.current?.focus();
+    }
   };
 
   const handleAddFolder = (path: string) => {
@@ -235,7 +257,7 @@ export default function HomePage() {
     let attachments: Attachment[] = [];
     if (files.length > 0) {
       try {
-        attachments = await Promise.all(files.map((file) => uploadFile(UPLOAD_BASE, file)));
+        attachments = await Promise.all(files.map((file) => uploadFile(getApiBase(), file)));
       } catch (e) {
         // Proceed without attachments if upload fails.
         // eslint-disable-next-line no-console
@@ -261,62 +283,67 @@ export default function HomePage() {
   };
 
   const handleSend = async (text: string, mode: TaskMode, files: File[], extData?: Record<string, unknown>) => {
-    await navigateToTask(text, mode, files, extData);
+    const currentOptions = extData?.studioOptions;
+    const studioOptions = localSelection?.mode === 'edit'
+      ? { ...(currentOptions && typeof currentOptions === 'object' ? currentOptions : {}), mode: 'edit', localFiles: localSelection.localFiles }
+      : currentOptions;
+    await navigateToTask(text, mode, files, { ...extData, ...(studioOptions ? { studioOptions } : {}) });
   };
 
-  const onStarterSelect = (item: StarterItem) => {
-    prefillComposer(item.prompt, item.loamMode);
+  const selectGoal = (goal: StudioGoal) => {
+    setPicker(null);
+    setGoalDraft(undefined);
+    if (goal.disabled) {
+      setHomeNotice(t('This goal is not available yet. Websites, slides, video and local files use the supported service packs.'));
+      return;
+    }
+    if (goal.directRoute) {
+      router.push(goal.directRoute);
+      return;
+    }
+    setActiveGoal(goal);
   };
 
-  const buildItems: StarterItem[] = [
-    { label: t('Websites'), prompt: t('Website starter'), icon: '🔧', loamMode: 'build' },
-    { label: t('Apps'), prompt: t('App starter'), icon: '📱', loamMode: 'build' },
-    { label: t('Games'), prompt: t('Game starter'), icon: '🎮', loamMode: 'build' },
-  ];
+  const openPromo = (target: PromoTarget) => {
+    setGoalDraft(undefined);
+    const goals = target === 'video' ? CREATE_GOALS : BUILD_GOALS;
+    const goal = goals.find((item) => item.id === target);
+    if (goal) setActiveGoal(goal);
+  };
 
-  const createItems: StarterItem[] = [
-    { label: t('Slides'), prompt: t('Slides starter'), icon: '📊', loamMode: 'write' },
-    { label: t('Docs'), prompt: t('Docs starter'), icon: '📝', loamMode: 'write' },
-    { label: t('Images'), prompt: t('Images starter'), icon: '🖼️', loamMode: 'media' },
-    { label: t('Videos'), prompt: t('Videos starter'), icon: '🎬', loamMode: 'media' },
-  ];
+  const launchGoal = async (goal: StudioGoal, text: string, options?: { format?: string; chart?: string }) => {
+    if (goal.disabled) {
+      setActiveGoal(null);
+      setHomeNotice(t('This goal is not available yet. Choose a supported service instead.'));
+      return;
+    }
+    const mode: TaskMode = model === 'flex' ? 'standard' : model;
+    await navigateToTask(text, mode, [], {
+      loamMode: goal.loamMode,
+      studioGoal: goal.id,
+      outputType: goal.outputType,
+      studioOptions: options,
+      projectId,
+      worktreeEnabled,
+      modelTier: model,
+    });
+  };
 
-  const dataItems: StarterItem[] = [
-    { label: t('Sheets'), prompt: t('Sheets starter'), icon: '📑', loamMode: 'data' },
-    { label: t('Research'), prompt: t('Research starter'), icon: '🔍', loamMode: 'research' },
-  ];
+  const useTemplate = (prompt: string) => {
+    if (!previewTemplate) return;
+    const goalId = previewTemplate.id === 'anime' ? 'video' : previewTemplate.kind === 'App' ? 'desktop-app' : 'image';
+    const goals = previewTemplate.kind === 'App' ? BUILD_GOALS : CREATE_GOALS;
+    const goal = goals.find((item) => item.id === goalId);
+    setPreviewTemplate(null);
+    if (goal?.disabled) {
+      setHomeNotice(t('Mobile app generation is not available yet. The budget card cannot be converted into a website without your confirmation.'));
+      return;
+    }
+    setGoalDraft(prompt);
+    if (goal) setActiveGoal(goal);
+  };
 
-  const secureItems: StarterItem[] = [
-    { label: t('Security scan'), prompt: t('Security scan starter'), icon: '🛡️', loamMode: 'security' },
-    { label: t('Automation'), prompt: t('Automation starter'), icon: '⚡', loamMode: 'automate' },
-  ];
-
-  const templates = [
-    {
-      label: t('Video'),
-      labelIcon: <Video className="size-3" />,
-      title: t('Browser game'),
-      imageSrc: '/templates/anime.svg',
-      imageAlt: t('Browser game'),
-      prompt: t('Browser game prompt'),
-    },
-    {
-      label: t('App'),
-      labelIcon: <LayoutGrid className="size-3" />,
-      title: t('Product launch deck'),
-      imageSrc: '/templates/budget.svg',
-      imageAlt: t('Product launch deck'),
-      prompt: t('Product launch deck prompt'),
-    },
-    {
-      label: t('Website'),
-      labelIcon: <AppWindow className="size-3" />,
-      title: t('Personal website'),
-      imageSrc: '/templates/hero.svg',
-      imageAlt: t('Personal website'),
-      prompt: t('Personal website prompt'),
-    },
-  ];
+  const templates = TEMPLATE_PREVIEWS;
 
   return (
     <div className="flex flex-1 overflow-hidden">
@@ -341,115 +368,66 @@ export default function HomePage() {
           </div>
         </div>
 
-        <div className="mx-auto w-full max-w-[615px] flex-1 px-0 pb-2">
-          {/* Hero */}
+        <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 pb-2 sm:px-0">
           <div className="mb-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <LogoMark className="size-9 text-text-primary" />
-              <h1 className="flex items-baseline gap-1 text-[34px] font-bold leading-none text-text-primary">
+              <LogoMark className="size-10 text-text-primary" />
+              <h1 className="flex items-baseline gap-2 text-[34px] font-bold leading-none text-text-primary">
                 <span className="font-serif">{t('loam')}</span>
                 <span className="font-serif text-[#888888]">{t('studio')}</span>
               </h1>
             </div>
-            <PromoBanner onSelect={(prompt) => prefillComposer(prompt)} />
+            <PromoBanner onSelect={openPromo} />
           </div>
 
-          {/* Starter cards */}
-          <div className="mb-3 grid grid-cols-1 gap-[10px] md:grid-cols-[390px_minmax(0,1fr)]">
-            <div className="flex w-full max-w-[390px] flex-col gap-[10px]">
-              {/* W-U3: the unified builder entry — one "ابنِ" surface for all three build engines. */}
-              <button
-                type="button"
-                onClick={() => router.push('/app/build')}
-                data-testid="build-app-card"
-                className="flex w-full items-center gap-3 rounded-card border border-[#0081f2]/40 bg-[#0081f2]/5 px-4 py-3 text-start transition-colors hover:bg-[#0081f2]/10"
-              >
-                <Hammer className="size-5 shrink-0 text-[#0081f2]" />
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[13.5px] font-semibold text-text-primary">{t('Build an App')}</span>
-                  <span className="block text-[11px] text-text-tertiary">{t('One brief, three build styles.')}</span>
-                </span>
-                <ChevronRight className="size-4 shrink-0 text-text-tertiary rtl:rotate-180" aria-hidden />
-              </button>
-              <StarterMenu items={buildItems} onSelect={onStarterSelect}>
-                <HomeCard
-                  className="w-full"
-                  icon={<Hammer className="size-5 text-[#0081f2]" />}
-                  title={t('Build')}
-                  subtitle={t('Websites, apps, and games')}
-                  illustration={<BuildIllustration />}
-                />
-              </StarterMenu>
-              <StarterMenu items={createItems} onSelect={onStarterSelect}>
-                <HomeCard
-                  className="w-full"
-                  icon={<Pencil className="size-5 text-[#efa201]" />}
-                  title={t('Create')}
-                  subtitle={t('Slides, docs, images, and videos')}
-                  illustration={<CreateIllustration />}
-                />
-              </StarterMenu>
-              <StarterMenu items={dataItems} onSelect={onStarterSelect}>
-                <HomeCard
-                  className="w-full"
-                  icon={<Database className="size-5 text-[#22c55e]" />}
-                  title={t('Data')}
-                  subtitle={t('Sheets and research')}
-                />
-              </StarterMenu>
-              <StarterMenu items={secureItems} onSelect={onStarterSelect}>
-                <HomeCard
-                  className="w-full"
-                  icon={<Shield className="size-5 text-[#ef4444]" />}
-                  title={t('Secure')}
-                  subtitle={t('Security scans and automations')}
-                />
-              </StarterMenu>
+          <div className="mb-3 grid grid-cols-1 gap-[10px] md:grid-cols-3">
+            <div className="flex w-full flex-col gap-[10px] md:col-span-2">
+              <HomeCard
+                className="w-full"
+                onClick={() => setPicker('build')}
+                icon={<Hammer className="size-5 text-[#0081f2]" />}
+                title={t('Build')}
+                subtitle={t('Websites, apps, and games')}
+                illustration={<BuildIllustration />}
+              />
+              <HomeCard
+                className="w-full"
+                onClick={() => setPicker('create')}
+                icon={<CreateMark className="size-5 text-[#efa201]" />}
+                title={t('Create')}
+                subtitle={t('Slides, images, and videos')}
+                illustration={<CreateIllustration />}
+              />
             </div>
             <StartFromFileCard onFilesAdd={addFilesToComposer} />
           </div>
 
-          {/* Template row */}
-          <div className="mb-3 grid grid-cols-4 gap-[10px]">
+          <div className="mb-3 grid grid-cols-3 gap-[10px]">
             {templates.map((tpl) => (
               <TemplateCard
                 key={tpl.title}
-                label={tpl.label}
-                labelIcon={tpl.labelIcon}
                 title={tpl.title}
                 imageSrc={tpl.imageSrc}
                 imageAlt={tpl.imageAlt}
-                onClick={() => prefillComposer(tpl.prompt)}
+                onClick={() => setPreviewTemplate(tpl)}
               />
             ))}
-            <button
-              type="button"
-              onClick={() => setGalleryOpen(true)}
-              className="flex h-full min-h-[128px] flex-col items-center justify-center gap-1.5 rounded-card border border-border-main text-text-secondary transition-colors hover:bg-fill-hover"
-            >
-              <LayoutGrid className="size-5" />
-              <span className="text-[13px] font-medium">{t('More templates')}</span>
-            </button>
           </div>
-
-          {/* Case Playbook (Neo N15): the seeded Loam flows. */}
-          <button
-            type="button"
-            onClick={() => setPlaybookOpen(true)}
-            className="mb-3 flex w-full items-center gap-3 rounded-card border border-border-main px-4 py-3 text-start transition-colors hover:bg-fill-hover"
-          >
-            <BookOpenText className="size-5 shrink-0 text-text-tertiary" />
-            <span className="min-w-0 flex-1">
-              <span className="block text-[13px] font-medium text-text-primary">{t('Case Playbook')}</span>
-              <span className="block text-[11px] text-text-tertiary">
-                {t('Twelve ready Loam flows. Pick one to start from a proven prompt.')}
-              </span>
-            </span>
-            <Play className="size-4 shrink-0 text-text-tertiary rtl:rotate-180" />
-          </button>
 
           {/* Composer */}
           <div className="mt-auto">
+            {homeNotice && (
+              <div role="status" className="mb-2 flex items-center justify-between rounded-control bg-fill-tsp px-3 py-2 text-xs text-text-secondary" data-testid="home-goal-notice">
+                <span>{homeNotice}</span>
+                <button type="button" className="text-text-tertiary hover:text-text-primary" onClick={() => setHomeNotice('')}>{t('Dismiss')}</button>
+              </div>
+            )}
+            {localSelection?.mode === 'edit' && (
+              <div className="mb-2 flex items-center justify-between rounded-control bg-fill-tsp px-3 py-2 text-xs text-text-secondary" data-testid="local-edit-selection">
+                <span>{t('Edit in place')} · {localSelection.localFiles.length} {t('files')} · {t('Backups enabled')}</span>
+                <button type="button" className="text-text-tertiary hover:text-text-primary" onClick={() => setLocalSelection(null)}>{t('Clear')}</button>
+              </div>
+            )}
             <ComposerContextBar
               home
               projectPath={projectPath}
@@ -477,12 +455,29 @@ export default function HomePage() {
         </div>
       </div>
       <SidePanel open={panelOpen} />
-      <TemplateGalleryDialog
-        open={galleryOpen}
-        onClose={() => setGalleryOpen(false)}
-        onSelect={(tpl) => prefillComposer(tpl.prompt)}
-      />
-      <FlowPlaybook open={playbookOpen} onClose={() => setPlaybookOpen(false)} />
+      {picker && (
+        <StudioPickerDialog
+          kind={picker}
+          onClose={() => setPicker(null)}
+          onSelect={selectGoal}
+        />
+      )}
+      {previewTemplate && (
+        <TemplatePreviewDialog
+          template={previewTemplate}
+          onClose={() => setPreviewTemplate(null)}
+          onUse={useTemplate}
+          onOpenTemplate={setPreviewTemplate}
+        />
+      )}
+      {activeGoal && (
+        <StudioGoalDialog
+          goal={activeGoal}
+          initialDraft={goalDraft}
+          onClose={() => setActiveGoal(null)}
+          onLaunch={launchGoal}
+        />
+      )}
     </div>
   );
 }

@@ -494,6 +494,10 @@ export interface GenerateDesignBriefOptions {
   model?: string;
   /** Model attempts before the deterministic fallback (default 2). */
   maxAttempts?: number;
+  /** Optional per-attempt limit for latency-sensitive callers. */
+  timeoutMs?: number;
+  /** Optional response cap; the complete brief normally needs fewer than 900 tokens. */
+  numPredict?: number;
 }
 
 export interface DesignBriefResult {
@@ -569,6 +573,8 @@ export async function generateDesignBrief(options: GenerateDesignBriefOptions): 
         ],
         temperature: 0.2,
         model: options.model,
+        ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
+        ...(options.numPredict ? { numPredict: options.numPredict } : {}),
         signal: options.signal,
       });
       usage = {

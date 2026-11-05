@@ -9,13 +9,14 @@
  *    via the existing appBuilderApi.createAppProject, then the project opens
  *    in the existing AppBuilderWorkspace panel right here.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AlertCircle, Hammer, Loader2, Rocket } from 'lucide-react';
+import { AlertCircle, Loader2, Rocket } from 'lucide-react';
 import { t } from '@/i18n/t';
-import { createAppProject, type AppProjectDto } from '@/services/appBuilderApi';
+import { createAppProject, listAppProjects, type AppProjectDto } from '@/services/appBuilderApi';
 import { launchSwarmRun, launchRealSwarmRun, type SwarmRunRef } from '@/services/buildLaunchApi';
 import { AppBuilderWorkspace } from '@/components/appbuilder/AppBuilderWorkspace';
+import { WebsiteTemplateGallery } from './WebsiteTemplateGallery';
 import { bi } from '@/components/marketplace/labels';
 
 export type BuildStyle = 'swarm' | 'realswarm' | 'app-builder';
@@ -39,9 +40,18 @@ export function BuildLauncher() {
   const [realswarmRun, setRealswarmRun] = useState<SwarmRunRef | null>(null);
   const [swarmRun, setSwarmRun] = useState<SwarmRunRef | null>(null);
   const [project, setProject] = useState<AppProjectDto | null>(null);
+  const [recentProjects, setRecentProjects] = useState<AppProjectDto[]>([]);
 
   const trimmed = brief.trim();
   const canLaunch = trimmed.length >= MIN_BRIEF && !busy;
+
+  useEffect(() => {
+    let mounted = true;
+    listAppProjects(3)
+      .then((data) => { if (mounted) setRecentProjects(data.projects ?? []); })
+      .catch(() => { if (mounted) setRecentProjects([]); });
+    return () => { mounted = false; };
+  }, []);
 
   const launch = async () => {
     if (!canLaunch) return;
@@ -72,26 +82,45 @@ export function BuildLauncher() {
 
   return (
     <div className="relative">
-      <section aria-label={t('Build an App')} className="mx-auto w-full max-w-[720px]">
-        <div className="flex items-center gap-3">
-          <span className="flex size-10 items-center justify-center rounded-control bg-[#0081f2]/10">
-            <Hammer className="size-5 text-[#0081f2]" />
-          </span>
-          <div>
-            <h1 className="text-[28px] font-medium leading-tight text-text-primary">{t('Build an App')}</h1>
-            <p className="text-[13.5px] text-text-tertiary">{t('Write one brief, pick a build style, launch.')}</p>
-          </div>
+      <section aria-label={t('Your idea, live on the web')} className="mx-auto w-full max-w-3xl">
+        <div className="text-center">
+          <h1 className="font-serif text-[32px] leading-tight text-text-primary">{t('Your idea, live on the web')}</h1>
+          <p className="mt-2 text-[13.5px] text-text-tertiary">{t('Describe it in a sentence. Loam designs and builds the site.')}</p>
         </div>
 
+        {recentProjects.length > 0 && (
+          <section className="mt-8" aria-label={t('Continue working on')}>
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-medium text-text-primary">{t('Continue working on')}</h2>
+              <span className="text-xs text-text-tertiary">{t('View all')}</span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              {recentProjects.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setProject(item)}
+                  className="flex aspect-[16/9] flex-col justify-end rounded-card bg-fill-tsp p-3 text-start hover:bg-fill-hover"
+                >
+                  <span className="truncate text-sm font-medium text-text-primary">{item.title}</span>
+                  <span className="mt-1 text-xs capitalize text-text-tertiary">{item.status}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
+        <WebsiteTemplateGallery onSelect={setBrief} />
+
         <label className="mt-5 block">
-          <span className="mb-1.5 block text-[13px] font-medium text-text-secondary">{t('Brief')}</span>
+          <span className="sr-only">{t('Brief')}</span>
           <textarea
             value={brief}
             onChange={(event) => setBrief(event.target.value)}
-            placeholder={t('Describe the app you want: pages, data, behavior…')}
-            rows={5}
+            placeholder={t('Describe the website you want to build')}
+            rows={3}
             data-testid="build-brief"
-            className="w-full resize-y rounded-[14px] border border-border-main bg-bg-menu p-3.5 text-[14px] leading-relaxed text-text-primary outline-none placeholder:text-text-tertiary focus:border-text-tertiary"
+            className="w-full resize-y rounded-composer border border-border-main bg-bg-menu p-3.5 text-[14px] leading-relaxed text-text-primary outline-none placeholder:text-text-tertiary focus:border-text-tertiary"
           />
           <span className="mt-1 block text-[12px] text-text-tertiary">
             {trimmed.length < MIN_BRIEF

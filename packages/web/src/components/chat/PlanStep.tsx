@@ -11,8 +11,10 @@ export function PlanUpdateRow({ e }: { e: PlanUpdateEvent }) {
         <div key={i} className="flex items-center gap-2 text-sm text-text-secondary">
           {task.status === 'done'
             ? <span className="text-func-success">✓</span>
-            : <span className="status-active-dot shrink-0" aria-hidden />}
-          {task.title}
+            : task.status === 'doing'
+              ? <span className="status-active-dot shrink-0" aria-hidden />
+              : <span className="text-text-tertiary" aria-hidden>○</span>}
+          <span className={task.status === 'done' ? 'opacity-70' : undefined}>{task.title}</span>
         </div>
       ))}
     </div>

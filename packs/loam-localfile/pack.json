@@ -1,0 +1,11 @@
+{
+  "schema": "loam.service-pack/v1",
+  "id": "loam-localfile",
+  "version": "1.0.0",
+  "modes": ["localfile"],
+  "skills": [{"name":"loam-localfile","path":"packs/loam-localfile/SKILL.md"}],
+  "wraps": ["expectedRevision"],
+  "gate": {"tool":"local_watch","timeoutMs":30000},
+  "legacyRoutes": "keep",
+  "update": "hot"
+}

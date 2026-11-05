@@ -1,0 +1,11 @@
+{
+  "schema": "loam.service-pack/v1",
+  "id": "loam-audio",
+  "version": "1.0.0",
+  "modes": ["audio", "media"],
+  "skills": [{"name":"loam-audio","path":"packs/loam-audio/SKILL.md"}],
+  "wraps": ["gen_music"],
+  "gate": {"tool":"audio_present","timeoutMs":60000},
+  "legacyRoutes": "keep",
+  "update": "hot"
+}

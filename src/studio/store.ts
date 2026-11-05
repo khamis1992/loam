@@ -30,7 +30,17 @@ export type StudioArtifact = { title: string; revision: number; sourceId?: strin
 export class StudioError extends Error { constructor(message: string, public status = 400, public artifact?: StudioArtifact | null) { super(message); } }
 const fail = (message: string): never => { throw new StudioError(message); };
 function object(value: unknown): Record<string, unknown> { if (!value || typeof value !== "object" || Array.isArray(value)) return fail("Expected an object"); return value as Record<string, unknown>; }
-function text(value: unknown, max: number): string { if (typeof value !== "string" || value.length > max) return fail(`Expected text of at most ${max} characters`); return value; }
+function text(value: unknown, max: number): string {
+  if (typeof value !== "string") return fail("Expected text");
+  if (value.length > max) return fail(`Expected text of at most ${max} characters`);
+  return value;
+}
+/** A missing slide field is empty text. A non-string is rejected as text, not as a length limit. */
+function slideText(value: unknown, max: number): string {
+  if (value === undefined || value === null) return "";
+  if (Array.isArray(value) && value.every((part) => typeof part === "string")) return text(value.join("\n"), max);
+  return text(value, max);
+}
 function array(value: unknown, max: number): unknown[] { if (!Array.isArray(value) || value.length > max) return fail(`Expected at most ${max} items`); return value; }
 function slideCharts(value:unknown):SlideChart[]{
  const ids=new Set<string>();return array(value,8).map(item=>{const t=object(item),id=text(t.id,100);if(!id||ids.has(id))fail('Chart IDs must be unique');ids.add(id);if(!['column','line'].includes(String(t.type)))fail('Invalid chart type');
@@ -140,7 +150,7 @@ function metadata(value: Record<string, unknown>, keys: string[]): Record<string
  else if(key==='columnWidths'||key==='rowHeights')result[key]=array(v,key==='columnWidths'?100:2000).map(n=>{if(typeof n!=='number'||!Number.isFinite(n)||n<0||n>10000)fail('Invalid dimension');return n;});
  else if(key==='hiddenRows'||key==='hiddenColumns')result[key]=array(v,key==='hiddenRows'?2000:100).map(n=>{if(typeof n!=='boolean')fail('Invalid visibility');return n;});
  else if(key==='merges')result[key]=array(v,10000).map(n=>{if(typeof n!=='string'||! /^[A-Z]{1,3}[1-9]\d{0,3}:[A-Z]{1,3}[1-9]\d{0,3}$/.test(n))fail('Invalid merge');return n;});
- else if(key==='textBoxes'||key==='tableCells'||key==='sourcePictures'){const ids=new Set<string>();result[key]=array(v,500).map(item=>{const box=object(item),id=text(box.id,100);if(!id||ids.has(id))fail('Invalid text box id');ids.add(id);const clean:Record<string,unknown>={...style(box),id,text:text(box.text,20000)};if(key==='sourcePictures')for(const prop of cropKeys){if(box[prop]===undefined)continue;const n=box[prop];if(typeof n!=='number'||!Number.isFinite(n)||Math.abs(n)>10000)fail('Invalid picture crop');clean[prop]=n;}if(key==='sourcePictures'&&cropKeys.every(k=>box[k]!==undefined)&&(Number(box.cropLeft)+Number(box.cropRight)>=100||Number(box.cropTop)+Number(box.cropBottom)>=100))fail('Keep a visible image crop area');if(key==='sourcePictures'&&box.src!==undefined){try{embeddedPicture(box.src);}catch{fail('Use a valid embedded PNG/JPEG replacement image');}clean.src=box.src;}for(const prop of ['x','y','w','h']){const n=box[prop];if(typeof n!=='number'||!Number.isFinite(n)||Math.abs(n)>10000||(prop==='w'||prop==='h')&&n<0)fail('Invalid text box position');clean[prop]=n;}return clean;});}
+ else if(key==='textBoxes'||key==='tableCells'||key==='sourcePictures'){const ids=new Set<string>();result[key]=array(v,500).map(item=>{const box=object(item),id=text(box.id,100);if(!id||ids.has(id))fail('Invalid text box id');ids.add(id);const clean:Record<string,unknown>={...style(box),id,text:slideText(box.text,20000)};if(key==='sourcePictures')for(const prop of cropKeys){if(box[prop]===undefined)continue;const n=box[prop];if(typeof n!=='number'||!Number.isFinite(n)||Math.abs(n)>10000)fail('Invalid picture crop');clean[prop]=n;}if(key==='sourcePictures'&&cropKeys.every(k=>box[k]!==undefined)&&(Number(box.cropLeft)+Number(box.cropRight)>=100||Number(box.cropTop)+Number(box.cropBottom)>=100))fail('Keep a visible image crop area');if(key==='sourcePictures'&&box.src!==undefined){try{embeddedPicture(box.src);}catch{fail('Use a valid embedded PNG/JPEG replacement image');}clean.src=box.src;}for(const prop of ['x','y','w','h']){const n=box[prop];if(typeof n!=='number'||!Number.isFinite(n)||Math.abs(n)>10000||(prop==='w'||prop==='h')&&n<0)fail('Invalid text box position');clean[prop]=n;}return clean;});}
  }
  return result;
 }
@@ -179,7 +189,7 @@ export function validateStudio(input: unknown): Omit<StudioArtifact, "revision">
     const ids = new Set<string>();
     clean = { kind: value.kind, title, content: { slides: array(content.slides, 200).map((item) => {
       const slide = object(item), id = text(slide.id, 100); if (!id || ids.has(id)) fail("Slide ids must be unique and nonempty"); ids.add(id);
-      const color = (v: unknown) => { if (typeof v !== "string" || !/^#[\da-f]{6}$/i.test(v)) return fail("Colors must be six-digit hex values"); return v; };
+      const color = (v: unknown, fallback?: string) => { if ((v === undefined || v === null || v === "") && fallback) return fallback; if (typeof v !== "string" || !/^#[\da-f]{6}$/i.test(v)) return fail("Colors must be six-digit hex values"); return v; };
       const images=slide.images===undefined?undefined:slideImages(slide.images);
       const charts=slide.charts===undefined?undefined:slideCharts(slide.charts);
       if(value.sourceId&&charts?.length)fail('Charts in imported presentations are not supported yet');
@@ -187,7 +197,7 @@ export function validateStudio(input: unknown): Omit<StudioArtifact, "revision">
       if(!value.sourceId&&(slide.tableCells!==undefined||slide.sourcePictures!==undefined||slide.sourceCharts!==undefined))fail('Original table cells require an imported presentation');
       if(value.sourceId&&tables?.length)fail('New tables in imported presentations are not supported yet');
       if(value.sourceId&&images?.length)fail('New images in imported presentations are not supported yet');
-      return { ...metadata(slide, ["sourceIndex", "textBoxes", "tableCells", "sourcePictures", "sourceCharts"]), ...(images?{images}:{}), ...(tables?{tables}:{}), ...(charts?{charts}:{}), id, title: text(slide.title, 500), body: text(slide.body, 20_000), notes: text(slide.notes, 20_000), background: color(slide.background), accent: color(slide.accent) };
+      return { ...metadata(slide, ["sourceIndex", "textBoxes", "tableCells", "sourcePictures", "sourceCharts"]), ...(images?{images}:{}), ...(tables?{tables}:{}), ...(charts?{charts}:{}), id, title: text(slide.title, 500), body: slideText(slide.body, 20_000), notes: slideText(slide.notes, 20_000), background: color(slide.background, "#F7F3EA"), accent: color(slide.accent, "#187665") };
     }) } };
   } else if (value.kind === "spreadsheet") {
     const names = new Set<string>();

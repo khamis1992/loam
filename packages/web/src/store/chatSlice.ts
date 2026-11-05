@@ -24,8 +24,13 @@ const chatSlice = createSlice({
       ensureEvents(state, sessionId);
       const list = state.eventsBySession[sessionId];
       const idx = list.findIndex((e) => e.id === event.id);
+      const candidate = event as unknown as { type?: string; message?: string };
+      const duplicateError = candidate.type === 'error' && list.some((existing) => {
+        const current = existing as unknown as { type?: string; message?: string };
+        return current.type === 'error' && current.message === candidate.message;
+      });
       if (idx >= 0) list[idx] = event;
-      else list.push(event);
+      else if (!duplicateError) list.push(event);
     },
     applyDelta(state, action: PayloadAction<{ sessionId: string; delta: ChatDeltaEvent }>) {
       const { sessionId, delta } = action.payload;

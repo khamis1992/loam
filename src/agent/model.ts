@@ -20,6 +20,10 @@ export interface ModelCallOptions {
   notify?: (message: string) => void;
   /** Enable thinking mode for local models (default: false for Ollama). */
   think?: boolean;
+  /** Maximum prediction tokens for bounded JSON planning calls. */
+  numPredict?: number;
+  /** Constrain the response to a JSON object when the provider supports it. */
+  format?: Record<string, unknown>;
   /** Mark the system prefix as a provider cache breakpoint (see ChatOptions). */
   cacheControl?: boolean;
 }
@@ -55,6 +59,8 @@ export async function chatWithFallback(opts: ModelCallOptions): Promise<ChatResu
         ...(opts.onToken ? { onToken: opts.onToken } : {}),
         ...(opts.onThinking ? { onThinking: opts.onThinking } : {}),
         think: opts.think ?? false,
+        ...(opts.numPredict !== undefined ? { numPredict: opts.numPredict } : {}),
+        ...(opts.format ? { format: opts.format } : {}),
         ...(opts.cacheControl ? { cacheControl: true } : {}),
       });
       
@@ -71,6 +77,7 @@ export async function chatWithFallback(opts: ModelCallOptions): Promise<ChatResu
           ...(opts.onToken ? { onToken: opts.onToken } : {}),
           ...(opts.onThinking ? { onThinking: opts.onThinking } : {}),
           think: false,
+          ...(opts.numPredict !== undefined ? { numPredict: opts.numPredict } : {}),
           ...(opts.cacheControl ? { cacheControl: true } : {}),
         });
         log.info("model_request", { ...attempt, phase: "complete", elapsedMs: Math.round(performance.now() - started), providerDurationMs: retryResult.usage.durationMs, promptTokens: retryResult.usage.promptTokens, completionTokens: retryResult.usage.completionTokens, toolCallCount: retryResult.toolCalls.length });

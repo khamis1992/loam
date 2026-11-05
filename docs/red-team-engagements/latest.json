@@ -1,0 +1,16 @@
+{
+  "id": "ENG-2026-10-24T21-35-30-824Z",
+  "findings": [
+    {
+      "fingerprint": "c7be981a060f53b127bc7594",
+      "verdict": "finding"
+    }
+  ],
+  "coverage": [
+    "http://127.0.0.1:3939\nred_ssrf",
+    "http://127.0.0.1:3939\nred_sqli",
+    "http://127.0.0.1:3939\nred_fuzz",
+    "http://127.0.0.1:3939\nred_templates",
+    "http://127.0.0.1:3939\nred_deser"
+  ]
+}

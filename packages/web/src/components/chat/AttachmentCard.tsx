@@ -1,7 +1,8 @@
+import { useEffect, useState } from 'react';
 import { FileText, Presentation, Table2, Video, Image, FileCode, File, ExternalLink } from 'lucide-react';
 import { formatBytes } from '@/utils/format';
 import { t } from '@/i18n/t';
-import { getApiBase } from '@/services/rpc';
+import { getApiBase, getApiHeaders } from '@/services/rpc';
 
 export type AttachmentKind = 'doc' | 'slide' | 'sheet' | 'video' | 'image' | 'svg' | 'file';
 
@@ -12,6 +13,7 @@ export interface AttachmentCardProps {
   size?: number;
   taskId?: string;
   path?: string;
+  previewPath?: string;
   /** Overrides the button label when `onOpen` opens the file in an editor (cr-03). */
   openLabel?: string;
   onOpen?: () => void;
@@ -94,8 +96,29 @@ export function mediaUrl(taskId: string, path: string): string {
   return `${getApiBase()}/api/media?${params.toString()}`;
 }
 
-export function AttachmentCard({ name, kind, size, taskId, path, openLabel, onOpen }: AttachmentCardProps) {
+export function AttachmentCard({ name, kind, size, taskId, path, previewPath, openLabel, onOpen }: AttachmentCardProps) {
   const resolvedKind = kind ?? kindFromName(name);
+  const [previewSrc, setPreviewSrc] = useState<string | null>(null);
+  useEffect(() => {
+    if (!taskId || !previewPath) return;
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    void (async () => {
+      try {
+        const res = await fetch(mediaUrl(taskId, previewPath), { headers: await getApiHeaders() });
+        if (!res.ok) throw new Error(`preview failed (${res.status})`);
+        objectUrl = URL.createObjectURL(await res.blob());
+        if (!cancelled) setPreviewSrc(objectUrl);
+      } catch {
+        if (!cancelled) setPreviewSrc(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [taskId, previewPath]);
+
   const handleOpen = () => {
     if (onOpen) {
       onOpen();
@@ -106,8 +129,8 @@ export function AttachmentCard({ name, kind, size, taskId, path, openLabel, onOp
     }
   };
 
-  return (
-    <div className="flex items-center gap-3 rounded-card border border-border-main bg-bg-menu p-3">
+  const content = (
+    <div className="flex items-center gap-3 py-1">
       {iconForKind(resolvedKind)}
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-text-primary">{name}</p>
@@ -121,11 +144,24 @@ export function AttachmentCard({ name, kind, size, taskId, path, openLabel, onOp
         onClick={handleOpen}
         disabled={!onOpen && !(taskId && path)}
         title={onOpen ? openLabel : undefined}
-        className="flex items-center gap-1 rounded-control px-2 py-1 text-xs font-medium text-text-secondary hover:bg-fill-hover disabled:opacity-50"
+        className="flex shrink-0 items-center gap-1 rounded-control px-2 py-1 text-xs font-medium text-text-secondary hover:bg-fill-hover disabled:opacity-50"
       >
         <ExternalLink className="size-3.5" />
         {openLabel ?? t('Open')}
       </button>
+    </div>
+  );
+
+  if (!taskId || !previewPath || !previewSrc) return content;
+  return (
+    <div className="overflow-hidden rounded-card border border-border-main bg-bg-menu">
+      <button type="button" onClick={handleOpen} className="block w-full bg-bg-main text-start" aria-label={openLabel ?? t('Open')}>
+        <div className="aspect-video w-full overflow-hidden">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={previewSrc} alt={name} className="h-full w-full object-cover transition-transform hover:scale-[1.01]" />
+        </div>
+      </button>
+      <div className="px-3 pb-2 pt-1">{content}</div>
     </div>
   );
 }

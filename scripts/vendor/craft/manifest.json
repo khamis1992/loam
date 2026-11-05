@@ -1,11 +1,15 @@
 {
   "bridge": "craft:* postMessage v1 (loam=1)",
+  "fonts": {
+    "rev": "aced4137c022f1f587624d48e81ec77e1914a9cc",
+    "repo": "https://github.com/storytold/craft-fonts"
+  },
   "apps": {
     "deckcraft": {
       "rev": "a31b990d32f2c8562f1588562f922960c3fde48b",
       "short": "a31b990",
-      "zip": "deckcraft-web-loam-a31b990.zip",
-      "sha256": "a0f30f466c2af57d0ddaae426a6de7608682e53f17b10dfac875275a87c9ff87",
+      "zip": "deckcraft-web-loam-a31b990d32f2c8562f1588562f922960c3fde48b.zip",
+      "sha256": "465ab79cdeece3c7af06e3822bfc6ca7e467d4ce874389e1e0bd99d1d8974227",
       "repo": "https://github.com/storytold/deckcraft",
       "name": "Loam Slides"
     },

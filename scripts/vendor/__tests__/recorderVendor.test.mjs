@@ -6,11 +6,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { auditSeverities, parseArgs, pruneLock, rewritePackageJson } from '../recorder/build-recorder.mjs';
 import { forbiddenDeps, forbiddenLockEntries, runGates } from '../recorder/gates.mjs';
 
-const here = path.dirname(new URL(import.meta.url).pathname);
+const here = path.dirname(fileURLToPath(import.meta.url));
 const manifest = JSON.parse(fs.readFileSync(path.join(here, '../recorder/manifest.json'), 'utf8'));
 const removals = JSON.parse(fs.readFileSync(path.join(here, '../recorder/removals.json'), 'utf8'));
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'recorder-vendor-'));
@@ -84,8 +85,8 @@ describe('gates', () => {
       'electron/l.ts': 'const u = "https://api.openai.com/v1"',
       'dist/assets/x.js': 'fetch("https://huggingface.co/m")' });
     const f = runGates({ root, distDir: path.join(root, 'dist'), deletePaths: [] }).join('\n');
-    assert.match(f, /posthog: src\/t\.ts/);
-    assert.match(f, /llm-endpoint: electron\/l\.ts/);
+    assert.match(f, /posthog: src[/\\]t\.ts/);
+    assert.match(f, /llm-endpoint: electron[/\\]l\.ts/);
     assert.match(f, /huggingface in dist/);
   });
 

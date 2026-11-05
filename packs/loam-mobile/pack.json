@@ -1,0 +1,14 @@
+{
+  "schema": "loam.service-pack/v1",
+  "id": "loam-mobile",
+  "version": "1.0.0",
+  "modes": ["mobile", "mobile-app"],
+  "skills": [{"name":"loam-mobile","path":"packs/loam-mobile/SKILL.md"}],
+  "wraps": ["loam_mobile"],
+  "ownedTools": [],
+  "wrappedTools": ["loam_mobile"],
+  "hostTools": ["mobile_present"],
+  "gate": {"tool":"mobile_present","timeoutMs":30000},
+  "legacyRoutes": "keep",
+  "update": "hot"
+}

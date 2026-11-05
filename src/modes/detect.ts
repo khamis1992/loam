@@ -46,23 +46,17 @@ export function detectModeFromText(text: string): string {
  *
  * Precedence, strongest first:
  *
- *   1. a slide-deck request (Loam Slides), unless the deliverable is a website;
- *   2. an explicit `loamMode` (a real Loam mode wins; an alias is normalized;
+ *   1. an explicit `loamMode` (a real Loam mode wins; an alias is normalized;
  *      an unknown value is ignored and falls through);
- *   3. an explicit output type (`agent_type`, §4.2) — the composer asked for a
- *      deliverable, so the run gets that deliverable's tool scope. Before N10's
- *      fix this table existed but nothing read it, so "Slides mode hits the
- *      slides pipeline" only held by accident of keyword detection;
+ *   2. an explicit output type (`agent_type`, §4.2) — the composer asked for a
+ *      deliverable, so the run gets that deliverable's tool scope;
+ *   3. a slide-deck request (Loam Slides);
  *   4. fast offline keyword detection;
  *   5. `build`, except the legacy `lite`/`discuss` task modes which map to `ask`.
  *      Arabic with no app keyword resolves to `ask` inside detection.
  */
 export function resolveLoamMode(um: UserMessage, prompt: string): string {
-  // A one-page deck is Loam Slides. Build mode cannot open it and instead
-  // plans an acceptance contract plus independent verification, which is the
-  // slow path. An explicit website deliverable still wins.
   const outputType = um.extData.outputType;
-  if (!(isOutputType(outputType) && outputType === "website") && isSlideDeckRequest(prompt)) return "write";
 
   // (a) Explicit Loam mode from client extData takes precedence if valid.
   const explicit = (um.extData.loamMode ?? "").trim();
@@ -77,7 +71,10 @@ export function resolveLoamMode(um: UserMessage, prompt: string): string {
     if (fromType && LOAM_MODES.some((m) => m.id === fromType)) return fromType;
   }
 
-  // (c) Fast offline keyword detection from the user prompt.
+  // (c) An otherwise undirected deck belongs to Loam Slides, not a slow app build.
+  if (isSlideDeckRequest(prompt)) return "write";
+
+  // (d) Fast offline keyword detection from the user prompt.
   const detected = detectModeFromText(prompt);
   if (detected !== "build") return detected;
 

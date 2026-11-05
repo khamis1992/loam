@@ -1,5 +1,11 @@
+const fs = require("node:fs");
 const path = require("node:path");
 const { flipFuses, FuseVersion, FuseV1Options } = require("@electron/fuses");
+
+function copyTree(from, to) {
+  if (!fs.existsSync(from)) return;
+  fs.cpSync(from, to, { recursive: true, force: true });
+}
 
 /** Flip the security fuses required by BUILD_SPEC §10.4 after the packaged
  *  Electron executable has been produced.
@@ -8,6 +14,10 @@ const { flipFuses, FuseVersion, FuseV1Options } = require("@electron/fuses");
  *  It targets the main executable in appOutDir and leaves app files untouched.
  */
 module.exports = async function afterPack(context) {
+  const root = path.resolve(__dirname, "..");
+  const unpacked = path.join(context.appOutDir, "resources", "app.asar.unpacked");
+  copyTree(path.join(root, "electron", "recorder", "dist"), path.join(unpacked, "electron", "recorder", "dist"));
+  copyTree(path.join(root, "resources", "recorder", "bin"), path.join(unpacked, "resources", "recorder", "bin"));
   const exeName = `${context.packager.appInfo.productName}.exe`;
   const exePath = path.join(context.appOutDir, exeName);
 

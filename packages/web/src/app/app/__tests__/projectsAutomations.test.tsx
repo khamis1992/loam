@@ -205,6 +205,16 @@ describe('AutomationsPage create/edit/delete dialogs', () => {
     );
   });
 
+  it('opens a scheduled automation from the new hero card with its prompt', async () => {
+    stubFetch(() => json({ schedules: [] }));
+    render(<AutomationsPage />);
+
+    fireEvent.change(screen.getByTestId('automation-brief'), { target: { value: 'Daily sales report' } });
+    fireEvent.click(screen.getByTestId('automation-kind-schedule'));
+    const dialog = screen.getByRole('dialog', { name: 'New automation' });
+    expect(within(dialog).getByPlaceholderText('What should Loam do?')).toHaveProperty('value', 'Daily sales report');
+  });
+
   it('deletes an automation through DELETE /api/schedules/:id after confirming', async () => {
     const fetchMock = stubFetch((url, init) => {
       if (url === apiUrl('/schedules/s1') && init?.method === 'DELETE') return json({ deleted: true });

@@ -48,7 +48,7 @@ export const PLANNER_SYSTEM = [
   '- A loam_mobile request limited to the supported screen schema (text, inputs, toggles, navigation) is one coherent studio edit: set trivial=true and use one step that reads the current revision, replaces the project once, and checks the returned project. Preserve the requested display language. Do not split each screen or each read/write into separate steps. Requests for native builds, backend services or advanced application logic still need a normal implementation and verification plan.',
   '- Set "trivial": true and use exactly ONE step only when the request is a simple single-action task (a greeting, one quick answer, reading one value) OR when the request invokes a self-contained studio/builder tool (super_swarm, rork_build, lovable_studio, metagpt_company, studio_blender, game_build, mirofish_chat) to generate a new package/app from scratch.',
   '- When calling a self-contained studio/builder tool (super_swarm, rork_build, lovable_studio, metagpt_company), do NOT add preliminary steps to search the disk or inspect files first — call the studio tool directly in step s1. office_craft is different: it drives the live Craft editor, so follow the Craft-editor rule below instead.',
-  '- A presentation, slides, or pptx request is a Loam Slides task, not an HTML page and not presentation_build. One page (صفحة واحدة or صفحة 1) means exactly one slide. A new presentation is exactly three steps, and each instruction is one literal English call. The title and body strings are in the user\'s language. If the user wrote Arabic, both quotes must contain Arabic words and must not be an English translation. The body names the designer, the place, and the year as four digits: (1) Call office_craft with action \'open\' and app \'slides\'. (2) Call office_craft with action \'edit\' and app \'slides\' and title \'<title>\' and body \'<the one slide>\'. (3) Call office_craft with action \'export\' and app \'slides\'. Do not call office_export, do not use any other action, and do not open Loam Docs. A document or docx is Loam Docs (office_craft app "docs"). A spreadsheet, xlsx, or csv workbook is Loam Sheets (office_craft app "sheets"). A photo or psd edit is Loam Photo (app "photo"). A layout, idml, or designed pdf is Loam Design (app "design"). Action "open" with no file creates a new file. A new document or docx is exactly three steps, and each instruction is one literal English call: (1) Call office_craft with action \'open\' and app \'docs\'. (2) Call office_craft with action \'edit\' and app \'docs\' and body \'<the page>\'. (3) Call office_craft with action \'export\' and app \'docs\'. A new spreadsheet is exactly three steps, and each instruction is one literal English call: (1) Call office_craft with action \'open\' and app \'sheets\'. (2) Call office_craft with action \'edit\' and app \'sheets\' and body \'<rows separated by ; and cells by |, including one =SUM() total>\'. (3) Call office_craft with action \'export\' and app \'sheets\'. For photo and design, keep each to 2-3 steps: open, then change the file with action "execute" or action "batch", then export through the app and report the file path. Use loam_studio, loam_dataset, or office_export only when that editor is unavailable. presentation_build is not available unless it appears in the tool list; never choose it for a normal presentation. An explicit HTML slide page belongs to Build mode. If the editor is unavailable, say so in the user\'s language and fall back to the built-in editors instead of writing a web page.',
+  '- A presentation, slides, or pptx request is a Loam Slides task, not an HTML page and not presentation_build. One page (صفحة واحدة or صفحة 1) means exactly one slide. A new presentation is exactly three steps, and each instruction is one literal English call. The title and body strings are in the user\'s language. If the user wrote Arabic, both quotes must contain Arabic words and must not be an English translation. The body must contain the actual facts, visual requirements, and language requested by the user; placeholders such as <title>, <the one slide>, or <Arabic body> are forbidden: (1) Call office_craft with action \'open\' and app \'slides\'. (2) Call office_craft with action \'edit\' and app \'slides\' and title \'<title>\' and body \'<the one slide>\'. (3) Call office_craft with action \'export\' and app \'slides\' and file \'<meaningful title>.pptx\'. Do not call office_export, do not use any other action, and do not open Loam Docs. A document or docx is Loam Docs (office_craft app "docs"). A spreadsheet, xlsx, or csv workbook is Loam Sheets (office_craft app "sheets"). A photo or psd edit is Loam Photo (app "photo"). A layout, idml, or designed pdf is Loam Design (app "design"). Action "open" with no file creates a new file. A new document or docx is exactly three steps, and each instruction is one literal English call: (1) Call office_craft with action \'open\' and app \'docs\'. (2) Call office_craft with action \'edit\' and app \'docs\' and body \'<the page>\'. (3) Call office_craft with action \'export\' and app \'docs\'. A new spreadsheet is exactly three steps, and each instruction is one literal English call: (1) Call office_craft with action \'open\' and app \'sheets\'. (2) Call office_craft with action \'edit\' and app \'sheets\' and body \'<rows separated by ; and cells by |, including one =SUM() total>\'. (3) Call office_craft with action \'export\' and app \'sheets\'. For photo and design, keep each to 2-3 steps: open, then change the file with action "execute" or action "batch", then export through the app and report the file path. Use loam_studio, loam_dataset, or office_export only when that editor is unavailable. presentation_build is not available unless it appears in the tool list; never choose it for a normal presentation. An explicit HTML slide page belongs to Build mode. If the editor is unavailable, say so in the user\'s language and fall back to the built-in editors instead of writing a web page.',
   '- A request that edits a file attached in chat (an office document, spreadsheet, deck, image or layout) is a Craft-editor task, not a from-scratch build: it opens in the Workspace panel and is driven live. Keep it to 2-3 steps: (s1) open the attached file and read the live state (document.inspect / sheet.read / cell.get / ui.inspect); (s2) discover the command ids with engine.commands, apply the batched edits, then re-read the state to verify the change; (s3) export through the app so the bytes return into the task. Never invent a command id, never replay a failed command, and never write the office file with shell or Python. The last step must also report the exported file path to the user. If the app is unavailable or the panel never reports ready, say so in the user\'s language and fall back to the built-in editors instead of retrying.',
   '- A video request (an attached video, or instructions to cut, arrange, add music, apply a transition or effect, animate a title, or export) is a Loam Video task: one product, two engines behind it. Keep it to 2-4 steps: (s1) open the editor panel and read the current project state (video_studio action=open, then action=state) so manual panel edits are never lost; (s2) apply the edits incrementally with video_studio actions, routing each operation to the engine the router owns (cut/arrange/audio/music/static text/basic dissolve = timeline engine; transitions beyond a basic dissolve, effects, colour looks, text/motion animation, keyframed motion = Loam Effects engine) and re-reading state after each change to verify; (s3) export with raw {command: "export"} so the render lands in the task, and publish it with artifact_publish as kind video. Never write media bytes with file_write, never invent an engine command id (raw validates it against the live catalog), and never present a degraded effects edit as the full effect: read the routing object in the result and say plainly which engine applied it. If the editor dist is missing or the bridge is down, the tool reports a fallback to video_edit (ffmpeg) — use it instead of retrying.',
   '- Instructions must be concrete: files, commands, sources. No meta-work like "understand the task".',
@@ -168,12 +168,17 @@ export function presentationRequest(prompt: string): boolean {
   return /برزنتيشن|presentation|\bslides\b|\bpptx\b/i.test(prompt);
 }
 
-/** The edit step of a slides plan whose body does not contain a four-digit year. */
-export function slidesEditLacksYear(plan: Plan): boolean {
+export function placeholderText(value: string): boolean {
+  return /^<[^>]{1,120}>$/.test(value.trim());
+}
+
+/** True when a slides edit has no real title/body or still contains a model placeholder. */
+export function slidesEditNeedsContent(plan: Plan): boolean {
   return plan.steps.some((step) => {
     if (!/action\s+['"]edit['"]/i.test(step.instruction) || !/slides/i.test(step.instruction)) return false;
+    const title = step.instruction.match(/\btitle\s+['"]([^'"]*)['"]/i)?.[1] ?? "";
     const body = step.instruction.match(/\bbody\s+['"]([^'"]*)['"]/i)?.[1] ?? "";
-    return !/\d{4}/.test(body);
+    return !title.trim() || !body.trim() || placeholderText(title) || placeholderText(body);
   });
 }
 
@@ -181,7 +186,7 @@ export function slidesEditLacksYear(plan: Plan): boolean {
 export function applySlideFacts(plan: Plan, title: string, body: string): Plan {
   const safeTitle = title.replace(/['"]/g, "").trim();
   const safeBody = body.replace(/['"]/g, "").trim();
-  if (!safeTitle || !safeBody || !/\d{4}/.test(safeBody)) return plan;
+  if (!safeTitle || !safeBody || placeholderText(safeTitle) || placeholderText(safeBody)) return plan;
   const instruction = `Call office_craft with action 'edit' and app 'slides' and title '${safeTitle}' and body '${safeBody}'.`;
   let replaced = false;
   const steps = plan.steps.map((step) => {
@@ -192,93 +197,57 @@ export function applySlideFacts(plan: Plan, title: string, body: string): Plan {
   return replaced ? { ...plan, steps } : plan;
 }
 
+export function fallbackPresentationPlan(prompt: string, title: string, body: string): Plan {
+  const safeTitle = title.replace(/['"]/g, "").trim();
+  const safeBody = body.replace(/['"]/g, "").trim();
+  const file = (safeTitle.replace(/[\\/]/g, "-").slice(0, 80) || "presentation") + ".pptx";
+  const arabic = ARABIC.test(prompt);
+  return {
+    goal: (prompt.split(/\r?\n/)[0] ?? "").slice(0, 120) || safeTitle,
+    trivial: false,
+    source: "fallback",
+    steps: [
+      { id: "s1", title: arabic ? "افتح Loam Slides" : "Open Loam Slides", instruction: "Call office_craft with action 'open' and app 'slides'.", successCriteria: "A new presentation is open." },
+      { id: "s2", title: arabic ? "أنشئ الشريحة" : "Create the slide", instruction: `Call office_craft with action 'edit' and app 'slides' and title '${safeTitle}' and body '${safeBody}'.`, successCriteria: "The live slide confirms the requested title and body." },
+      { id: "s3", title: arabic ? "صدّر PPTX" : "Export PPTX", instruction: `Call office_craft with action 'export' and app 'slides' and file '${file}'.`, successCriteria: "A valid PPTX file exists in the task workspace." },
+    ],
+  };
+}
+
 const SLIDE_FACTS_SYSTEM = [
   "Reply with JSON only, no markdown: {\"title\":\"...\",\"body\":\"...\"}.",
-  "The title and body are one slide in the user's language. When the user wrote Arabic, both contain Arabic words.",
-  "The body names the designer in Latin letters and the opening year as four digits, inside the same Arabic sentence. Use the real facts for that subject.",
-  "Do not describe the task and do not invent a different building.",
+  "Create the actual title and concise body for the user's slide, in the user's language.",
+  "Satisfy every requested fact and visual requirement using accurate content. Do not use placeholders, angle-bracket variables, or descriptions of the task.",
+  "When the user wrote Arabic, both values must contain natural Arabic text.",
 ].join(" ");
 
-const SLIDE_FACTS_ARABIC = [
-  "Reply with JSON only, no markdown: {\"title\":\"...\",\"body\":\"...\"}.",
-  "Rewrite the body into Arabic. Keep the designer's Latin name and the four-digit year inside that Arabic body. Keep the Arabic title.",
-].join(" ");
-
-/** A slide title and body are usable when the body has a year and matches the user's language. */
+/** A slide title and body are usable when they are real content in the user's language. */
 export function acceptSlideFacts(prompt: string, title: string, body: string): boolean {
-  if (!title.trim() || !body.trim() || !/\d{4}/.test(body)) return false;
+  if (!title.trim() || !body.trim() || placeholderText(title) || placeholderText(body)) return false;
   if (ARABIC.test(prompt) && (!ARABIC.test(title) || !ARABIC.test(body))) return false;
   return true;
 }
 
-function addUsage(left: Usage, right: Usage): Usage {
-  return {
-    promptTokens: left.promptTokens + right.promptTokens,
-    completionTokens: left.completionTokens + right.completionTokens,
-    durationMs: left.durationMs + right.durationMs,
-  };
-}
-
-function latinName(text: string): string {
-  const matches = text.match(/\b[A-Z][A-Za-z.]*(?:\s+[A-Z][A-Za-z.]*){0,4}/g) ?? [];
-  return matches.find((item) => item.includes(".") && item.length > 3) ?? "";
-}
-
-/** Keep the year and the Latin designer name from a facts reply inside the slide body. */
-export function mergeSlideFacts(prompt: string, title: string, body: string, facts: string): { title: string; body: string } | null {
-  const year = facts.match(/\b\d{4}\b/)?.[0] ?? "";
-  const name = latinName(facts);
-  let nextBody = body.trim();
-  if (year && !nextBody.includes(year)) nextBody = `${nextBody} ${year}`.trim();
-  if (name && !nextBody.includes(name)) nextBody = `${nextBody} (${name})`.trim();
-  let nextTitle = title.trim();
-  if (ARABIC.test(prompt) && !ARABIC.test(nextTitle)) {
-    const arabic = nextBody.match(/[\u0600-\u06ff][\u0600-\u06ff\s]{1,60}/)?.[0]?.trim() ?? "";
-    if (arabic) nextTitle = arabic;
-  }
-  if (!acceptSlideFacts(prompt, nextTitle, nextBody)) return null;
-  return { title: nextTitle, body: nextBody };
-}
-
 async function slideFacts(o: PlannerOptions): Promise<{ title: string; body: string; usage: Usage } | null> {
-  const ask = async (system: string, user: string): Promise<ChatResult> => chatWithFallback({
-    cfg: o.cfg,
-    ollama: o.ollama,
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: user },
-    ],
-    temperature: 0.1,
-    ...(o.model ? { model: o.model } : {}),
-    ...(o.signal ? { signal: o.signal } : {}),
-  });
-  const read = (content: string): { title: string; body: string } | null => {
-    const parsed = extractJson(content);
+  try {
+    const result = await chatWithFallback({
+      cfg: o.cfg,
+      ollama: o.ollama,
+      messages: [
+        { role: "system", content: SLIDE_FACTS_SYSTEM },
+        { role: "user", content: o.prompt },
+      ],
+      temperature: 0.1,
+      numPredict: 2000,
+      ...(o.model ? { model: o.model } : {}),
+      ...(o.signal ? { signal: o.signal } : {}),
+    });
+    const parsed = extractJson(result.content);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
     const record = parsed as Record<string, unknown>;
     const title = str(record["title"]);
     const body = str(record["body"]);
-    return title && body ? { title, body } : null;
-  };
-  try {
-    const first = await ask(SLIDE_FACTS_SYSTEM, o.prompt);
-    let usage = first.usage;
-    let parsed = read(first.content);
-    if (parsed && acceptSlideFacts(o.prompt, parsed.title, parsed.body)) return { ...parsed, usage };
-    if (!parsed || !/\d{4}/.test(parsed.body)) {
-      const retry = await ask(SLIDE_FACTS_SYSTEM, `${o.prompt}\nThe body must include the designer's Latin name and the opening year as four digits.`);
-      usage = addUsage(usage, retry.usage);
-      const again = read(retry.content);
-      if (again && acceptSlideFacts(o.prompt, again.title, again.body)) return { ...again, usage };
-      if (again && /\d{4}/.test(again.body)) parsed = again;
-    }
-    if (!parsed || !/\d{4}/.test(parsed.body)) return null;
-    if (!ARABIC.test(o.prompt)) return { ...parsed, usage };
-    const second = await ask(SLIDE_FACTS_ARABIC, `Previous title: ${parsed.title}\nPrevious body: ${parsed.body}\nUser request: ${o.prompt}`);
-    usage = addUsage(usage, second.usage);
-    const rewritten = read(second.content);
-    const merged = mergeSlideFacts(o.prompt, rewritten?.title || parsed.title, rewritten?.body || parsed.body, parsed.body);
-    return merged ? { ...merged, usage } : null;
+    return acceptSlideFacts(o.prompt, title, body) ? { title, body, usage: result.usage } : null;
   } catch (err) {
     if (o.signal?.aborted || isCancelledError(err)) throw err instanceof Error ? err : new Error(String(err));
     log.warn(`slide facts failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -841,6 +810,7 @@ export async function planTask(o: PlannerOptions): Promise<PlanResult> {
         { role: "user", content: user },
       ],
       temperature: 0.1,
+      numPredict: 4000,
       ...(o.model ? { model: o.model } : {}),
       ...(o.signal ? { signal: o.signal } : {}),
     });
@@ -852,9 +822,9 @@ export async function planTask(o: PlannerOptions): Promise<PlanResult> {
 
   if (res) {
     const normalized = normalizePlan(extractJson(res.content), o.prompt, o.maxPlanSteps);
-    if (normalized && presentationRequest(o.prompt) && slidesEditLacksYear(normalized)) {
+    if (normalized && presentationRequest(o.prompt) && slidesEditNeedsContent(normalized)) {
       const facts = await slideFacts(o);
-      const repaired = facts ? applySlideFacts(normalized, facts.title, facts.body) : normalized;
+      const repaired = facts ? applySlideFacts(normalized, facts.title, facts.body) : fallbackPlan(o.prompt);
       const usage = facts
         ? {
             promptTokens: res.usage.promptTokens + facts.usage.promptTokens,
@@ -865,7 +835,21 @@ export async function planTask(o: PlannerOptions): Promise<PlanResult> {
       return { plan: repaired, model: res.model, usage };
     }
     if (normalized) return { plan: preferDevflowPlan(o.prompt, preferLegalPlan(o.prompt, preferDesignPlan(o.prompt, preferPhotoPlan(o.prompt, preferVideoPlan(o.prompt, preferLandingPlan(o.prompt, preferResearchPlan(o.prompt, preferHtmlSlidePlan(o.prompt, preferSecurityPlan(o.prompt, preferSubtitlesPlan(o.prompt, preferDatasetPlan(o.prompt, preferCreativePlan(o.prompt, preferCanvasPlan(o.prompt, preferMarkdownPlan(o.prompt, preferSheetsPlan(o.prompt, preferDocxPlan(o.prompt, normalized)))))))))))))))), model: res.model, usage: res.usage };
-    log.warn("planner: unparseable output; using single-step fallback plan");
+    log.warn("planner: unparseable output; using deterministic fallback plan");
+    if (presentationRequest(o.prompt)) {
+      const facts = await slideFacts(o);
+      if (facts) {
+        return {
+          plan: fallbackPresentationPlan(o.prompt, facts.title, facts.body),
+          model: res.model,
+          usage: {
+            promptTokens: res.usage.promptTokens + facts.usage.promptTokens,
+            completionTokens: res.usage.completionTokens + facts.usage.completionTokens,
+            durationMs: res.usage.durationMs + facts.usage.durationMs,
+          },
+        };
+      }
+    }
     return { plan: fallbackPlan(o.prompt), model: res.model, usage: res.usage };
   }
   return {

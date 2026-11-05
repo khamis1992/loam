@@ -3,11 +3,13 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Sidebar } from '@/components/shell/Sidebar';
-import { TitleBar } from '@/components/shell/TitleBar';
+import { PanelLeft } from 'lucide-react';
+import { toggleSidebar } from '@/store';
 import { Spinner } from '@/components/ui/Button';
 import { useAppSelector, useAppDispatch } from '@/store';
 import { setToken, setUser } from '@/store/authSlice';
 import { desktopApis, validateSessionToken, logoutAndRedirect } from '@/services/desktopApis';
+import { t } from '@/i18n/t';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -51,19 +53,27 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   if (checking) {
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-bg-main">
+      <div className="flex h-dvh w-full items-center justify-center bg-bg-main">
         <Spinner className="size-6 text-text-secondary" />
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-bg-main">
+    <div className="flex h-dvh w-full min-w-0 overflow-hidden bg-bg-main">
       {sidebarOpen && <div className="shrink-0"><Sidebar /></div>}
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <TitleBar>{null}</TitleBar>
-        <main className="flex flex-1 flex-col overflow-hidden">{children}</main>
-      </div>
+      {!sidebarOpen && (
+        <button
+          type="button"
+          aria-label={t('Toggle sidebar')}
+          title={t('Toggle sidebar')}
+          onClick={() => dispatch(toggleSidebar())}
+          className="absolute start-1 top-1 z-50 flex h-7 w-7 items-center justify-center rounded-control bg-bg-menu text-text-secondary shadow-card hover:bg-fill-hover"
+        >
+          <PanelLeft className="size-4" />
+        </button>
+      )}
+      <main className="relative min-h-0 min-w-0 flex-1 overflow-hidden">{children}</main>
     </div>
   );
 }

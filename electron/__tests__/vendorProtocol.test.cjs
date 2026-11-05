@@ -18,6 +18,8 @@ describe("vendorProtocol MIME mapping", () => {
     assert.equal(vp.vendorMime("a/b/font.woff2"), "font/woff2");
     assert.equal(vp.vendorMime("a/b/font.ttf"), "font/ttf");
     assert.equal(vp.vendorMime("a/b/logo.png"), "image/png");
+    assert.equal(vp.vendorMime("a/b/wallpaper.jpg"), "image/jpeg");
+    assert.equal(vp.vendorMime("a/b/clip.mp4"), "video/mp4");
     assert.equal(vp.vendorMime("a/b/unknown.part"), "application/octet-stream");
   });
 });
@@ -69,6 +71,15 @@ describe("vendorProtocol Craft resolution", () => {
     assert.equal(vp.resolveCraftFile(root, { url: "loamcraft://wordcraft/..%2f..%2f..%2fetc%2fpasswd" }), null);
   });
 
+  it("answers a full byte range so a video element can decode", async () => {
+    const file = path.join(root, "clip.mp4");
+    fs.writeFileSync(file, Buffer.from("0123456789"));
+    const res = vp.vendorMediaResponse(file, { headers: { get: (name) => (name === "range" ? "bytes=0-" : null) } });
+    assert.equal(res.status, 206);
+    assert.equal(res.headers.get("content-type"), "video/mp4");
+    assert.equal(res.headers.get("content-range"), "bytes 0-9/10");
+    assert.equal(Buffer.from(await res.arrayBuffer()).toString(), "0123456789");
+  });
   it("returns a 404 response and a typed response", () => {
     const missing = vp.vendorNotFound();
     assert.equal(missing.status, 404);

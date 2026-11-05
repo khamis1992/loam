@@ -38,7 +38,7 @@ describe("modelDirectory", () => {
       "http://127.0.0.1:31415/v1/models": { body: { data: [{ id: "glm-5.3-flash" }, { id: "glm-5.3-flash" }] } },
       "https://api.longcat.chat/openai/v1/models": { body: { models: [{ id: "LongCat-2.5-Preview" }] } },
       "https://openrouter.ai/api/v1/models": { status: 500 },
-      "https://opencode.ai/inference/go/openai/v1/models": { body: { data: [{ id: "go-flash" }] } },
+      "https://opencode.ai/zen/go/v1/models": { body: { data: [{ id: "go-flash" }] } },
     }) as unknown as typeof fetch);
 
     const cfg = {
@@ -46,7 +46,7 @@ describe("modelDirectory", () => {
       model: "base",
       failover: {
         providers: [
-          { id: "opencode-go", kind: "openai-compatible", baseUrl: "https://opencode.ai/inference/go/openai/v1", model: "x", apiKeyEnv: "", enabled: true },
+          { id: "opencode-go", kind: "openai-compatible", baseUrl: "https://opencode.ai/zen/go/v1", model: "x", apiKeyEnv: "", enabled: true },
           { id: "freellmapi", kind: "openai-compatible", baseUrl: "http://127.0.0.1:31415/v1", model: "y", apiKeyEnv: "", enabled: false },
           { id: "longcat", kind: "openai-compatible", baseUrl: "https://api.longcat.chat/openai/v1", model: "z", apiKeyEnv: "", enabled: true },
           { id: "openrouter", kind: "openai-compatible", baseUrl: "https://openrouter.ai/api/v1", model: "w", apiKeyEnv: "", enabled: true },

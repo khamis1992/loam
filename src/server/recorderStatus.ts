@@ -2,7 +2,7 @@
 // Nothing here downloads or spawns a capture process.
 import fs from "node:fs";
 import path from "node:path";
-import { ROOT } from "../config.js";
+import { assetUnder, ROOT } from "../config.js";
 import { ffmpegAvailable } from "./workspace/videoRender.js";
 
 export interface RecorderStatus {
@@ -30,12 +30,12 @@ export function readRecorderStatus(root: string = ROOT): RecorderStatus {
   } catch {
     installed = false;
   }
-  const bin = path.join(root, "resources", "recorder", "bin", "win32-x64");
+  const bin = assetUnder(root, "resources", "recorder", "bin", "win32-x64");
   const helper = fs.existsSync(path.join(bin, "wgc-capture.exe")) ? "ok" : "missing";
-  const compositor = fs.existsSync(path.join(root, "electron", "recorder", "compositor.node"))
-    || fs.existsSync(path.join(bin, "compositor.node"))
+  const compositorNames = ["compositor.node", "compositor_view.node"];
+  const compositor = compositorNames.some((name) => fs.existsSync(path.join(root, "electron", "recorder", name)) || fs.existsSync(path.join(bin, name)))
     ? "ok"
     : "missing";
-  const capture = ffmpegAvailable() ? "ffmpeg" : helper === "ok" ? "helper" : "missing";
+  const capture = helper === "ok" ? "helper" : ffmpegAvailable() ? "ffmpeg" : "missing";
   return { app: "recordercraft", name: "Loam Recorder", installed, rev, helper, compositor, capture };
 }

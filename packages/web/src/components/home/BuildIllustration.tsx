@@ -1,16 +1,10 @@
 export function BuildIllustration() {
   return (
     <svg width="140" height="100" viewBox="0 0 140 100" fill="none" className="text-text-primary">
-      <rect x="10" y="12" width="120" height="76" rx="6" stroke="currentColor" strokeWidth="1.5" />
-      <rect x="22" y="24" width="40" height="28" rx="3" stroke="currentColor" strokeWidth="1.5" />
-      <line x1="30" y1="32" x2="54" y2="32" stroke="currentColor" strokeWidth="1.5" />
-      <line x1="30" y1="40" x2="48" y2="40" stroke="currentColor" strokeWidth="1.5" />
-      <rect x="70" y="24" width="48" height="6" rx="2" fill="currentColor" />
-      <rect x="70" y="36" width="36" height="6" rx="2" fill="currentColor" />
-      <rect x="70" y="48" width="44" height="6" rx="2" fill="currentColor" />
-      <rect x="22" y="62" width="96" height="16" rx="3" stroke="currentColor" strokeWidth="1.5" />
-      <circle cx="110" cy="20" r="8" stroke="currentColor" strokeWidth="1.5" />
-      <path d="M106 20L109 23L115 17" stroke="currentColor" strokeWidth="1.5" fill="none" />
+      <path d="M10 10H130V90H10zM10 30H130M10 50H130M10 70H130M35 10V90M60 10V90M85 10V90M110 10V90" stroke="currentColor" strokeWidth="0.8" />
+      <circle cx="72" cy="50" r="35" stroke="currentColor" strokeWidth="1.2" />
+      <circle cx="72" cy="50" r="19" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M72 15V85M37 50H107" stroke="currentColor" strokeWidth="0.8" />
     </svg>
   );
 }
@@ -18,13 +12,19 @@ export function BuildIllustration() {
 export function CreateIllustration() {
   return (
     <svg width="140" height="100" viewBox="0 0 140 100" fill="none" className="text-text-primary">
-      <rect x="20" y="10" width="100" height="80" rx="6" stroke="currentColor" strokeWidth="1.5" />
-      <circle cx="70" cy="38" r="18" stroke="currentColor" strokeWidth="1.5" />
-      <circle cx="70" cy="38" r="10" stroke="currentColor" strokeWidth="1.5" />
-      <rect x="34" y="66" width="72" height="16" rx="3" stroke="currentColor" strokeWidth="1.5" />
-      <rect x="42" y="70" width="22" height="8" rx="2" fill="currentColor" />
-      <rect x="68" y="70" width="30" height="8" rx="2" fill="currentColor" />
-      <path d="M110 26L118 34M118 26L110 34" stroke="currentColor" strokeWidth="1.5" />
+      <rect x="18" y="26" width="76" height="60" rx="3" transform="rotate(-12 18 26)" stroke="currentColor" strokeWidth="1.2" />
+      <rect x="36" y="18" width="76" height="60" rx="3" transform="rotate(-3 36 18)" stroke="currentColor" strokeWidth="1.2" />
+      <rect x="52" y="14" width="76" height="60" rx="3" transform="rotate(8 52 14)" stroke="currentColor" strokeWidth="1.2" />
+    </svg>
+  );
+}
+
+export function CreateMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden>
+      <path d="M8 2.5 11 4v3L8 8.5 5 7V4l3-1.5Z" />
+      <path d="m4 9 3 1.5v3L4 15l-3-1.5v-3L4 9Z" />
+      <path d="m12 9 3 1.5v3L12 15l-3-1.5v-3L12 9Z" />
     </svg>
   );
 }

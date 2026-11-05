@@ -16,9 +16,9 @@
   }
 
   // Apply immediately (no flash) from the local mirror.
-  var theme = "dark";
+  var theme = "light";
   try {
-    theme = localStorage.getItem(KEY) || localStorage.getItem("manus-theme") || "dark";
+    theme = localStorage.getItem(KEY) || localStorage.getItem("manus-theme") || "light";
   } catch (e) {
     /* storage unavailable */
   }

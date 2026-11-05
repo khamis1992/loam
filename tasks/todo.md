@@ -1,3 +1,22 @@
+# استمرار المحادثة بعد مليون توكن
+
+المحادثة تتوقف لأن عداد الجلسة يجمع كل التوكنات ويوقف المهمة عند 1,000,000 لنماذج `:cloud`. جدول النوافذ يطابق `glm` على 32,768، بينما نافذة glm-5.3-flash المنشورة مليون توكن. لا يوجد حفظ للنص الكامل بعد التلخيص، ولا كتابة تلقائية لمخرجات الأدوات الطويلة في ملف.
+
+## المهام
+- [x] 1. عند بلوغ السقف: لخّص النافذة الحية وأكمل المهمة. العداد يُظهر تنبيهاً ولا يُنهي المحادثة.
+- [x] 2. احفظ نص المحادثة في ملف قبل التلخيص، واجعل الوكيل يبحث فيه إذا غابت تفصيلة من الملخص.
+- [x] 3. مخرجات الأدوات الأطول من حد الإفراغ تُكتب في ملف، ويبقى في الطلب المسار ومقتطف قصير.
+- [x] 4. نافذة `glm-5.3` و`glm-5.3-flash` تصبح 1,000,000 توكن حسب النشر، فيحدث التلخيص قرب الحد الحقيقي.
+- [x] 5. اختبارات للسقف، والإفراغ إلى ملف، واختيار نافذة glm.
+
+## المراجعة
+عداد التوكنات التراكمي صار تنبيهاً: المحادثة تكمل، وسقف الخطوات والوقت والتكلفة ما زال يوقف المهمة. قبل التلخيص يُحفظ النص في `.loam/transcripts` ويُذكر مساره في التذكير. مخرجات الأدوات الأطول من 80,000 حرفاً تُكتب في `.loam/spills` ويبقى مقتطف ومسار. نافذة `glm-5.3` و`glm-5.3-flash` مليون توكن. الاختبارات الخاصة بهذه المسارات نجحت. التطبيق المفتوح لا يرى التغيير حتى تُبنى حزمة جديدة.
+
+## مراجعة مسجّل Loam
+حزمة OpenScreen `8ecc76b` بُنيت محلياً: المساعد `wgc-capture.exe`، و`compositor_view.node`، وواجهة المحرر. تسجيل 30 ثانية احتوى صورة وصوت نظام، وتصدير 1080p خرج `1920x1080` مع صوت. زر التسجيل يضم صوت النظام عندما يكون المساعد موجوداً. `edit.apply` مع `zoom.autoFromClicks` يمرّر منطقة تكبير إلى المُصدّر عندما يوجد تسجيل. المشروع النموذجي يُفتح من مساحة العمل، وملف `desktop.srt` يعرض تعليقاً عربياً عندما يكون خادم التفريغ متوقفاً. التعليقات الحية تسأل خادم التفريغ المحلي ولا تنزّل نموذجاً. بوابات الفحص نجحت، وإشعار الرخص في النسخة المفتوحة يقول إن المساعد والمُركّب يجيئان مع الحزمة. قائمة فحص الجهاز لم تُوقَّع.
+
+---
+
 # Loam Unified Model Registry Implementation Plan
 
 **Branch:** `feat/model-registry`  
@@ -28,9 +47,7 @@ Implement a unified model/provider registry that allows users to add ANY model:
 - [ ] 0.1: Read spec sections §7.8, §12.1, §12.2 thoroughly
 - [ ] 0.2: Add `zod` to package.json dependencies (not devDependencies)
 - [ ] 0.3: Run `npm install` to update package-lock.json
-- [ ] 0.4: Verify OpenCode Go URL (spec conflict: `/inference/go/openai/v1` vs `/zen/go/v1`)
-  - Check official OpenCode docs or make test call
-  - Update preset URL in presets.ts
+- [x] 0.4: Verify OpenCode Go URL. Live list on 2026-11-03: `/zen/go/v1` returns 28 models; `/inference/go/openai/v1` returns 404. The saved provider and the defaults now use `/zen/go/v1`.
 - [ ] 0.5: Verify z.ai base URL (marked UNKNOWN in spec)
   - Research z.ai/GLM API documentation
   - Update preset baseUrl in presets.ts
@@ -254,7 +271,7 @@ Implement a unified model/provider registry that allows users to add ANY model:
   - Send loam:model-secret-hints at startup and after changes
 - [ ] 4.2: Update `electron/ipc-constants.cjs`
   - Add "modelSecrets" to NAMESPACES array
-- [ ] 4.3: Update `electron/main.cjs`
+- [x] 4.3: Update `electron/main.cjs`
   - Import model-secrets.cjs
   - Call attachModelSecrets(serverChild, app, safeStorage) next to attachLegalKey
   - Register modelSecrets namespace handlers in IPC dispatcher
@@ -582,23 +599,29 @@ Implement a unified model/provider registry that allows users to add ANY model:
 ## Review Section
 
 ### Summary of Changes
-*To be filled after completion*
+The registry, vault, adapters, and Agent Studio picker are in the tree. Saving a provider now uses a schema-valid id, stores the key in the vault, and saves models as `providerId/remoteId`. `GET /api/models` includes registry `entries`. Cloud checks honor `providerRef.location`.
 
 ### What Was Verified
-*To be filled after completion*
+`node --import tsx --test` on the draft, adapter, and registry failover tests: 10 passed, 0 failed.
 
 ### What Works
-*To be filled after completion*
+A pasted key is not written into the registry JSON. Anthropic uses `x-api-key` and Gemini uses `x-goog-api-key`. Failover keeps a vault-backed provider and moves on after a 503.
 
 ### Known Issues / Remaining Work
-*To be filled after completion*
+Settings S1–S9 are wired in the legacy page, and S9 is covered by `tests/e2e/model-select.s9.test.ts`. Fake servers live in `tests/e2e/stubs/`. E1–E9 pass in the node suite. Live acceptance A1, A3, and A8–A11 were not run because those providers are not available here. The draft pull request is not merged.
 
 ### Pre-existing Test Issues
-*To be filled after completion*
+`tsc --noEmit` still reports existing errors in `src/tools/__tests__/craftFallback.test.ts`. They are not from the registry.
 
 ### Security Notes
-*To be filled after completion*
+Provider drafts keep a credential UUID. The raw key is passed only to the vault `put` and is absent from the saved record.
 
 ### Testing Notes
-*To be filled after completion*
+Desktop vault `put` runs inside the Electron utility process. The unit test stubs `put` so it does not touch `data/model-registry.json`. The node suite `tests/e2e/model-registry.flow.test.ts` passed 12 tests. Playwright stub checks in `tests/e2e/model-registry.spec.ts` passed 4 tests without starting the Loam server.
+
+## مراجعة تنظيف سطح المكتب
+
+حُذفت نسخ العمل التي لم يبق فيها مصدر بعد الدمج، مع فك الاختصارات التي كانت تشير إلى `node_modules` في `manus-local` قبل الحذف. حُذف الفرعان المحليان `feat/run-book-gaps` و`fix/loam-service-routes` لأن التزاماتهما داخل الفرع الحالي. بقيت `manus-local`، و`manus-agent-desktop` (غير مدمج)، و`loam-easy-wt` (ملفات غير محفوظة غير موجودة في الشجرة الحالية)، ونسخة `manus-local-backup-20261019` (مئات الملفات غير المحفوظة). مجلد `node_modules` في المشروع الحالي ما زال موجودًا.
+
+مراجعة ما لم يُدمج: لا نسخة منها جاهزة للدمج. `cursor/agent-desktop-integration` يتعارض في نص الموجه ويلمس ملفات التغليف التي فيها تعديل حالي، وفيه بداية P5 غير مكتملة. `loam-easy-wt` نسخته أقدم لمسار السجل وأحدث لواجهة الإضافة، فالنسخ المباشر يستبدل المسار الأحدث. النسخة الاحتياطية أقدم من الشجرة الحالية في الملفات المختلفة، ودمجها يرجع المشروع. لم يُحذف شيء من هذه الثلاثة.
 

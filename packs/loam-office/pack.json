@@ -1,0 +1,11 @@
+{
+  "schema": "loam.service-pack/v1",
+  "id": "loam-office",
+  "version": "1.0.0",
+  "modes": ["document", "spreadsheet", "visualization", "write", "data"],
+  "skills": [{"name":"loam-office","path":"packs/loam-office/SKILL.md"}],
+  "wraps": ["office_craft", "loam_studio", "office_export"],
+  "gate": {"tool":"office_present","timeoutMs":60000},
+  "legacyRoutes": "keep",
+  "update": "hot"
+}

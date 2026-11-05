@@ -223,6 +223,7 @@ export class RelayClientBase<TTarget extends string = RelayTarget> {
         continue;
       }
       if (!this.commandEvents.includes(String(record.type)) || typeof record.id !== 'string') continue;
+      if (!this.observeOnly && this.targets.length > 0 && !this.targets.includes(String(record.target))) continue;
       const params =
         record.params && typeof record.params === 'object' && !Array.isArray(record.params)
           ? (record.params as Record<string, unknown>)

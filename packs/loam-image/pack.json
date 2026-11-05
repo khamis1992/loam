@@ -1,0 +1,11 @@
+{
+  "schema": "loam.service-pack/v1",
+  "id": "loam-image",
+  "version": "1.0.0",
+  "modes": ["image", "media"],
+  "skills": [{"name":"loam-image","path":"packs/loam-image/SKILL.md"}],
+  "wraps": ["imageProvider", "design_image_generate"],
+  "gate": {"tool":"image_present","timeoutMs":60000},
+  "legacyRoutes": "keep",
+  "update": "hot"
+}

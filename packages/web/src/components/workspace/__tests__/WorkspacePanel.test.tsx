@@ -26,6 +26,7 @@ function SlidesProbeEditor() {
 
 registerEditor({ kind: 'doc', label: 'Doc probe', extensions: ['docx'], load: async () => ({ default: ProbeEditor }) });
 registerEditor({ kind: 'sheet', label: 'Sheet probe', extensions: ['xlsx'], load: async () => ({ default: ProbeEditor }) });
+registerEditor({ kind: 'loam-video', label: 'Video probe', extensions: ['mp4'], load: async () => ({ default: ProbeEditor }) });
 
 const filesResponse = (entries: Array<{ name: string; path: string; mtimeMs: number; size?: number }>) => ({
   ok: true,
@@ -176,6 +177,25 @@ describe('WorkspacePanel editor gateway', () => {
     );
     expect(await screen.findByText('No editor for this file type yet.')).toBeInTheDocument();
     expect(screen.queryByText('Open with')).toBeNull();
+    vi.unstubAllGlobals();
+  });
+
+  it('opens a recording that is not in the file list yet in Loam Video', async () => {
+    const fetchMock = vi.fn().mockImplementation(() => filesResponse([]));
+    vi.stubGlobal('fetch', fetchMock);
+    render(
+      <WorkspacePanel
+        taskId="task_1"
+        live={false}
+        events={[]}
+        requestedKind="loam-video"
+        requestedPath="recordings/recording.mp4"
+        onChatEdit={() => undefined}
+      />,
+    );
+    await screen.findByTestId('probe-editor');
+    expect(captured?.file.path).toBe('recordings/recording.mp4');
+    expect(captured?.file.kind).toBe('loam-video');
     vi.unstubAllGlobals();
   });
 });

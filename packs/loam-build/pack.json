@@ -1,0 +1,11 @@
+{
+  "schema": "loam.service-pack/v1",
+  "id": "loam-build",
+  "version": "1.0.0",
+  "modes": ["websites", "build"],
+  "skills": [{"name":"loam-build","path":"packs/loam-build/SKILL.md"}],
+  "wraps": ["web_scaffold", "preview_serve", "deploy_app"],
+  "gate": {"tool":"site_publish_request","timeoutMs":120000},
+  "legacyRoutes": "keep",
+  "update": "restart"
+}

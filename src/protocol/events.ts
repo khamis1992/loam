@@ -285,6 +285,21 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
       break;
     }
 
+    case "artifact_published": {
+      const published: ToolUsedEvent = {
+        id: synthId(),
+        type: "toolUsed",
+        timestamp: ts,
+        tool: "artifact_publish",
+        actionId: makeActionId("artifact_publish"),
+        status: "success",
+        brief: event.title,
+        description: event.path,
+      };
+      out.push(published);
+      break;
+    }
+
     case "plan": {
       const planUpdate: PlanUpdateEvent = {
         id: baseId(),

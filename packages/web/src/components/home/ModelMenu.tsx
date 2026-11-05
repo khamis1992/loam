@@ -51,7 +51,13 @@ export function ModelMenu({ value, onChange }: ModelMenuProps) {
       </button>
       {open && (
         <div className="absolute start-0 top-full z-50 mt-1 w-[366px] max-w-[calc(100vw-32px)] rounded-card border border-border-main bg-bg-menu p-1 shadow-lg">
-          <RealModelPicker onTier={onChange} forceFlexForm={value === 'flex'} />
+          <RealModelPicker
+            onTier={(tier, opts) => {
+              onChange(tier);
+              if (!opts?.keepOpen) setOpen(false);
+            }}
+            forceFlexForm={value === 'flex'}
+          />
         </div>
       )}
     </div>

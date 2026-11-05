@@ -38,6 +38,7 @@ const directory = {
 
 describe('ModelMenu (fictional tiers removed — real picker only)', () => {
   afterEach(() => {
+    sessionStorage.clear();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
@@ -86,6 +87,7 @@ describe('ModelMenu (fictional tiers removed — real picker only)', () => {
       ),
     );
     await waitFor(() => expect(onChange).toHaveBeenCalledWith('standard'));
+    await waitFor(() => expect(screen.queryByPlaceholderText(/Search models/)).toBeNull());
   });
 
   it('picks a cloud model and surfaces the missing-key notice', async () => {
@@ -101,6 +103,7 @@ describe('ModelMenu (fictional tiers removed — real picker only)', () => {
     fireEvent.click(screen.getByRole('button', { name: /Model|النموذج|glm-5/ }));
     fireEvent.click((await screen.findAllByText('glm-5.3-flash')).at(-1)!);
     expect(await screen.findByText(/needs an API key/)).toBeTruthy();
+    expect(screen.getByPlaceholderText(/Search models/)).toBeTruthy();
     await waitFor(() => expect(onChange).toHaveBeenCalledWith('flex'));
   });
 

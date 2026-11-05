@@ -124,6 +124,15 @@ describe('BuildLauncher', () => {
     expect(push).not.toHaveBeenCalled();
   });
 
+  it('filters website templates and fills the brief from a template', () => {
+    stubFetch(() => json({}));
+    render(<BuildLauncher />);
+
+    fireEvent.click(screen.getByTestId('website-category-SaaS'));
+    fireEvent.click(screen.getByTestId('website-template-sales-crm'));
+    expect((screen.getByTestId('build-brief') as HTMLTextAreaElement).value).toContain('sales CRM');
+  });
+
   it('switches the selected chip when another style is clicked', () => {
     stubFetch(() => json({}));
     render(<BuildLauncher />);

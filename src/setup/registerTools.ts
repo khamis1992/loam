@@ -38,6 +38,7 @@ import { createWorkflowTools } from "../tools/workflow.js";
 import { createPlanTools } from "../tools/planTools.js";
 import { createAskUserTools } from "../tools/askUserTools.js";
 import { createAppBuilderTools } from "../appbuilder/tools.js";
+import { createServicePackTools } from "../packs/tools.js";
 
 export function registerRuntimeTools(rt: {
   cfg: Config;
@@ -87,4 +88,5 @@ export function registerRuntimeTools(rt: {
   // mode list; handlers refuse politely until a run engine attaches an App
   // project to the task (setActiveAppBuild in src/appbuilder/tools.ts).
   registry.registerAll(createAppBuilderTools());
+  registry.registerAll(createServicePackTools({ ...(imageGenerator ? { imageGenerator } : {}) }));
 }

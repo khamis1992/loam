@@ -1,7 +1,7 @@
 <!-- gitnexus:start -->
 # GitNexus MCP
 
-This project is indexed by GitNexus as **manus-local** (35412 symbols, 96051 relationships, 300 execution flows).
+This project is indexed by GitNexus as **manus-local** (42979 symbols, 109526 relationships, 300 execution flows).
 
 ## Always Start Here
 

@@ -391,7 +391,17 @@ export function WorkspacePanel({ taskId, live, events, requestedPath, requestedK
     if (selectedPath?.startsWith('__loam_craft_')) {
       return { taskId, path: selectedPath, name: t('Loam'), kind: 'craft' as const };
     }
-    return files.find((f) => f.path === selectedPath) ?? null;
+    const listed = files.find((f) => f.path === selectedPath);
+    if (listed) return listed;
+    if (selectedPath && getEditorForPath(selectedPath)?.kind === 'loam-video') {
+      return {
+        taskId,
+        path: selectedPath,
+        name: selectedPath.split(/[\\/]/).pop() ?? selectedPath,
+        kind: 'loam-video' as const,
+      };
+    }
+    return null;
   }, [files, selectedPath, taskId]);
 
   const def = useMemo(() => (selected ? getEditorForFile(selected) : null), [selected]);

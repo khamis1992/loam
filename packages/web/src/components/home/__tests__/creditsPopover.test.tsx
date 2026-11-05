@@ -4,7 +4,7 @@ import { Provider } from 'react-redux';
 import { store } from '@/store';
 
 const { API } = vi.hoisted(() => ({ API: 'http://localhost:8787' }));
-vi.mock('@/services/rpc', () => ({ getApiBase: () => API }));
+vi.mock('@/services/rpc', () => ({ getApiBase: () => API, getApiHeaders: async () => ({}) }));
 
 import { CreditsPopover } from '../CreditsPopover';
 
@@ -30,7 +30,7 @@ describe('CreditsPopover', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: /750/ }));
     expect(await screen.findByText(/Pro plan/)).toBeTruthy();
-    expect(fetchMock).toHaveBeenCalledWith(`${API}/api/credits`, undefined);
+    expect(fetchMock).toHaveBeenCalledWith(`${API}/api/credits`, { headers: expect.any(Headers) });
   });
 
   it('renders the free plan label when the store reports free', async () => {

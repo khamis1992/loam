@@ -2,6 +2,7 @@ import { memo, useMemo, Fragment, type ReactNode } from 'react';
 import type { ChatEvent, ToolUsedEvent, CascadeTaskClockEvent, AttachmentEvent, ModeEvent, EnvironmentIssueEvent, CacheUsageEvent, ContextPrunedEvent } from '@shared/socket';
 import { t, PRODUCT } from '@/i18n/t';
 import { Markdown } from './Markdown';
+import { DocumentPreviewCard, documentPreview } from './DocumentPreviewCard';
 import { UserBubble } from './ChatBubble';
 import { GrokBotNote, grokBotNoteText, isGrokBotNote } from './GrokBotNote';
 import { CopyMessageButton } from './CopyMessageButton';
@@ -34,6 +35,7 @@ const CRAFT_APP_LABEL: Record<string, string> = {
  * label so the button never lies about where the file opens.
  */
 function openInEditorLabel(kind: string, path: string): string {
+  if (kind === 'loam-video') return t('Loam Video');
   if (kind !== 'craft') return t('Open in editor');
   const app = craftAppForExtension(craftExtOf(path));
   return app ? CRAFT_APP_LABEL[app] : t('Open in editor');
@@ -79,9 +81,19 @@ export function ChatEventRow({ e, sessionId, socket, renderChat, onOpenFile }: C
       // READ-ONLY mirrored note from Grok Bot: muted bubble, chip, no buttons.
       return <GrokBotNote text={grokBotNoteText(e.content)} />;
     }
-    return e.sender === 'user'
-      ? <div className="group relative"><CopyMessageButton text={e.content} align="end" /><UserBubble event={e} /></div>
-      : <div className="group relative"><CopyMessageButton text={e.content} /><Markdown className="text-base text-text-primary">{e.content}</Markdown></div>;
+    if (e.sender === 'user') {
+      return <div className="group relative"><CopyMessageButton text={e.content} align="end" /><UserBubble event={e} /></div>;
+    }
+    const preview = documentPreview(e.content);
+    if (preview) {
+      return (
+        <div className="group relative">
+          <CopyMessageButton text={e.content} />
+          <DocumentPreviewCard title={preview.title} body={preview.body} />
+        </div>
+      );
+    }
+    return <div className="group relative"><CopyMessageButton text={e.content} /><Markdown className="text-base text-text-primary">{e.content}</Markdown></div>;
   }
   switch (e.type) {
     case 'newPlanStep':
@@ -105,7 +117,7 @@ export function ChatEventRow({ e, sessionId, socket, renderChat, onOpenFile }: C
       return (
         <div className="inline-flex items-center gap-1.5 rounded-full bg-fill-tsp px-2.5 py-1 text-xs text-text-secondary">
           <span className="font-medium">{mode.label}</span>
-          {mode.reason && <span className="text-text-tertiary">· {mode.reason}</span>}
+          {mode.reason && !/selected/i.test(mode.reason) && <span className="text-text-tertiary">· {mode.reason}</span>}
         </div>
       );
     }
@@ -135,7 +147,7 @@ export function ChatEventRow({ e, sessionId, socket, renderChat, onOpenFile }: C
       return <EnvironmentIssueCard issue={e as EnvironmentIssueEvent} />;
     }
     case 'liveStatus':
-      return <div className="text-sm text-text-tertiary">{t('{name} is thinking', { name: PRODUCT })}…</div>;
+      return null;
     case 'userStop':
       return <div className="text-sm text-text-tertiary">{t('Stopped')} — {t('send message to continue', { productName: PRODUCT })}</div>;
     case 'folderAccessRequest':
@@ -289,9 +301,18 @@ const FINAL_TOOL_STATUSES = new Set<ToolUsedEvent['status']>(['success', 'error'
 export function collapseEvents(events: RenderableEvent[]): RenderableEvent[] {
   const out: RenderableEvent[] = [];
   const indexByAction = new Map<string, number>();
+  let latestPlanIndex: number | undefined;
   const hasClosedClock = events.some((e) => e.type === 'cascadeTaskClock' && (e as unknown as CascadeTaskClockEvent).clock?.phase === 'closed');
 
   for (const e of events) {
+    if (e.type === 'planUpdate') {
+      if (latestPlanIndex !== undefined) out[latestPlanIndex] = e;
+      else {
+        out.push(e);
+        latestPlanIndex = out.length - 1;
+      }
+      continue;
+    }
     if (e.type === 'toolUsed') {
       const t = e as ToolUsedEvent;
       const idx = indexByAction.get(t.actionId);

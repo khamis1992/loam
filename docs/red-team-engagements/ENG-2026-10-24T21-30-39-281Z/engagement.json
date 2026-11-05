@@ -1,0 +1,47 @@
+{
+  "id": "ENG-2026-10-24T21-30-39-281Z",
+  "at": "2026-10-24T21:30:39.285Z",
+  "targets": [
+    "http://127.0.0.1:3939"
+  ],
+  "planner": "rule",
+  "engines": [
+    {
+      "id": "red.ssrf",
+      "status": "ready"
+    },
+    {
+      "id": "red.sqli",
+      "status": "ready"
+    },
+    {
+      "id": "red.fuzz",
+      "status": "ready"
+    },
+    {
+      "id": "red.templates",
+      "status": "ready"
+    },
+    {
+      "id": "red.deser",
+      "status": "ready"
+    }
+  ],
+  "findings": [
+    {
+      "check": "red_fuzz_discovery",
+      "severity": "low",
+      "title": "Hidden content discovered by fuzzing (60 path(s))",
+      "target": "http://127.0.0.1:3939",
+      "fingerprint": "c7be981a060f53b127bc7594"
+    }
+  ],
+  "unverifiedCount": 8,
+  "stats": {
+    "requestsSent": 6,
+    "targetsProcessed": 1,
+    "killed": false,
+    "aborted": null
+  },
+  "reportDir": "ENG-2026-10-24T21-30-39-281Z"
+}

@@ -6,6 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { TemplateFeatureId, TemplateId } from "./types.js";
+import { ROOT as APP_ROOT } from "../config.js";
 
 export interface TemplateFile { path: string; content: string }
 
@@ -15,7 +16,7 @@ export interface ComposedTemplate {
   files: TemplateFile[];
 }
 
-const ROOT = () => path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1")), "..", "..", "templates");
+const ROOT = () => path.join(APP_ROOT, "src", "templates");
 
 /** Walk the base template dir (skip node_modules, dist, .git, binaries). */
 function walk(dir: string, base: string, out: TemplateFile[]): void {

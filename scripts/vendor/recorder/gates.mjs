@@ -4,7 +4,7 @@
 //   node scripts/vendor/recorder/gates.mjs <upstreamRoot> [distDir]
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const NETWORK_GATES = [
   { id: 'posthog', re: /posthog|phc_[A-Za-z0-9]{8,}/i },
@@ -80,7 +80,7 @@ export function runGates({ root, distDir, deletePaths = [] }) {
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   const [root, distDir] = process.argv.slice(2);
   if (!root) { console.error('usage: gates.mjs <upstreamRoot> [distDir]'); process.exit(2); }
-  const here = path.dirname(new URL(import.meta.url).pathname);
+  const here = path.dirname(fileURLToPath(import.meta.url));
   const { deletePaths } = JSON.parse(fs.readFileSync(path.join(here, 'removals.json'), 'utf8'));
   const failures = runGates({ root, distDir, deletePaths });
   if (failures.length) { console.error(`recorder gates FAILED (${failures.length}):\n- ${failures.join('\n- ')}`); process.exit(1); }

@@ -104,6 +104,8 @@ describe('craftFrameUrl / fallbackKindFor', () => {
 describe('CraftPanel', () => {
   beforeEach(() => {
     setLocale('en');
+    URL.createObjectURL = vi.fn(() => 'blob:preview');
+    URL.revokeObjectURL = vi.fn();
     vi.restoreAllMocks();
     registerCraftBridge('t1', 'docs', null);
     registerCraftBridge('t1', 'sheets', null);
@@ -164,6 +166,38 @@ describe('CraftPanel', () => {
     expect(within(container).getByText('Ready')).toBeInTheDocument();
   });
 
+  it('does not fetch the placeholder path used to pre-open an empty editor', async () => {
+    const fetchBytes = vi.fn(async () => new Uint8Array([1, 2, 3]));
+    const { contentWindow, container } = await mountEditorPanel({ path: '__loam_craft_docs__.docx', fetchBytes });
+    announceReady(contentWindow);
+    expect(await within(container).findByText('Ready')).toBeInTheDocument();
+    expect(fetchBytes).not.toHaveBeenCalled();
+  });
+
+  it('shows a large slide preview and switches to the live editor on demand', async () => {
+    const { contentWindow, container } = await mountEditorPanel({ app: 'slides', path: 'uploads/kuwait.pptx' });
+    expect(await within(container).findByRole('img', { name: 'uploads/kuwait.pptx' })).toBeInTheDocument();
+    announceReady(contentWindow, 'deckcraft');
+    fireEvent.click(within(container).getByRole('button', { name: 'Edit' }));
+    expect(await within(container).findByText('Ready')).toBeInTheDocument();
+    expect(getCraftBridge('t1', 'slides')).toBeInstanceOf(CraftBridge);
+    fireEvent.click(within(container).getByRole('button', { name: 'Preview' }));
+    expect(await within(container).findByRole('img', { name: 'uploads/kuwait.pptx' })).toBeInTheDocument();
+  });
+
+  it('returns to the editor instead of showing a missing preview', async () => {
+    const { contentWindow, container } = await mountEditorPanel({
+      app: 'slides',
+      path: 'uploads/missing.pptx',
+      fetchBytes: vi.fn(async (path: string) => {
+        if (path === 'previews/slide-1.png') throw new Error('not found');
+        return new Uint8Array([1, 2, 3]);
+      }),
+    });
+    announceReady(contentWindow, 'deckcraft');
+    expect(await within(container).findByText('Ready')).toBeInTheDocument();
+  });
+
   it('falls back with a notice when the app never becomes ready', async () => {
     vi.useFakeTimers();
     stubCraftStatus();
@@ -191,6 +225,15 @@ describe('CraftPanel', () => {
       ),
     ).not.toHaveLength(0);
     expect(await within(view.container).findByText('built-in doc editor')).toBeInTheDocument();
+  });
+
+  it('shows a file error instead of opening sample content when reading fails', async () => {
+    const { contentWindow, container } = await mountEditorPanel({
+      fetchBytes: vi.fn(async () => { throw new Error('HTTP 401'); }),
+    });
+    announceReady(contentWindow);
+    expect((await within(container).findAllByText('HTTP 401')).length).toBeGreaterThan(0);
+    expect(within(container).queryByText('Ready')).toBeNull();
   });
 
   it('uploads every craft:save through the task-files upload API', async () => {

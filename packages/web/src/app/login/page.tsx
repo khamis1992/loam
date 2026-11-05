@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { t, tRich, PRODUCT } from '@/i18n/t';
 import { Button, Spinner } from '@/components/ui/Button';
 import { desktopApis, desktopEvents, validateSessionToken, logoutAndRedirect } from '@/services/desktopApis';
+import { getApiBase } from '@/services/rpc';
 import { useAppDispatch } from '@/store';
 import { setToken, setUser } from '@/store/authSlice';
 
@@ -54,13 +55,13 @@ export default function LoginPage() {
       if (await desktopApis.auth.localSignIn()) { router.replace('/app'); return; }
       if (!(window as unknown as { desktopSync?: unknown }).desktopSync) {
         const nonce = crypto.randomUUID();
-        await desktopApis.system.openExternal(`http://localhost:8787/login?from=desktop&type=${type}&nonce=${nonce}`);
+        await desktopApis.system.openExternal(`${getApiBase()}/login?from=desktop&type=${type}&nonce=${nonce}`);
         return;
       }
       setError('token_exchange_failed');
       return;
       const nonce = crypto.randomUUID();
-      const webBase = 'http://localhost:8787';
+      const webBase = getApiBase();
       const url = `${webBase}/login?from=desktop&type=${type}&nonce=${nonce}`;
       await desktopApis.auth.setToken(nonce); // store nonce via desktopLocalStorage stub
       await desktopApis.system.openExternal(url);

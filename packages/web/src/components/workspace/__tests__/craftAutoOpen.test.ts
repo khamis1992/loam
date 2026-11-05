@@ -86,6 +86,8 @@ describe('craft routing', () => {
     expect(editorKindForExtension('indd')).toBe('craft');
     // The built-in editors keep owning their plain types when no Craft app does.
     expect(editorKindForExtension('txt')).toBeNull();
+    expect(editorKindForExtension('mp4')).toBe('loam-video');
+    expect(editorKindForExtension('webm')).toBe('loam-video');
   });
 
   it('treats .indd as preview-only and not editable', () => {

@@ -1,0 +1,361 @@
+{
+  "findingId": "3cb7f2e76305ebb75e6d32be",
+  "check": "red_fuzz_discovery",
+  "target": "http://127.0.0.1:5195/nutrio/",
+  "severity": "low",
+  "claim": "Hidden content discovered by fuzzing (60 path(s))",
+  "detail": "/admin -> HTTP 200; /administrator -> HTTP 200; /api -> HTTP 200; /assets -> HTTP 200; /auth -> HTTP 200; /backup -> HTTP 200; /bin -> HTTP 200; /cgi-bin -> HTTP 200; /config -> HTTP 200; /console -> HTTP 200; /dashboard -> HTTP 200; /db -> HTTP 200; /debug -> HTTP 200; /dev -> HTTP 200; /docs -> HTTP 200; /downloads -> HTTP 200; /env -> HTTP 200; /etc -> HTTP 200; /git -> HTTP 200; /health -> HTTP 200",
+  "remediation": "Remove or protect content that should not be reachable; deny-list common backup/hidden paths.",
+  "evidence": [
+    {
+      "id": "EV0014",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: admin -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /admin responded HTTP 200"
+    },
+    {
+      "id": "EV0015",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: administrator -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /administrator responded HTTP 200"
+    },
+    {
+      "id": "EV0016",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: api -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /api responded HTTP 200"
+    },
+    {
+      "id": "EV0017",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: assets -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /assets responded HTTP 200"
+    },
+    {
+      "id": "EV0018",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: auth -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /auth responded HTTP 200"
+    },
+    {
+      "id": "EV0019",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: backup -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /backup responded HTTP 200"
+    },
+    {
+      "id": "EV0020",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: bin -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /bin responded HTTP 200"
+    },
+    {
+      "id": "EV0021",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: cgi-bin -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /cgi-bin responded HTTP 200"
+    },
+    {
+      "id": "EV0022",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: config -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /config responded HTTP 200"
+    },
+    {
+      "id": "EV0023",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: console -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /console responded HTTP 200"
+    },
+    {
+      "id": "EV0024",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: dashboard -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /dashboard responded HTTP 200"
+    },
+    {
+      "id": "EV0025",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: db -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /db responded HTTP 200"
+    },
+    {
+      "id": "EV0026",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: debug -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /debug responded HTTP 200"
+    },
+    {
+      "id": "EV0027",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: dev -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /dev responded HTTP 200"
+    },
+    {
+      "id": "EV0028",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: docs -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /docs responded HTTP 200"
+    },
+    {
+      "id": "EV0029",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: downloads -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /downloads responded HTTP 200"
+    },
+    {
+      "id": "EV0030",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: env -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /env responded HTTP 200"
+    },
+    {
+      "id": "EV0031",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: etc -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /etc responded HTTP 200"
+    },
+    {
+      "id": "EV0032",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: git -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /git responded HTTP 200"
+    },
+    {
+      "id": "EV0033",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: health -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /health responded HTTP 200"
+    },
+    {
+      "id": "EV0034",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: home -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /home responded HTTP 200"
+    },
+    {
+      "id": "EV0035",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: include -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /include responded HTTP 200"
+    },
+    {
+      "id": "EV0036",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: includes -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /includes responded HTTP 200"
+    },
+    {
+      "id": "EV0037",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: internal -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /internal responded HTTP 200"
+    },
+    {
+      "id": "EV0038",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: js -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /js responded HTTP 200"
+    },
+    {
+      "id": "EV0039",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: lib -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /lib responded HTTP 200"
+    },
+    {
+      "id": "EV0040",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: login -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /login responded HTTP 200"
+    },
+    {
+      "id": "EV0041",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: logout -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /logout responded HTTP 200"
+    },
+    {
+      "id": "EV0042",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: logs -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /logs responded HTTP 200"
+    },
+    {
+      "id": "EV0043",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: old -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /old responded HTTP 200"
+    },
+    {
+      "id": "EV0044",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: phpmyadmin -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /phpmyadmin responded HTTP 200"
+    },
+    {
+      "id": "EV0045",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: private -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /private responded HTTP 200"
+    },
+    {
+      "id": "EV0046",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: public -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /public responded HTTP 200"
+    },
+    {
+      "id": "EV0047",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: register -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /register responded HTTP 200"
+    },
+    {
+      "id": "EV0048",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: rest -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /rest responded HTTP 200"
+    },
+    {
+      "id": "EV0049",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: secret -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /secret responded HTTP 200"
+    },
+    {
+      "id": "EV0050",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: server-status -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /server-status responded HTTP 200"
+    },
+    {
+      "id": "EV0051",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: setup -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /setup responded HTTP 200"
+    },
+    {
+      "id": "EV0052",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: site -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /site responded HTTP 200"
+    },
+    {
+      "id": "EV0053",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: sql -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /sql responded HTTP 200"
+    },
+    {
+      "id": "EV0054",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: static -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /static responded HTTP 200"
+    },
+    {
+      "id": "EV0055",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: status -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /status responded HTTP 200"
+    },
+    {
+      "id": "EV0056",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: temp -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /temp responded HTTP 200"
+    },
+    {
+      "id": "EV0057",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: test -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /test responded HTTP 200"
+    },
+    {
+      "id": "EV0058",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: tmp -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /tmp responded HTTP 200"
+    },
+    {
+      "id": "EV0059",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: tools -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /tools responded HTTP 200"
+    },
+    {
+      "id": "EV0060",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: upload -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /upload responded HTTP 200"
+    },
+    {
+      "id": "EV0061",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: uploads -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /uploads responded HTTP 200"
+    },
+    {
+      "id": "EV0062",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: user -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /user responded HTTP 200"
+    },
+    {
+      "id": "EV0063",
+      "kind": "poc",
+      "at": "2026-10-27T12:16:22.850Z",
+      "poc": "ffuf -u http://127.0.0.1:5195/nutrio/FUZZ (match: usr -> HTTP 200, 4086 bytes)",
+      "observed": "Hidden path /usr responded HTTP 200"
+    }
+  ]
+}

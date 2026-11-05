@@ -3,71 +3,47 @@
 import { useEffect, useState } from 'react';
 import { t } from '@/i18n/t';
 
-/**
- * Content source for the home promo carousel: /promos.json in public/
- * (title, subtitle, prompt, image). The visual treatment stays the same;
- * only the slide content and the composer pre-fill prompt come from JSON.
- */
-export interface PromoSlide {
+export type PromoTarget = 'video' | 'game-development';
+
+const SLIDES: Array<{
+  target: PromoTarget;
   title: string;
   subtitle: string;
-  prompt: string;
-  image?: string;
-}
-
-const FALLBACK_SLIDES: PromoSlide[] = [
-  { title: 'Create your Video', subtitle: 'Make ideas come alive', prompt: 'Create your Video' },
-  { title: 'Build an App', subtitle: 'Turn ideas into products', prompt: 'Build an App' },
-  { title: 'Design a Deck', subtitle: 'Pitch with confidence', prompt: 'Design a Deck' },
+  image: string;
+}> = [
+  { target: 'video', title: 'Create your Video', subtitle: 'Make ideas come alive', image: '/promo.png' },
+  { target: 'game-development', title: 'Game development', subtitle: 'Turn your idea into a game', image: '/game-promo.png' },
 ];
 
-export function PromoBanner({ onSelect }: { onSelect?: (prompt: string) => void }) {
-  const [slides, setSlides] = useState<PromoSlide[]>(FALLBACK_SLIDES);
+export function PromoBanner({ onSelect }: { onSelect?: (target: PromoTarget) => void }) {
   const [index, setIndex] = useState(0);
 
   useEffect(() => {
-    let mounted = true;
-    fetch('/promos.json')
-      .then(async (res) => (res.ok ? ((await res.json()) as PromoSlide[]) : null))
-      .then((data) => {
-        if (mounted && Array.isArray(data) && data.length > 0) setSlides(data);
-      })
-      .catch(() => {
-        // keep the fallback slides when the content source is unavailable
-      });
-    return () => { mounted = false; };
+    const id = setInterval(() => setIndex((value) => (value + 1) % SLIDES.length), 6000);
+    return () => clearInterval(id);
   }, []);
 
-  useEffect(() => {
-    const id = setInterval(() => setIndex((i) => (i + 1) % slides.length), 6000);
-    return () => clearInterval(id);
-  }, [slides.length]);
-
-  const slide = slides[index % slides.length];
+  const slide = SLIDES[index];
 
   return (
     <button
       type="button"
-      onClick={() => onSelect?.(slide.prompt || t(slide.title))}
-      className="relative flex h-11 w-[200px] shrink-0 items-center gap-2 overflow-hidden rounded-[10px] bg-[#1a1a1a] px-3 text-start text-white"
+      onClick={() => onSelect?.(slide.target)}
+      aria-label={t(slide.title)}
+      className="relative flex h-14 w-64 shrink-0 items-center gap-2 overflow-hidden rounded-[10px] bg-[#1a1a1a] px-3 text-start text-white"
     >
-      <div className="flex size-[26px] shrink-0 items-center justify-center rounded bg-white/10">
-        <svg viewBox="0 0 24 24" fill="none" className="size-4">
-          <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" />
-          <path d="M8 12l3 3 5-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+      <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded bg-white/10">
+        <img src={slide.image} alt="" className="size-full object-cover" />
       </div>
       <div className="min-w-0 flex-1">
         <p className="truncate text-[14px] font-semibold leading-tight text-white">{t(slide.title)}</p>
         <p className="truncate text-[11px] text-[#a3a3a3]">{t(slide.subtitle)}</p>
       </div>
-      <div className="flex shrink-0 flex-col items-center justify-center gap-[3px] ps-1">
-        {slides.map((_, i) => (
+      <div className="flex shrink-0 flex-col items-center justify-center gap-[3px] ps-1" aria-hidden>
+        {SLIDES.map((item, itemIndex) => (
           <span
-            key={i}
-            className="block h-[5px] w-[2px] rounded-full"
-            style={{ background: i === index % slides.length ? '#fff' : 'rgba(255,255,255,0.35)' }}
-            aria-hidden
+            key={item.target}
+            className={itemIndex === index ? 'block h-[5px] w-[2px] rounded-full bg-white' : 'block h-[5px] w-[2px] rounded-full bg-white/35'}
           />
         ))}
       </div>

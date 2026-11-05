@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import type { WorkspaceEditorProps } from "../types";
 import { SlideThumb, countWords, renderSlide, type SlideLike } from "./SlideView";
 import IntelligencePanel from "../intelligence/IntelligencePanel";
+import { workspaceSlidesFetch } from "./api";
 
 interface SlideTextBox { [key: string]: unknown }
 
@@ -107,7 +108,7 @@ export default function Editor({ file, live, onChatEdit }: WorkspaceEditorProps)
 
   const reload = useCallback(async (strictError: boolean): Promise<void> => {
     try {
-      const res = await fetch(fileUrl);
+      const res = await workspaceSlidesFetch(fileUrl);
       const data = (await res.json()) as { artifact?: SlidesArtifact; error?: string };
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
       if (dirty) { setStale(true); return; }
@@ -123,7 +124,7 @@ export default function Editor({ file, live, onChatEdit }: WorkspaceEditorProps)
     setState({ phase: "loading" });
     (async () => {
       try {
-        const res = await fetch(fileUrl);
+        const res = await workspaceSlidesFetch(fileUrl);
         const data = (await res.json()) as { artifact?: SlidesArtifact; error?: string };
         if (cancelled) return;
         if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
@@ -142,7 +143,7 @@ export default function Editor({ file, live, onChatEdit }: WorkspaceEditorProps)
     const timer = setInterval(async () => {
       if (busyRef.current) return;
       try {
-        const res = await fetch(fileUrl);
+        const res = await workspaceSlidesFetch(fileUrl);
         const data = (await res.json()) as { artifact?: SlidesArtifact };
         if (!res.ok || !data.artifact) return;
         const artifact = state.phase === "ready" ? state.artifact : null;
@@ -169,7 +170,7 @@ export default function Editor({ file, live, onChatEdit }: WorkspaceEditorProps)
     (async () => {
       try {
         const url = `${getApiBase()}/api/workspace/slides/preview?taskId=${encodeURIComponent(file.taskId)}&path=${encodeURIComponent(file.path)}&revision=${revision}&slide=${selected}`;
-        const res = await fetch(url, { signal: controller.signal });
+        const res = await workspaceSlidesFetch(url, { signal: controller.signal });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const blob = await res.blob();
         if (controller.signal.aborted) return;
@@ -241,7 +242,7 @@ export default function Editor({ file, live, onChatEdit }: WorkspaceEditorProps)
     busyRef.current = true;
     setSaving(true);
     try {
-      const res = await fetch(`${getApiBase()}/api/workspace/slides/duplicate`, {
+      const res = await workspaceSlidesFetch(`${getApiBase()}/api/workspace/slides/duplicate`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ taskId: file.taskId, path: file.path, index: selected, artifact: buildArtifact(), expectedRevision: artifact.revision }),
@@ -264,7 +265,7 @@ export default function Editor({ file, live, onChatEdit }: WorkspaceEditorProps)
     setSaving(true);
     const knownIds = new Set(artifact.content.slides.map((s) => s.id));
     try {
-      const res = await fetch(`${getApiBase()}/api/workspace/slides/duplicate`, {
+      const res = await workspaceSlidesFetch(`${getApiBase()}/api/workspace/slides/duplicate`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ taskId: file.taskId, path: file.path, index: selected, artifact: buildArtifact(), expectedRevision: artifact.revision }),
@@ -310,7 +311,7 @@ export default function Editor({ file, live, onChatEdit }: WorkspaceEditorProps)
 
   const putArtifact = async (payload: SlidesArtifact, expectedRevision: number): Promise<PutResult> => {
     try {
-      const res = await fetch(`${getApiBase()}/api/workspace/slides/file`, {
+      const res = await workspaceSlidesFetch(`${getApiBase()}/api/workspace/slides/file`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ taskId: file.taskId, path: file.path, artifact: payload, expectedRevision }),

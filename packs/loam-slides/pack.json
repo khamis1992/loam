@@ -1,0 +1,11 @@
+{
+  "schema": "loam.service-pack/v1",
+  "id": "loam-slides",
+  "version": "1.0.0",
+  "modes": ["slides", "write"],
+  "skills": [{"name":"loam-slides","path":"packs/loam-slides/SKILL.md"}],
+  "wraps": ["office_craft", "loam_studio", "office_export", "PresentationPipeline", "design_brief"],
+  "gate": {"tool":"deck_present","timeoutMs":60000},
+  "legacyRoutes": "keep",
+  "update": "hot"
+}
