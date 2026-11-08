@@ -44,14 +44,14 @@ try {
   await page.locator('#collapseBtn').click();assert.equal(await page.locator('#sidebar').isVisible(),false);await page.locator('#menuToggle').click();assert.equal(await page.locator('#sidebar').isVisible(),true);
   await page.locator('.workspace-tools summary').click();assert.equal(await page.locator('.workspace-tools nav a').count(),5);assert.equal(await page.locator('.workspace-tools nav').isVisible(),true);await page.locator('.workspace-tools summary').click();
   await page.screenshot({path:'output/brand/loam-home-light.png'});
-  await page.locator('#theme').click();assert.equal(await page.locator('html').getAttribute('data-theme'),'dark');assert.match(await page.locator('html').evaluate(el=>getComputedStyle(el).getPropertyValue('--bg')),/#101914/);
+  await page.locator('#theme').click();assert.equal(await page.locator('html').getAttribute('data-theme'),'dark');assert.match(await page.locator('html').evaluate(el=>getComputedStyle(el).getPropertyValue('--bg')),/#1a1a1a/);
   await page.locator('#homePrompt').fill('طلب محفوظ من مركز Loam');await page.locator('[data-home-mode="write"]').click();await page.locator('#homeForm [type=submit]').click();await page.locator('#modeForm').waitFor();assert.equal(await page.locator('#modeForm [data-field]').first().inputValue(),'طلب محفوظ من مركز Loam');assert.equal(posts.length,0,'home composer must review mode details before executing');await page.goto(origin+'/#/home');await page.locator('#homeForm').waitFor();
   assert.equal(await page.locator('html').getAttribute('data-theme'),'dark');
   const shots=join(tmpdir(),'loam-ui-review');await mkdir(shots,{recursive:true});await page.screenshot({path:join(shots,'home.png')});
   await page.setViewportSize({width:1900,height:980});await page.evaluate(async()=>{await document.fonts.ready;});
-  assert.equal(await page.locator('#sidebar').evaluate(el=>Math.round(el.getBoundingClientRect().width)),280);
+  assert.equal(await page.locator('#sidebar').evaluate(el=>Math.round(el.getBoundingClientRect().width)),192);
   assert.equal(await page.locator('#modeCards').evaluate(el=>getComputedStyle(el).gridTemplateColumns.split(' ').length),3);
-  assert.ok(await page.evaluate(()=>document.fonts.check('400 14px "Readex Pro"')));
+  assert.match(await page.locator('body').evaluate(el=>getComputedStyle(el).fontFamily),/Segoe UI/);
   await page.screenshot({path:join(shots,'reference-1900.png')});await page.setViewportSize({width:1440,height:1000});
   await page.goto(origin+'/#/services');await page.locator('.service-card').filter({hasText:'اتصالات MCP'}).locator('.pill.error').waitFor();await page.goto(origin+'/#/home');
   for(const mode of LOAM_MODES){await page.goto(origin+'/#/modes/'+mode.id);await page.locator('#modeForm').waitFor();assert.equal(await page.locator('[data-tool]').count(),mode.tools.length);assert.equal(await page.locator('#modeForm [data-field]').count(),mode.fields.length);assert.match(await page.locator('#modePage').getAttribute('class'),new RegExp('mode-'+mode.id));if(mode.id==='ask')assert.equal(await page.locator('[data-tool="shell_run"]').count(),0);if(mode.id==='data')assert.equal(await page.locator('[data-tool="loam_dataset"]').count(),1);}

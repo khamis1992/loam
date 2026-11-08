@@ -37,7 +37,8 @@ import { androidEnvironment, androidBuildStatus, startAndroidBuild, cancelAndroi
 import { createHash, randomUUID } from "node:crypto";
 import { readScene, saveScene, CreativeError, validateGlb, MAX_GLB_BYTES } from "../creative/store.js";
 import { requireTaskWorkspace, taskPath } from "./taskWorkspace.js";
-import { getLoamMode } from "../modes/catalog.js";
+import { getLoamMode, getLoamModesUi } from "../modes/catalog.js";
+import { archiveAgentLifecycle, deleteAgentLifecycle } from "./agentLifecycle.js";
 import { expandPlaybookMacros } from "./playbooks.js";
 import { readStudio, saveStudio, validateStudio, StudioError, type StudioArtifact } from "../studio/store.js";
 import { exportStudio } from "../studio/export.js";
@@ -119,7 +120,7 @@ import { getSettings, updateSettings } from "./settings.js";
 import { probeSrtStatus } from "../sandbox/srt/session.js";
 import { runSrtWindowsInstall } from "../sandbox/srt/install.js";
 import { cancelRunSignal } from "./runControl.js";
-import { createAgent, deleteAgent, getAgent, listAgents, listAgentsWithChatMeta, reorderAgents, sanitizeAvatarFields, setAgentArchived, setAgentHidden, setAgentPinned, updateAgent } from "./agents.js";
+import { createAgent, getAgent, listAgents, listAgentsWithChatMeta, reorderAgents, sanitizeAvatarFields, setAgentArchived, setAgentHidden, setAgentPinned, updateAgent } from "./agents.js";
 import { handleScratchpadRoutes } from "./routes/scratchpad.js";
 // Session sleep/wake + compute budget (D19): dispatched before generic handlers.
 import { handleSessionRuntimeRoutes } from "./routes/sessionRuntime.js";
@@ -128,6 +129,10 @@ import { handleDesignStudioRoutes } from "./routes/designStudio.js";
 import { handleSchedulesRoutes } from "./routes/schedules.js";
 import { handleAutomationsRoutes } from "./routes/automations.js";
 import { handleAppBuilderRoutes } from "./routes/appBuilder.js";
+import { configureBuildMenu, handleBuildMenuRoutes } from "./routes/buildMenu.js";
+import { configureOpenRoutines, openRememberedRoutines } from "../buildMenu/automations/open.js";
+import { configureKernelRecovery, recoverRememberedKernels } from "../buildMenu/notebooks/kernelLease.js";
+import { configureJobRecovery, recoverRememberedJobs } from "../buildMenu/jobs.js";
 import { handleModelRegistryRoutes } from "./routes/modelRegistry.js";
 import { handleBoardRoutes } from "./routes/board.js";
 import { handleAgentThreadRoutes } from "./routes/agentThreads.js";
@@ -172,6 +177,8 @@ import { handleBridgesRoutes } from "./routes/bridges.js";
 import { handlePlanApprovalRoutes } from "./routes/planApproval.js";
 import { handleAskUserRoutes } from "./routes/askUser.js";
 import { handleGrokbotBridgeRoutes } from "./routes/grokbotBridge.js";
+import { handleMcpServerRoutes } from "./routes/mcpServers.js";
+import { handleServicePackRoutes } from "./routes/servicePacks.js";
 import { handleRetryLastRoutes } from "./routes/retryLast.js";
 import { handleSessionControlRoutes } from "./routes/sessionControl.js";
 import { handleInsightsRoutes } from "./routes/insights.js";
@@ -181,6 +188,7 @@ import { PROVIDER_PRESETS, activeModel, listModelDirectory, registryModelEntries
 import { handlePlaybookRoutes } from "./routes/playbooks.js";
 import { handleFlowTemplateRoutes } from "./routes/flowTemplates.js";
 import { handleStudioTemplateRoutes } from "./routes/studioTemplates.js";
+import { handleDesktopRoutes } from "./routes/desktop.js";
 import { handleVoiceRoutes } from "./routes/voice.js";
 import { handleConnectorsRoutes } from "./routes/connectors.js";
 import { handleEnvBuildRoutes } from "./routes/envBuilds.js";
@@ -196,7 +204,7 @@ import { importGrokbotBundle, sanitizeGrokbotBundle } from "./grokbotImport.js";
 import { isValidTimezone } from "./scheduleTime.js";
 import { getWorkModesUi, normalizeWorkMode, resolveCompanionCapabilities } from "./companionGateway.js";
 import { DEVICE_TEMPLATES, deviceManager, getDevice, listDevices, readJournal } from "./companionDevices.js";
-import { remember, listMemory, editMemory, supersedeMemory, forget, exportMemory, importMemory } from "./companionMemory.js";
+import { remember, listMemory, listTeamMemory, editMemory, supersedeMemory, forget, exportMemory, importMemory } from "./companionMemory.js";
 import { appendVoiceTurn, listVoiceTurns, clearVoiceTranscript, transcribeAudio } from "./voiceTranscript.js";
 import { createWatchRoutine, watchSchedules, stopWatcher } from "./fileWatchers.js";
 import { AGENT_TEMPLATES, getAgentTemplate, sanitizeBundle, writeBundleFile, type CompanionBundle } from "./agentTemplates.js";
@@ -270,6 +278,7 @@ export interface ServerDeps {
   preview?: PreviewService;
   registry?: ToolRegistry;
   mcp?: McpToolset | null;
+  reloadMcp?: (servers: Record<string, import("../config.js").McpServerConfig>) => Promise<McpToolset | null>;
   codeGraph?: import("../codegraph/service.js").CodeGraphService | null;
   runTask: (opts: RunTaskOptions) => Promise<{ taskId: string; text: string }>;
   /** N3 Knowledge Garden vector channel; absent => lexical-only search. */
@@ -406,25 +415,75 @@ function serveStatic(res: http.ServerResponse, urlPath: string): void {
 
 const NEXT_OUT = path.join(ROOT, "packages", "web", "out");
 
-/**
- * Serve a file from the Next.js static export (packages/web/out). Used for the
- * public share replay page and its /_next assets so a copied share link opens
- * in any browser, not only inside the desktop's app:// protocol.
- */
-function serveNextExport(res: http.ServerResponse, urlPath: string): void {
-  const rel = urlPath.replace(/^\/+/, "");
-  const file = path.resolve(NEXT_OUT, rel);
-  if (!file.startsWith(path.resolve(NEXT_OUT))) {
-    res.writeHead(403).end("forbidden");
+type NextRuntime = { apiBase: string; socketBase: string; loamBase: string };
+
+function nextExportFile(urlPath: string): string | null {
+  const staticRoot = path.resolve(NEXT_OUT) + path.sep;
+  const safeFile = (candidate: string): string | null => {
+    const file = path.resolve(NEXT_OUT, candidate.replace(/^\/+/, ""));
+    if (!file.startsWith(staticRoot)) return null;
+    return fs.existsSync(file) && fs.statSync(file).isFile() ? file : null;
+  };
+  const resolvePage = (candidate: string): string | null => {
+    if (candidate.endsWith("/")) candidate += "index.html";
+    else if (!path.extname(candidate)) {
+      return safeFile(`${candidate}.html`) ?? safeFile(`${candidate}/index.html`);
+    }
+    return safeFile(candidate);
+  };
+
+  let pathname = decodeURIComponent(urlPath);
+  if (pathname === "/") pathname = "/index.html";
+  let file = resolvePage(pathname);
+  if (file) return file;
+
+  const dynamic = /^\/app\/([^/]+)(?:\/(.*))?$/.exec(pathname);
+  if (dynamic && dynamic[1] !== "demo-running" && dynamic[1] !== "demo-completed") {
+    const uid = dynamic[1]!;
+    const rest = dynamic[2];
+    let fallback: string;
+    if (rest === undefined) {
+      const ext = path.extname(uid).toLowerCase();
+      fallback = ext === ".html" || ext === ".htm" ? "/app/demo-running.html"
+        : ext === ".txt" ? "/app/demo-running.txt" : "/app/demo-running";
+    } else {
+      fallback = rest === "" ? "/app/demo-running" : `/app/demo-running/${rest}`;
+    }
+    file = resolvePage(fallback);
+    if (!file && fallback.endsWith("/index.html")) {
+      file = safeFile(fallback.replace(/\/index\.html$/, ".html"));
+    }
+  }
+  return file;
+}
+
+/** Serve the same Next.js export used by the desktop and public replay pages. */
+function serveNextExport(res: http.ServerResponse, urlPath: string, runtime?: NextRuntime): void {
+  let file: string | null;
+  try {
+    file = nextExportFile(urlPath);
+  } catch {
+    res.writeHead(400, { "content-type": "text/plain" }).end("bad path");
     return;
   }
-  if (!fs.existsSync(file) || !fs.statSync(file).isFile()) {
+  if (!file) {
     res.writeHead(404, { "content-type": "text/plain" }).end("not found");
     return;
   }
   const ext = path.extname(file).toLowerCase();
   res.writeHead(200, { "content-type": MIME[ext] ?? "application/octet-stream" });
+  if (runtime && ext === ".html") {
+    const boot = `<script>window.__AGENT_STUDIO_ENV__=Object.assign({},window.__AGENT_STUDIO_ENV__,${JSON.stringify(runtime).replace(/</g, "\\u003c")});</script>`;
+    const html = fs.readFileSync(file, "utf8");
+    res.end(/<\/head>/i.test(html) ? html.replace(/<\/head>/i, `${boot}</head>`) : boot + html);
+    return;
+  }
   fs.createReadStream(file).pipe(res);
+}
+
+function isAgentStudioPage(urlPath: string): boolean {
+  return urlPath === "/" || ["/login", "/app", "/legal", "/desktop-activity-indicator"]
+    .some((root) => urlPath === root || urlPath.startsWith(`${root}/`));
 }
 
 const TEXT_EXTRACT_EXT = new Set([
@@ -525,6 +584,30 @@ async function applyPendingItem(item: PendingItem, memory?: MemoryStore, cfg?: C
 
 export function startServer(deps: ServerDeps): Promise<http.Server> {
   const { cfg, ollama, runTask } = deps;
+  configureOpenRoutines(path.join(cfg.workspace, ".loam", "build-menu", "open-routines"));
+  try {
+    openRememberedRoutines({
+      registryDir: path.join(cfg.workspace, ".loam", "build-menu", "open-routines"),
+      now: new Date(),
+      connector: { send() { throw new Error("mail_closed"); } },
+    });
+  } catch (error) {
+    log.warn(`[build-menu] open catch-up skipped: ${error instanceof Error ? error.message : "unknown"}`);
+  }
+  const activeJobs = path.join(cfg.workspace, ".loam", "build-menu", "active-jobs");
+  configureJobRecovery(activeJobs);
+  try {
+    recoverRememberedJobs(activeJobs);
+  } catch (error) {
+    log.warn(`[build-menu] job recovery skipped: ${error instanceof Error ? error.message : "unknown"}`);
+  }
+  const kernelLeases = path.join(cfg.workspace, ".loam", "build-menu", "kernel-leases");
+  configureKernelRecovery(kernelLeases);
+  try {
+    recoverRememberedKernels(kernelLeases);
+  } catch (error) {
+    log.warn(`[build-menu] kernel recovery skipped: ${error instanceof Error ? error.message : "unknown"}`);
+  }
   let modelDirectoryFlight: { at: number; promise: ReturnType<typeof listModelDirectory> } | null = null;
   const loadModelDirectory = (): ReturnType<typeof listModelDirectory> => {
     if (!modelDirectoryFlight || Date.now() - modelDirectoryFlight.at > 5000) {
@@ -562,7 +645,13 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
     // C2: durable gates survive a restart; boot rehydrates the in-memory cards and settles expiry.
     try { rehydrateAskUsers(); rehydratePlanApprovals(); rehydrateApprovals(); expireDue(); } catch { /* best effort */ }
     const { startForkedRun: checkpointRoutesResume, resumeFromInterrupt: interruptRoutesResume } = createRunResume({ cfg, runTask });
-  const mcp = deps.mcp ?? null;
+  let mcp = deps.mcp ?? null;
+  const reloadMcp = deps.reloadMcp
+    ? async (servers: Parameters<NonNullable<ServerDeps["reloadMcp"]>>[0]) => {
+        mcp = await deps.reloadMcp!(servers);
+        return mcp;
+      }
+    : undefined;
   // Cap H §6.13: restart-only settings are compared against the flags this process
   // actually started with (the panel may have saved new ones to disk since).
   const apiAnythingStartedWith = {
@@ -641,7 +730,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         // The Loam Remote phone page (/remote) is a public PWA page too — the
         // APIs it calls stay token-gated (the page sends the install token the
         // user pasted once); its manifest/icon live under public /remote/.
-        const isNextStatic = req.method === "GET" && (p === "/share" || p.startsWith("/share/") || p === "/portal" || p.startsWith("/portal/") || p === "/remote" || p.startsWith("/remote/") || p.startsWith("/_next/"));
+        const isNextStatic = req.method === "GET" && (isAgentStudioPage(p) || p === "/share" || p.startsWith("/share/") || p === "/portal" || p.startsWith("/portal/") || p === "/remote" || p.startsWith("/remote/") || p.startsWith("/_next/"));
         if (req.method === "OPTIONS" && p.startsWith("/api/legal") && req.headers.origin === "app://agent") {
           res.writeHead(204, {
             "access-control-allow-origin": "app://agent", "access-control-allow-methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
@@ -846,6 +935,20 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
             throw error;
           }
         }
+        if (req.method === "GET" && isAgentStudioPage(p)) {
+          const address = server.address();
+          const loamPort = address && typeof address !== "string" ? address.port : cfg.server.port;
+          const configuredProtocolPort = Number(process.env.AS_PROTOCOL_PORT || 8787);
+          const protocolPort = Number.isInteger(configuredProtocolPort) && configuredProtocolPort > 0 && configuredProtocolPort < 65536 ? configuredProtocolPort : 8787;
+          const protocolBase = `http://127.0.0.1:${protocolPort}`;
+          serveNextExport(res, p, {
+            apiBase: protocolBase,
+            socketBase: protocolBase,
+            loamBase: `http://127.0.0.1:${loamPort}`,
+          });
+          return;
+        }
+
         // Loam Remote (mobile PWA): same static-export trick as /share and
         // /portal below, but placed ahead of the generic static branch because
         // its public assets (/remote/manifest.webmanifest, /remote/icon.png)
@@ -858,7 +961,25 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           return;
         }
 
+        if (req.method === "GET" && p.startsWith("/_next/")) {
+          serveNextExport(res, p);
+          return;
+        }
+
         if (req.method === "GET" && !p.startsWith("/vendor/") && (p === "/" || MIME[path.extname(p).toLowerCase()] !== undefined)) {
+          if (p !== "/index.html") {
+            let hasNextAsset = false;
+            try {
+              hasNextAsset = nextExportFile(p) !== null;
+            } catch {
+              res.writeHead(400, { "content-type": "text/plain" }).end("bad path");
+              return;
+            }
+            if (hasNextAsset) {
+              serveNextExport(res, p);
+              return;
+            }
+          }
           serveStatic(res, p);
           return;
         }
@@ -875,10 +996,6 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         // land on it; the page reads the real token from path or query.
         if (req.method === "GET" && (p === "/portal" || p.startsWith("/portal/"))) {
           serveNextExport(res, "/portal.html");
-          return;
-        }
-        if (req.method === "GET" && p.startsWith("/_next/")) {
-          serveNextExport(res, p);
           return;
         }
 
@@ -975,6 +1092,8 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         if (await handleCheckpointRoutes(req, res, p, checkpointRoutesResume)) return;
         if (await handleInterruptRoutes(req, res, p, url, interruptRoutesResume)) return;
 
+        if (await handleMcpServerRoutes(req, res, p, { mcp, reloadMcp, readBody })) return;
+        if (await handleServicePackRoutes(req, res, p, { mcp, reloadMcp, readBody })) return;
         if (req.method === "GET" && p === "/api/mcp/status") {
           sendJson(res, 200, { servers: mcp?.status ? await mcp.status() : Object.keys(cfg.mcpServers).map(name => ({ name, connected: false, toolCount: 0 })) });
           return;
@@ -1883,7 +2002,8 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           const [agentId, memoryAction, entryId] = rest.split("/");
           if (!agentId || !getAgent(agentId)) return sendJson(res, 404, { error: "الوكيل غير موجود" });
           if (req.method === "GET" && (!memoryAction || memoryAction === "memory")) {
-            return sendJson(res, 200, { entries: listMemory(agentId, { q: url.searchParams.get("q") ?? undefined, includeInactive: url.searchParams.get("all") === "1" }) });
+            const query = { q: url.searchParams.get("q") ?? undefined, includeInactive: url.searchParams.get("all") === "1" };
+            return sendJson(res, 200, { entries: url.searchParams.get("scope") === "team" ? listTeamMemory(query) : listMemory(agentId, query) });
           }
           if (req.method === "GET" && memoryAction === "memory" && entryId === "export") {
             const body = exportMemory(agentId);
@@ -1960,6 +2080,9 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
             disabledTools: source.disabledTools,
             workMode: source.workMode,
             allowedServices: source.allowedServices,
+            enabledSkills: source.enabledSkills,
+            connectorGrants: source.connectorGrants,
+            memoryEnabled: source.memoryEnabled,
             voice: source.voice,
             ...(source.voiceRate !== undefined ? { voiceRate: source.voiceRate } : {}),
             ...(typeof source.voiceAuto === "boolean" ? { voiceAuto: source.voiceAuto } : {}),
@@ -1971,17 +2094,8 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           const id = decodeURIComponent(p.slice("/api/agents/".length, -"/archive".length));
           const agent = getAgent(id);
           if (!agent) return sendJson(res, 404, { error: "الوكيل غير موجود" });
-          const archived = setAgentArchived(id, true);
-          if (archived?.archivedAt) {
-            // Stop every event source that could still trigger this companion.
-            for (const s of listSchedules()) {
-              if (s.agentId === id) {
-                if (s.kind === "file-watch") stopWatcher(s.id);
-                deleteSchedule(s.id);
-              }
-            }
-          }
-          return sendJson(res, 200, { archived: Boolean(archived?.archivedAt), agent: archived, note: "أُرشف الرفيق وأُوقفت كل روتيناته ومشغلاته — بياناته محفوظة" });
+          const archived = archiveAgentLifecycle(id);
+          return sendJson(res, 200, { archived: true, agent: getAgent(id), cleanup: archived, note: "أُرشف الرفيق وعُطّلت كل روتيناته ومشغلاته — بياناته محفوظة" });
         }
         if (req.method === "POST" && p.startsWith("/api/agents/") && p.endsWith("/unarchive")) {
           const id = decodeURIComponent(p.slice("/api/agents/".length, -"/unarchive".length));
@@ -2057,6 +2171,9 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
             ...(Array.isArray(src.disabledTools) ? { disabledTools: src.disabledTools } : {}),
             ...(typeof src.workMode === "string" ? { workMode: src.workMode } : {}),
             ...(Array.isArray(src.allowedServices) ? { allowedServices: src.allowedServices } : {}),
+            ...(Array.isArray(src.enabledSkills) ? { enabledSkills: src.enabledSkills } : {}),
+            ...(Array.isArray(src.connectorGrants) ? { connectorGrants: src.connectorGrants } : {}),
+            ...(typeof src.memoryEnabled === "boolean" ? { memoryEnabled: src.memoryEnabled } : {}),
             ...(typeof src.voice === "string" ? { voice: src.voice } : {}),
             ...(Number.isFinite(Number(src.voiceRate)) ? { voiceRate: src.voiceRate as number } : {}),
             ...(typeof src.voiceAuto === "boolean" ? { voiceAuto: src.voiceAuto } : {}),
@@ -2178,12 +2295,15 @@ loadAgents();
 
         // ---- companion gateway: work modes + service catalog (unified tool gateway) ----
         if (req.method === "GET" && p === "/api/work-modes") {
-          sendJson(res, 200, getWorkModesUi(registry?.names() ?? []));
+          sendJson(res, 200, {
+            ...getWorkModesUi(registry?.names() ?? []),
+            loamModes: getLoamModesUi(registry?.names() ?? []).modes.map((mode) => ({ id: mode.id, labelAr: mode.labelAr })),
+          });
           return;
         }
 
         if (req.method === "POST" && p === "/api/agents") {
-          const body = (await readBody(req)) as { name?: unknown; emoji?: unknown; description?: unknown; title?: unknown; instructions?: unknown; model?: unknown; mode?: unknown; effort?: unknown; disabledTools?: unknown; workMode?: unknown; allowedServices?: unknown; voice?: unknown; voiceRate?: unknown; voiceAuto?: unknown; notifications?: unknown; source?: unknown; avatarShape?: unknown; avatarColor?: unknown; avatarImage?: unknown };
+          const body = (await readBody(req)) as { name?: unknown; emoji?: unknown; description?: unknown; title?: unknown; instructions?: unknown; model?: unknown; mode?: unknown; effort?: unknown; disabledTools?: unknown; workMode?: unknown; allowedServices?: unknown; enabledSkills?: unknown; connectorGrants?: unknown; memoryEnabled?: unknown; voice?: unknown; voiceRate?: unknown; voiceAuto?: unknown; notifications?: unknown; source?: unknown; avatarShape?: unknown; avatarColor?: unknown; avatarImage?: unknown };
           const name = typeof body.name === "string" ? body.name.trim() : "";
           if (!name) return sendJson(res, 400, { error: "اسم الوكيل مطلوب" });
           try {
@@ -2199,6 +2319,9 @@ loadAgents();
               disabledTools: body.disabledTools,
               workMode: typeof body.workMode === "string" && body.workMode.trim() ? body.workMode : undefined,
               allowedServices: body.allowedServices,
+              enabledSkills: body.enabledSkills,
+              connectorGrants: body.connectorGrants,
+              memoryEnabled: typeof body.memoryEnabled === "boolean" ? body.memoryEnabled : undefined,
               ...(typeof body.voice === "string" && body.voice.trim() ? { voice: body.voice } : {}),
               ...(Number.isFinite(Number(body.voiceRate)) ? { voiceRate: Number(body.voiceRate) } : {}),
               ...(typeof body.voiceAuto === "boolean" ? { voiceAuto: body.voiceAuto } : {}),
@@ -2270,6 +2393,8 @@ loadAgents();
         // D14: event-trigger deliveries (HMAC-verified webhook / GitHub events).
         if (await handleAutomationsRoutes(req, res, p)) return;
         // Cap G §4.15.2: /api/app-projects/* (Agent Studio App Builder).
+        configureBuildMenu(cfg.buildMenu?.enabled === true);
+        if (await handleBuildMenuRoutes(req, res, p)) return;
         if (await handleAppBuilderRoutes(req, res, p, url, { cfg, ollama, runTask })) return;
         // UX-W3: shared board kanban (/api/board/*) — the Board page's backend.
         if (await handleBoardRoutes(req, res, p)) return;
@@ -2309,6 +2434,7 @@ loadAgents();
         // Playbooks (D9): versioned reusable prompt library + macro expansion.
         if (await handlePlaybookRoutes(req, res, p)) return;
 
+        if (await handleDesktopRoutes(req, res, p)) return;
         if (await handleStudioTemplateRoutes(req, res, p)) return;
         if (await handleFlowTemplateRoutes(req, res, p)) return;
         // Environment snapshots (D3): read-only build status + redacted log.
@@ -2360,6 +2486,7 @@ loadAgents();
               mode,
               workMode: agent.workMode ?? "loam",
               allowedServices: agent.allowedServices,
+              memoryEnabled: agent.memoryEnabled,
               disabledTools: agent.disabledTools,
               registeredTools: registry?.names() ?? [],
             });
@@ -2374,8 +2501,8 @@ loadAgents();
             return;
           }
           if (req.method === "POST") {
-            const body = (await readBody(req)) as { name?: unknown; emoji?: unknown; description?: unknown; title?: unknown; instructions?: unknown; model?: unknown; mode?: unknown; effort?: unknown; disabledTools?: unknown; workMode?: unknown; allowedServices?: unknown; voice?: unknown; voiceRate?: unknown; voiceAuto?: unknown; notifications?: unknown; avatarShape?: unknown; avatarColor?: unknown; avatarImage?: unknown };
-            const patch: { name?: string; emoji?: string; description?: string; title?: string | null; instructions?: string; model?: string | null; mode?: string | null; effort?: string | null; disabledTools?: unknown; workMode?: string | null; allowedServices?: unknown; voice?: string | null; voiceRate?: number | null; voiceAuto?: boolean | null; notifications?: boolean | null; avatarShape?: string | null; avatarColor?: string | null; avatarImage?: string | null } = {};
+            const body = (await readBody(req)) as { name?: unknown; emoji?: unknown; description?: unknown; title?: unknown; instructions?: unknown; model?: unknown; mode?: unknown; effort?: unknown; disabledTools?: unknown; workMode?: unknown; allowedServices?: unknown; enabledSkills?: unknown; connectorGrants?: unknown; memoryEnabled?: unknown; voice?: unknown; voiceRate?: unknown; voiceAuto?: unknown; notifications?: unknown; avatarShape?: unknown; avatarColor?: unknown; avatarImage?: unknown };
+            const patch: { name?: string; emoji?: string; description?: string; title?: string | null; instructions?: string; model?: string | null; mode?: string | null; effort?: string | null; disabledTools?: unknown; workMode?: string | null; allowedServices?: unknown; enabledSkills?: unknown; connectorGrants?: unknown; memoryEnabled?: boolean | null; voice?: string | null; voiceRate?: number | null; voiceAuto?: boolean | null; notifications?: boolean | null; avatarShape?: string | null; avatarColor?: string | null; avatarImage?: string | null } = {};
             if (typeof body.name === "string") patch.name = body.name;
             if (typeof body.emoji === "string") patch.emoji = body.emoji;
             if (typeof body.description === "string") patch.description = body.description;
@@ -2392,6 +2519,9 @@ loadAgents();
             if (body.workMode === null) patch.workMode = null;
             else if (typeof body.workMode === "string" && body.workMode.trim()) patch.workMode = body.workMode;
             if (body.allowedServices !== undefined) patch.allowedServices = body.allowedServices;
+            if (body.enabledSkills !== undefined) patch.enabledSkills = body.enabledSkills;
+            if (body.connectorGrants !== undefined) patch.connectorGrants = body.connectorGrants;
+            if (body.memoryEnabled !== undefined) patch.memoryEnabled = typeof body.memoryEnabled === "boolean" ? body.memoryEnabled : null;
             if (body.voice === null) patch.voice = null;
             else if (typeof body.voice === "string" && body.voice.trim()) patch.voice = body.voice;
             if (body.voiceRate === null) patch.voiceRate = null;
@@ -2414,7 +2544,9 @@ loadAgents();
             return;
           }
           if (req.method === "DELETE") {
-            sendJson(res, 200, { deleted: deleteAgent(id) });
+            const cleanup = deleteAgentLifecycle(id);
+            if (!cleanup) return sendJson(res, 404, { error: "الوكيل غير موجود" });
+            sendJson(res, 200, { deleted: true, cleanup });
             return;
           }
         }

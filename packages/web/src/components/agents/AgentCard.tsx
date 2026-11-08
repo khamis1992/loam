@@ -6,6 +6,12 @@ import { Button, IconButton } from '@/components/ui/Button';
 import { GrokBotBadge, isGrokBotAgent } from './GrokBotBadge';
 import { AgentAvatar } from './AgentAvatar';
 
+export interface AgentConnectorGrant {
+  connectorId: string;
+  accountId?: string;
+  permissions: Array<'read' | 'write' | 'send'>;
+}
+
 export interface AgentCardAgent {
   id: string;
   name: string;
@@ -14,6 +20,9 @@ export interface AgentCardAgent {
   mode?: string;
   workMode?: string;
   model?: string;
+  enabledSkills?: string[];
+  connectorGrants?: AgentConnectorGrant[];
+  memoryEnabled?: boolean;
   /** Provenance ("grokbot" = imported from a Grok Bot bundle). */
   source?: string;
   /** Grok Bot-style avatar tokens (undefined = derived from the name). */

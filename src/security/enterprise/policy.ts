@@ -5,6 +5,8 @@ export interface EnterpriseIdentity {
   id: string;
   tenantIds: string[];
   roles: EnterpriseRole[];
+  name?: string;
+  licenseNo?: string;
   authMethod: "oidc" | "saml-gateway" | "local";
 }
 

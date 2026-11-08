@@ -30,15 +30,8 @@ interface Agent extends AgentCardAgent {
   allowedServices?: string[];
   title?: string;
   notifications?: boolean;
-}
-
-interface AgentThreadSummary {
-  agentId: string;
-  threadUid: string;
-  updatedAt: string;
-  lastSeenAt: string | null;
-  lastMessageAt: string | null;
-  unread: boolean;
+  unreadCount?: number;
+  lastActivityAt?: number;
 }
 
 export default function AgentsPageClient() {
@@ -118,26 +111,17 @@ export default function AgentsPageClient() {
     void loadGroups();
   }, []);
 
-  // Compute unread counts from agent threads.
   useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const res = await fetch(`${getApiBase()}/api/agent-threads`, {
-          headers: await getApiHeaders(),
-        });
-        if (!res.ok) return;
-        const data = (await res.json()) as { threads?: AgentThreadSummary[] };
-        const next: Record<string, { count: number; lastAt?: string }> = {};
-        for (const item of data.threads ?? []) {
-          if (item.unread) next[item.agentId] = { count: 1, lastAt: item.lastMessageAt ?? undefined };
-        }
-        if (mounted) setUnreadById(next);
-      } catch {
-        // ignore list fetch errors
+    const next: Record<string, { count: number; lastAt?: string }> = {};
+    for (const agent of agents) {
+      if ((agent.unreadCount ?? 0) > 0) {
+        next[agent.id] = {
+          count: agent.unreadCount!,
+          lastAt: agent.lastActivityAt ? new Date(agent.lastActivityAt).toISOString() : undefined,
+        };
       }
-    })();
-    return () => { mounted = false; };
+    }
+    setUnreadById(next);
   }, [agents]);
 
   // Toggle info pane with Cmd/Ctrl+Shift+I.

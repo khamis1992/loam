@@ -2,9 +2,9 @@
  * Turn the official text of one legislation (copied by a person from the
  * Official Gazette PDF or from Al Meezan) into a DRAFT LegalPack.
  *
- * It never sets `source.verifiedBy`: the import screen shows the split
- * article-by-article and a person must confirm it before `importPack` accepts
- * official provenance. No network access, no crawling (Design decision LD-4).
+ * It never sets reviewer attestations: the import screen shows the split
+ * article-by-article and two independent reviewers must confirm it before
+ * `importPack` accepts official provenance. No network access, no crawling (Design decision LD-4).
  *
  * Issuing laws: Qatari codes are typically promulgated by a short issuing law
  * ("قانون رقم (22) لسنة 2004 بإصدار القانون المدني") whose own articles come
@@ -89,7 +89,7 @@ export function splitArticles(raw: string): { articles: ParsedArticle[]; warning
 
 export function draftPackFromText(
   legislation: LegalPack["legislation"],
-  source: Omit<SourceRef, "verifiedBy">,
+  source: Omit<SourceRef, "verifiedBy" | "verifiedAt" | "secondVerifiedBy" | "secondVerifiedAt" | "reviewedTextSha256" | "usageRights">,
   raw: string,
 ): DraftPackResult {
   const { articles, warnings } = splitArticles(raw);

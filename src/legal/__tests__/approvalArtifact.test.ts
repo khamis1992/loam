@@ -23,7 +23,9 @@ test("approval artifact binds exact bytes, reviewer and encrypted export", () =>
     id: "aa-1", reviewId: review.id, matterId: matter.id, documentName: "redline:ct-1", kind: "docx",
     contentSha256: hash, artifactSha256: hash, corpusSnapshotId: "CS-1", model: "qwen3.6:35b-a3b", dataBase64: bytes.toString("base64"), createdAt: "2092-01-01T00:00:00Z",
   };
-  review = approveArtifact(review, artifact, { name: "مراجع", licenseNo: "1" }, "2092-01-01T00:00:00Z");
+  assert.throws(() => approveArtifact(review, artifact, { ...report, counts: { ...report.counts, unverifiedMarkers: 1 } }, { name: "مراجع", licenseNo: "1" }, "2092-01-01T00:00:00Z"), /unverified markers/);
+  assert.throws(() => approveArtifact(review, artifact, { ...report, coverage: { ...report.coverage, status: "incomplete" } }, { name: "مراجع", licenseNo: "1" }, "2092-01-01T00:00:00Z"), /coverage incomplete/);
+  review = approveArtifact(review, artifact, report, { name: "مراجع", licenseNo: "1" }, "2092-01-01T00:00:00Z");
   store.saveReview(review);
   store.approvals.save(artifact);
   assert.equal(canExportArtifact(review, hash), true);

@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { LegalCorpus, makeAvid, type LegalPack } from "../corpusStore.js";
+import { LegalCorpus, legalTextSha256, makeAvid, sha256, type LegalPack } from "../corpusStore.js";
 
 export const FIXTURE_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures");
 
@@ -13,6 +13,20 @@ export function loadFixtureCorpus(dbPath = ":memory:"): LegalCorpus {
     corpus.importPack(JSON.parse(fs.readFileSync(path.join(dir, file), "utf8")) as LegalPack);
   }
   return corpus;
+}
+
+export function attestPackForTest(pack: LegalPack): LegalPack {
+  const at = "2096-01-03T00:00:00.000Z";
+  return {
+    ...pack,
+    source: {
+      ...pack.source,
+      verifiedBy: "مراجع أول اختباري", verifiedAt: at,
+      secondVerifiedBy: "مراجع ثان اختباري", secondVerifiedAt: at,
+      sourceSha256: sha256(JSON.stringify(pack.source)), reviewedTextSha256: legalTextSha256(pack),
+      usageRights: { basis: "fictional test fixture", reference: "TEST-ONLY", confirmedBy: "مراجع الحقوق", confirmedAt: at },
+    },
+  };
 }
 
 /** Replace {{articleKey@effectiveFrom}} placeholders with the deterministic avid. */

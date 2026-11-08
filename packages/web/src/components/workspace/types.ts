@@ -1,6 +1,6 @@
 import type React from "react";
 
-export type WorkspaceKind = "video" | "loam-video" | "loam-recorder" | "craft" | "canvas" | "doc" | "sheet" | "slides";
+export type WorkspaceKind = "video" | "loam-video" | "loam-recorder" | "craft" | "canvas" | "doc" | "sheet" | "slides" | "electron-window";
 
 /**
  * Sentinel path for the Workspace panel's always-available "Loam Video" entry.

@@ -218,6 +218,7 @@ describe("channels (MF11)", () => {
         channels: [tg, em],
         runAgentTurn: async (o) => {
           turnCalls.push(o);
+          db.appendMessage(o.taskId, "user", o.prompt);
           return reply;
         },
       });
@@ -252,6 +253,19 @@ describe("channels (MF11)", () => {
       assert.equal(task!.prompt, "please summarize the report");
       // The reply went back through the channel to the right chat.
       assert.deepStrictEqual(telegramChannel.sent, [{ chatId: "42", text: "agent reply" }]);
+    });
+
+    it("continues the same permanent thread on the next inbound message", async () => {
+      startRouter();
+      const continuityAgent = agents.createAgent({ name: "Continuity Agent" });
+      router.createBinding("telegram", "42", continuityAgent.id);
+      await telegramChannel.emit({ chatId: "42", text: "first message" });
+      await telegramChannel.emit({ chatId: "42", text: "second message" });
+
+      assert.equal(turnCalls.length, 2);
+      assert.equal(turnCalls[0]!.taskId, turnCalls[1]!.taskId);
+      const task = db.getTask(turnCalls[0]!.taskId)!;
+      assert.deepStrictEqual(task.messages.filter((message) => message.role === "user").map((message) => message.content), ["first message", "second message"]);
     });
 
     it("rebinding the same chat re-points it at the new agent", () => {

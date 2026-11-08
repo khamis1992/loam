@@ -20,7 +20,7 @@ test("a lazy server holds schemas out of the prompt and is reached through the b
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "lazy-mcp-"));
   process.env.MANUS_LOCAL_DATA_DIR = dataDir;
   let cleanup: (() => void) | undefined;
-  t.after(() => { cleanup?.(); fs.rmSync(dataDir, { recursive: true, force: true }); });
+  t.after(async () => { await cleanup?.(); fs.rmSync(dataDir, { recursive: true, force: true }); });
 
   const { ToolRegistry } = await import("../registry.js");
   const { registerMcpTools } = await import("../mcp.js");
@@ -62,7 +62,7 @@ test("eager servers keep registering individual schemas and add no bridge", asyn
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "eager-mcp-"));
   process.env.MANUS_LOCAL_DATA_DIR = dataDir;
   let cleanup: (() => void) | undefined;
-  t.after(() => { cleanup?.(); fs.rmSync(dataDir, { recursive: true, force: true }); });
+  t.after(async () => { await cleanup?.(); fs.rmSync(dataDir, { recursive: true, force: true }); });
 
   const { ToolRegistry } = await import("../registry.js");
   const { registerMcpTools } = await import("../mcp.js");

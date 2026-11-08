@@ -71,7 +71,11 @@ export class OidcVerifier {
     const granted = Array.isArray(payload.roles) ? payload.roles : [];
     const identityRoles = granted.filter((role): role is EnterpriseRole => typeof role === "string" && roles.has(role as EnterpriseRole));
     if (!tenantIds.length || !identityRoles.length) throw new Error("token has no tenant or recognized role");
-    return { id: payload.sub, tenantIds: [...new Set(tenantIds)], roles: [...new Set(identityRoles)], authMethod: "oidc" };
+    return {
+      id: payload.sub, tenantIds: [...new Set(tenantIds)], roles: [...new Set(identityRoles)], authMethod: "oidc",
+      ...(typeof payload.name === "string" && payload.name.trim() ? { name: payload.name.trim() } : {}),
+      ...(typeof payload.qatar_license_no === "string" && payload.qatar_license_no.trim() ? { licenseNo: payload.qatar_license_no.trim() } : {}),
+    };
   }
 }
 

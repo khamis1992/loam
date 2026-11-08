@@ -16,7 +16,15 @@ export interface ComposedTemplate {
   files: TemplateFile[];
 }
 
-const ROOT = () => path.join(APP_ROOT, "src", "templates");
+export const TEMPLATE_REGISTRY: Readonly<Record<TemplateId, { preview: "web" | "electron-window"; output: string[] }>> = {
+  "web-app": { preview: "web", output: ["dist"] },
+  "electron-app": { preview: "electron-window", output: ["dist", "desktop.json"] },
+};
+
+const templateDir = (id: TemplateId): string => {
+  const sourceTemplate = path.join(APP_ROOT, "src", "templates", id);
+  return fs.existsSync(sourceTemplate) ? sourceTemplate : path.join(APP_ROOT, "templates", id);
+};
 
 /** Walk the base template dir (skip node_modules, dist, .git, binaries). */
 function walk(dir: string, base: string, out: TemplateFile[]): void {
@@ -31,9 +39,10 @@ function walk(dir: string, base: string, out: TemplateFile[]): void {
 }
 
 export function loadTemplate(id: TemplateId, features: TemplateFeatureId[] = []): ComposedTemplate {
-  if (id !== "web-app") throw new Error(`unknown template ${id}`);
+  if (!TEMPLATE_REGISTRY[id]) throw new Error(`unknown template ${id}`);
   const files: TemplateFile[] = [];
-  walk(path.join(ROOT(), id), path.join(ROOT(), id), files);
+  const root = templateDir(id);
+  walk(root, root, files);
   // Overlays land with G2; features are recorded but not composed yet.
   return { id, features, files };
 }

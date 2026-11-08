@@ -20,11 +20,32 @@ export const CONNECTOR_TOOLS: Record<string, string[]> = {
 
 export const ALL_CONNECTOR_TOOL_NAMES: string[] = Object.values(CONNECTOR_TOOLS).flat();
 
-/** Names of tools whose connector is currently connected. Per-agent tool
- *  denials always win over the connector grant. */
-export function connectedConnectorToolNames(disabledTools?: string[]): string[] {
+import type { ConnectorGrant, ConnectorPermission } from "../agents.js";
+
+const TOOL_PERMISSIONS: Record<string, ConnectorPermission> = {
+  github_list_repos: "read",
+  github_list_issues: "read",
+  github_create_issue: "write",
+  gmail_search: "read",
+  gmail_read: "read",
+  gmail_create_draft: "write",
+  calendar_list_events: "read",
+  calendar_create_event: "write",
+};
+
+/** Resolve connected tools against per-agent grants. Undefined grants retain
+ *  legacy access; an empty list explicitly revokes every connector. */
+export function connectedConnectorToolNames(disabledTools?: string[], grants?: ConnectorGrant[]): string[] {
   const disabled = new Set(disabledTools ?? []);
-  return CONNECTORS.filter((c) => isConnected(c.id))
-    .flatMap((c) => CONNECTOR_TOOLS[c.id] ?? [])
-    .filter((name) => !disabled.has(name));
+  return CONNECTORS.filter((c) => isConnected(c.id)).flatMap((connector) => {
+    const connectorGrants = grants?.filter((grant) => grant.connectorId === connector.id);
+    if (grants !== undefined && connectorGrants!.length === 0) return [];
+    const allowed = grants === undefined
+      ? null
+      : new Set(connectorGrants!.flatMap((grant) => grant.permissions));
+    return (CONNECTOR_TOOLS[connector.id] ?? []).filter((name) => {
+      if (disabled.has(name)) return false;
+      return allowed === null || allowed.has(TOOL_PERMISSIONS[name] ?? "read");
+    });
+  });
 }

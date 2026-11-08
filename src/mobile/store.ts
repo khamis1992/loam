@@ -71,9 +71,11 @@ export function validateProject(input: unknown): Omit<MobileProject, 'revision'>
 export function readMobile(root: string): MobileProject | null {
   const file = taskPath(root, '.loam/mobile.json');
   if (!fs.existsSync(file)) return null;
+  refuseSharedLink(file);
   if (fs.statSync(file).size > 30_000_000) fail('Project exceeds size limit');
   let v: Record<string, unknown>;
-  try { v = obj(JSON.parse(fs.readFileSync(file, 'utf8'))); } catch { return fail('Saved project is invalid'); }
+  try { v = obj(JSON.parse(fs.readFileSync(file, 'utf8'))); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code && (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; return fail('Saved project is invalid'); }
   if (!Number.isSafeInteger(v.revision) || Number(v.revision) < 1) fail('Invalid revision');
   return { ...validateProject(v), revision: Number(v.revision) };
 }
@@ -81,6 +83,7 @@ type History = { past: MobileProject[]; future: MobileProject[] };
 function history(root: string): History {
   const file = taskPath(root, '.loam/mobile.json');
   if (!fs.existsSync(file)) return { past: [], future: [] };
+  refuseSharedLink(file);
   const v = JSON.parse(fs.readFileSync(file, 'utf8'));
   return { past: (v.history?.past ?? []).slice(-8), future: (v.history?.future ?? []).slice(-8) };
 }
@@ -88,8 +91,14 @@ export function mobileHistory(root: string) { const h = history(root); return { 
 export function checkCollectionCompatibility(current:Pick<MobileProject,'collections'>|null,clean:Pick<MobileProject,'collections'>){
  for(const before of current?.collections||[]){const after=clean.collections?.find(c=>c.id===before.id);if(!after)continue;for(const field of before.fields){const changed=after.fields.find(f=>f.id===field.id);if(!changed)continue;if(changed.type!==field.type||(field.type==='relation'&&changed.collectionId!==field.collectionId)||(field.type==='select'&&field.options?.some(value=>!changed.options?.includes(value))))fail('نوع الحقل وخياراته الحالية محفوظة لحماية السجلات. أضف حقلًا جديدًا أو خيارات إضافية؛ تحويل البيانات يحتاج ترحيلًا صريحًا.');}}
 }
+function refuseSharedLink(file: string): void {
+  let stat: fs.Stats | undefined;
+  try { stat = fs.lstatSync(file); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; return; }
+  if (stat && stat.nlink > 1) throw new MobileError('unsafe_path');
+}
 function write(root: string, project: MobileProject, h: History, label?:string): MobileProject {
   const file = taskPath(root, '.loam/mobile.json'); fs.mkdirSync(path.dirname(file), { recursive: true });
+  refuseSharedLink(file);
   const temp = taskPath(root, `.loam/mobile-${randomUUID()}.tmp`);
   try { fs.writeFileSync(temp, JSON.stringify({ ...project, history: h }), { flag: 'wx' }); fs.renameSync(temp, file); }
   finally { if (fs.existsSync(temp)) fs.unlinkSync(temp); }

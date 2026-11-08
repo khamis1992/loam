@@ -15,11 +15,18 @@ import { ReaAuditLog, reaAuditPath } from "./reaAudit.js";
 import { CUA_DRIVER_MCP_SERVER, isCuaDriverAllowedTool, cuaDriverTimeoutMs } from "./cuaDriverAllowlist.js";
 import { CuaAuditLog, cuaAuditPath, cuaAuditScopes } from "./cuaAudit.js";
 import { wrapMcpCommandForSandbox } from "../sandbox/srt/mcpWrap.js";
+import { isMcpExecutionAllowed } from "../server/mcpPolicy.js";
 
 interface McpHandle {
   name: string;
   client: Client;
   transport: Transport;
+}
+
+async function closeMcpHandle(handle: McpHandle): Promise<void> {
+  const budget = () => new Promise<void>((resolve) => setTimeout(resolve, 3000));
+  await Promise.race([handle.client.close(), budget()]);
+  await Promise.race([handle.transport.close(), budget()]);
 }
 
 export interface McpToolset {
@@ -28,6 +35,7 @@ export interface McpToolset {
   /** Call a tool on a running MCP server directly (not via the registry) —
    *  used to wire persistent memory into the task loop. */
   callTool(server: string, tool: string, args: Record<string, unknown>, timeoutMs?: number): Promise<ToolResult>;
+  listTools(server: string): Promise<Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>>;
   close(): Promise<void>;
 }
 
@@ -228,6 +236,7 @@ export async function registerMcpTools(
       // kill_app / run_script / browser_* which must never register.
       let visible = tools;
       if (cfg.allowlist) visible = visible.filter((t) => new Set(cfg.allowlist).has(t.name));
+      if (cfg.disabledTools) visible = visible.filter((t) => !new Set(cfg.disabledTools).has(t.name));
       if (isReaServer(name)) visible = visible.filter((t) => isReaAllowedTool(t.name));
       // Cap B (MISSING §5): the rea server is also clamped to the 15 engine-free
       // names the reverse-engineer mode reads from src/re/allowlist.ts.
@@ -237,14 +246,14 @@ export async function registerMcpTools(
       if (new Set(toolNames).size !== toolNames.length || toolNames.some((toolName) => registry.get(toolName))) {
         throw new Error("MCP returned duplicate tool names");
       }
+      catalog.set(name, visible.map((tool) => ({
+        name: tool.name,
+        description: `${tool.description ?? tool.name}${cfg.customInstructions?.trim() ? `\nServer instructions: ${cfg.customInstructions.trim()}` : ""}`,
+        inputSchema: (tool.inputSchema ?? { type: "object", properties: {} }) as Record<string, unknown>,
+      })));
       // Lazy server: keep the catalogue aside instead of putting ~N tool schemas
       // in every prompt. The four mcp_* bridge tools reach these by name.
       if (cfg.lazy) {
-        catalog.set(name, visible.map((tool) => ({
-          name: tool.name,
-          description: tool.description ?? tool.name,
-          inputSchema: (tool.inputSchema ?? { type: "object", properties: {} }) as Record<string, unknown>,
-        })));
         handles.push({ name, client, transport });
         counts.set(name, visible.length);
         lazyServers.add(name);
@@ -259,9 +268,10 @@ export async function registerMcpTools(
         registry.register({
           integration: true,
           name: toolName,
-          description: `[MCP:${name}] ${tool.description ?? tool.name}`,
+          description: `[MCP:${name}] ${tool.description ?? tool.name}${cfg.customInstructions?.trim() ? `\nServer instructions: ${cfg.customInstructions.trim()}` : ""}`,
           parameters: inputSchema,
           async run(callArgs: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+            if (!isMcpExecutionAllowed(ctx, name)) return { ok: false, content: `MCP server "${name}" is not granted for this agent or execution target` };
             const decision = serverHooks?.before ? await serverHooks.before(tool.name, callArgs, ctx) : undefined;
             if (decision && "block" in decision) return decision.block;
             const sendArgs = decision && "args" in decision ? decision.args : callArgs;
@@ -394,6 +404,7 @@ export async function registerMcpTools(
         async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
           const server = str(args, "server");
           const tool = str(args, "tool");
+          if (!isMcpExecutionAllowed(ctx, server)) return { ok: false, content: `MCP server "${server}" is not granted for this agent or execution target` };
           const handle = byName.get(server);
           if (!handle) return { ok: false, content: `mcp server not running: ${server}` };
           const callArgs = args["args"] && typeof args["args"] === "object" ? args["args"] as Record<string, unknown> : {};
@@ -416,7 +427,6 @@ export async function registerMcpTools(
         const handle = byName.get(name);
         if (!handle) return { name, connected: false, toolCount: 0, error: "connection-failed" };
         try {
-          await handle.client.ping({ timeout: 3000 });
           let cursor: string | undefined;
           let toolCount = 0;
           const seen = new Set<string>();
@@ -437,12 +447,16 @@ export async function registerMcpTools(
       if (!handle) return { ok: false, content: `mcp server not running: ${server}` };
       return callToolOn(handle.client, server, tool, args, timeoutMs);
     },
+    async listTools(server: string) {
+      await ensureCatalog(server);
+      return catalog.get(server) ?? [];
+    },
     async close(): Promise<void> {
       for (const h of handles) {
         if (isReaServer(h.name)) audit?.append({ name: "rea.mcp.disconnect", outcome: "completed" });
         if (isCuaDriverServer(h.name)) cuaAudit?.append({ name: "cua.driver.disconnect", outcome: "completed" });
         try {
-          await h.client.close();
+          await closeMcpHandle(h);
         } catch {
           /* ignore */
         }

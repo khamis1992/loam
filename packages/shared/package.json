@@ -10,6 +10,7 @@
     "./ipc": "./src/ipc.ts",
     "./env": "./src/env.ts",
     "./effectsRoundTrip": "./src/effectsRoundTrip.ts",
+    "./buildMenu": "./src/buildMenu.ts",
     "./i18n": "./src/i18n/index.ts",
     "./i18n/en.json": "./src/i18n/en.json",
     "./i18n/ar.json": "./src/i18n/ar.json"

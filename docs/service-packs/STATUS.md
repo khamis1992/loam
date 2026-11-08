@@ -116,3 +116,34 @@
 - A11: أصبح A13 ناجحًا بـ18/18.
 - توليد الصور النقطية والفيديو النصي والموسيقى وTTS وSTT يحتاج مزودًا خارجيًا مهيأ؛ لم تُختبر خدمة سحابية مدفوعة.
 - الجوال يبقى screen-based ولا يدّعي APK أو Expo أو signed store build.
+
+## P10 — تطبيقات سطح المكتب: التنفيذ المحلي passed
+
+- هدف `desktop-app` و`outputType: desktop` يوجهان إلى حزمة `loam-desktop` دون أدوات `webdev` أو معاينة موقع، مع خمسة اقتراحات قابلة للاستخدام وشارة `This PC`.
+- مشاريع `electron-app` تستخدم سجل App Builder الحالي، وقالب Electron + Vite + TypeScript بملف main صحيح، وcontextIsolation، وتعطيل nodeIntegration، وتشغيل sandbox.
+- منظم الملفات يعمل على fixture محلي آمن: البحث والتصفية وإضافة الوسوم فعلية، مع منع path traversal والروابط. لا يقرأ مجلد Downloads الحقيقي في القالب الافتراضي.
+- `desktop_verify` ينفذ التثبيت من الكاش، والاختبارات وlint وTypeScript والبناء، ثم يفتح Electron عبر Playwright/CDP ويختبر البحث والوسم ويلتقط `electron-smoke.png`. يجهّز المورد في مهمة المستخدم لينشره `finish` عبر البوابة.
+- API والمحرر يدعمان فتح وإيقاف التطبيق بعد التحقق فقط، ويربطان مورد المهمة الأم بمشروع App Builder الصحيح. الإيقاف يطابق مسار Electron قبل إنهاء PID المسجل.
+- الدليل الحقيقي: `output/verification/desktop-e2e-verified/result.json` و`output/verification/desktop-e2e-verified.log`؛ النتيجة `verified/presented/launched/stopped = true` للمشروع `app_jjr7v77i2fow`.
+- فُتح هدف Desktop داخل تطبيق Loam المكتبي بجلسة محلية معزولة، وظهرت `This PC` والاقتراحات الخمسة؛ الدليل `output/verification/desktop-goal-e2e.png` و`desktop-goal-e2e.json`.
+- الواجهة: **1034 passed**؛ Electron الأساسي: **21 passed**؛ فحص TypeScript وبناء الخادم والواجهة: passed. اختبارات Desktop الخاصة: **5 Node + 10 واجهة passed**.
+- المجموعة الكاملة للخادم بتوازي 2: **5218 passed، 0 failed، 9 skipped**؛ الدليل `output/verification/desktop-full-unit-resume.log`.
+- لا يوجد `.exe` أو مثبّت مستقل ضمن هذه الدفعة؛ `nativePackage: false`. إنشاء مثبّت بـelectron-builder يبقى عند طلب المستخدم الصريح فقط.
+
+
+## Agent Loam capability expansion: implemented and verified
+
+- قدرات الوكيل أصبحت منفصلة: `enabledSkills` و`connectorGrants` و`memoryEnabled` بدل خلطها بـ`allowedServices`. تتوافق السجلات القديمة، وتُعتبر القائمة الفارغة إلغاءً صريحًا للمنح.
+- استمرارية المحادثة موحدة بين الرسائل المباشرة والقنوات وجسر Grok Bot. أحداث انتهاء المهمة تدفع ردود المجموعات دون انتظار GET. الأرشفة يعطل المشغلات دون حذف بيانات العضوية، والحذف ينظف الجداول والروابط والمنح، والاستعادة لا تعيد التشغيل تلقائيًا.
+- مركز MCP يدعم add/edit/delete وlive reload وSTDIO/HTTP وحسابات مسماة وتعليمات مخصصة واكتشافًا كسولًا وتعطيل الأدوات. لا تُرجع API قيم الأسرار، ولا يعمل STDIO على المضيف في `own_device`.
+- الأتمتة تدعم cron وwebhook وGitHub وSlack وMicrosoft Teams وLinear وSentry وPagerDuty والبريد، مع توقيع ومنع تكرار دائم للتسليم. استيراد workflows وتحويل Teach إلى click+verify أصبحا متاحين.
+- لوحة الوكيل تعرض التحليلات والأسرار والذاكرة المشتركة وإنشاء الأتمتة. النشر المحلي يستخدم proposals وZIP متحقق منه، ولا يدّعي نشرًا سحابيًا.
+- يوجد 21 حزمة مزود إضافية عبر MCP، والتغطية تثبت 167/167 قدرة. الحزم لا تنزّل أو تتصل بمزود تلقائيًا؛ يلزم إعداد حساب/خادم حقيقي لكل خدمة خارجية.
+- اختبارات Agent Loam المتخصصة: **73 passed**، وفحوص MCP الإضافية: **10 passed**، والأتمتة/Publishing/Workflow: **14 passed**، وفحوص الواجهة المعدلة: **9 passed**.
+- `verify:web`: passed؛ `build:server`: passed؛ `check:loam-ui`: passed؛ `check:loam-e2e`: passed؛ `check:agent-loam-e2e`: passed، ويشمل الإنشاء بالكتالوج الكامل والذاكرة المستقلة والتحليلات والأسرار والأتمتة وحزم الخدمات.
+- لم تُختبر حسابات أو مكالمات حية لخدمات Slack/Teams/iMessage/Meetings/iOS/السفر/1Password. المطلق: تكوين مزود حقيقي وإجراء قبول منفصل لكل حساب.
+
+### قيود التحقق العام غير المرتبطة بهذه الموجة
+
+- `typecheck` و`verify:loam` يتوقفان على أخطاء موجودة مسبقًا في `src/buildMenu/` و`src/buildMenu/notebooks/`. لا توجد أخطاء TypeScript في ملفات هذه الموجة.
+- `test:unit` يتجاوز 15 دقيقة ويحتوي فشلًا قديمًا في suites أخرى؛ لم يُستخدم لإعلان نجاح شامل. الاختبارات المتخصصة أعلاه هي التي تغطي هذه الموجة.

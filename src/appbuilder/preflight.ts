@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 const exec = promisify(execFile);
 
 export interface PreflightItem {
-  id: "node" | "npm" | "git" | "disk";
+  id: "node" | "npm" | "git" | "disk" | "electron-builder";
   ok: boolean;
   found: string | null;     // version string or free bytes
   need: string;
@@ -46,6 +46,7 @@ export async function runPreflight(): Promise<PreflightReport> {
   const node = await version("node", ["--version"]);
   const npm = await version(process.platform === "win32" ? "npm.cmd" : "npm", ["--version"]);
   const git = await version("git", ["--version"]);
+  const electronBuilder = await version("node", ["-e", "process.stdout.write(require('electron-builder/package.json').version)"]);
   const dir = appBuilderDataDir();
   fs.mkdirSync(dir, { recursive: true });
   const st = fs.statfsSync(dir);
@@ -54,6 +55,7 @@ export async function runPreflight(): Promise<PreflightReport> {
     { id: "node", ok: !!node && atLeast(node, MIN_NODE), found: node, need: "22.13 or newer", fix: "Install Node.js 22 LTS or newer from nodejs.org, or run: winget install OpenJS.NodeJS.LTS" },
     { id: "npm", ok: !!npm, found: npm, need: "any version that ships with Node 22", fix: "npm ships with Node.js. Reinstall Node.js and keep the npm option selected." },
     { id: "git", ok: !!git && atLeast(git, MIN_GIT), found: git, need: "2.38 or newer", fix: "Install Git for Windows from git-scm.com, or run: winget install Git.Git" },
+    { id: "electron-builder", ok: !!electronBuilder, found: electronBuilder, need: "electron-builder installed with Loam", fix: "Reinstall Loam dependencies so electron-builder is available for explicitly requested desktop installers." },
     { id: "disk", ok: free >= MIN_FREE_BYTES, found: String(free), need: "2 GB free", fix: `Free at least 2 GB on the drive that holds ${dir}.` },
   ];
   return { ok: items.every((i) => i.ok), items, checkedAt: new Date().toISOString() };

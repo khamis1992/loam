@@ -1,4 +1,4 @@
-export type PackId = "loam-slides" | "loam-localfile" | "loam-video" | "loam-build" | "loam-image" | "loam-audio" | "loam-office" | "loam-research" | "loam-schedule" | "loam-mobile" | "loam-game";
+export type PackId = "loam-slides" | "loam-localfile" | "loam-video" | "loam-build" | "loam-image" | "loam-audio" | "loam-office" | "loam-research" | "loam-schedule" | "loam-mobile" | "loam-game" | "loam-desktop";
 
 export interface ServicePackManifest {
   schema: "loam.service-pack/v1";

@@ -39,16 +39,10 @@ interface NewAgentDialogProps {
   onCreated: () => void;
 }
 
-const LOAM_MODES = [
-  { id: 'ask', labelAr: 'استكشف' },
-  { id: 'research', labelAr: 'ابحث' },
-  { id: 'build', labelAr: 'ابنِ' },
-  { id: 'write', labelAr: 'اكتب' },
-  { id: 'data', labelAr: 'حلّل' },
-  { id: 'media', labelAr: 'صمّم' },
-  { id: 'security', labelAr: 'افحص' },
-  { id: 'automate', labelAr: 'أنجز' },
-];
+interface LoamModeOption {
+  id: string;
+  labelAr: string;
+}
 
 const EFFORT_LEVELS = [
   { id: 'max', labelAr: 'أقصى' },
@@ -64,6 +58,7 @@ const BLANK_TEMPLATE_ID = '__blank__';
 export function NewAgentDialog({ open, onClose, onCreated }: NewAgentDialogProps) {
   const [templates, setTemplates] = useState<AgentTemplate[]>([]);
   const [services, setServices] = useState<WorkModeService[]>([]);
+  const [modeOptions, setModeOptions] = useState<LoamModeOption[]>([{ id: 'build', labelAr: 'ابنِ' }]);
   const [skills, setSkills] = useState<Skill[]>([]);
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [models, setModels] = useState<string[]>([]);
@@ -78,6 +73,7 @@ export function NewAgentDialog({ open, onClose, onCreated }: NewAgentDialogProps
   const [description, setDescription] = useState('');
   const [instructions, setInstructions] = useState('');
   const [mode, setMode] = useState('build');
+  const [workMode, setWorkMode] = useState('loam');
   const [model, setModel] = useState(DEFAULT_MODEL_VALUE);
   const [customModel, setCustomModel] = useState('');
   const [effort, setEffort] = useState('high');
@@ -110,7 +106,7 @@ export function NewAgentDialog({ open, onClose, onCreated }: NewAgentDialogProps
         if (!mcpRes.ok) throw new Error(`mcp ${mcpRes.status}`);
         if (!configRes.ok) throw new Error(`config ${configRes.status}`);
         const templatesData = (await templatesRes.json()) as { templates?: AgentTemplate[] };
-        const workModesData = (await workModesRes.json()) as { services?: WorkModeService[] };
+        const workModesData = (await workModesRes.json()) as { services?: WorkModeService[]; loamModes?: LoamModeOption[] };
         const skillsData = (await skillsRes.json()) as { skills?: Skill[] };
         const mcpData = (await mcpRes.json()) as { servers?: Connector[] };
         const configData = (await configRes.json()) as { defaultModel?: string; model?: string };
@@ -119,6 +115,7 @@ export function NewAgentDialog({ open, onClose, onCreated }: NewAgentDialogProps
         const serviceList = workModesData.services ?? [];
         setTemplates(templatesData.templates ?? []);
         setServices(serviceList);
+        if (workModesData.loamModes?.length) setModeOptions(workModesData.loamModes);
         setSkills(skillsData.skills ?? []);
         setConnectors(mcpData.servers ?? []);
         const cfgModel = configData.model || configData.defaultModel || '';
@@ -144,6 +141,7 @@ export function NewAgentDialog({ open, onClose, onCreated }: NewAgentDialogProps
     setDescription('');
     setInstructions('');
     setMode('build');
+    setWorkMode('loam');
     setModel(DEFAULT_MODEL_VALUE);
     setCustomModel('');
     setEffort('high');
@@ -159,6 +157,7 @@ export function NewAgentDialog({ open, onClose, onCreated }: NewAgentDialogProps
     setDescription(tpl.description);
     setInstructions(tpl.instructions);
     setMode(tpl.mode);
+    setWorkMode(tpl.workMode || 'loam');
     setModel(DEFAULT_MODEL_VALUE);
     setCustomModel('');
     setEffort('high');
@@ -218,13 +217,6 @@ export function NewAgentDialog({ open, onClose, onCreated }: NewAgentDialogProps
 
   const buildBody = () => {
     const allowedServices = Array.from(enabledServices);
-    // Skills/connectors are presented as capabilities; the backend's allowedServices field is
-    // the existing service allowlist. Per task, chosen capability items map to allowedServices.
-    const chosenCapabilityIds = [...allowedServices, ...enabledSkills, ...enabledConnectors];
-    const uniqueCapabilities = [...new Set(chosenCapabilityIds)];
-    const finalAllowedServices = allServicesEnabled && enabledSkills.size === 0 && enabledConnectors.size === 0
-      ? []
-      : uniqueCapabilities;
     const body: Record<string, unknown> = {
       name: name.trim(),
       emoji: emoji.trim() || '🤖',
@@ -232,8 +224,14 @@ export function NewAgentDialog({ open, onClose, onCreated }: NewAgentDialogProps
       instructions: instructions.trim(),
       mode,
       effort,
-      workMode: memoryEnabled ? 'loam' : 'chat',
-      allowedServices: finalAllowedServices,
+      workMode,
+      memoryEnabled,
+      allowedServices: allServicesEnabled ? [] : allowedServices,
+      enabledSkills: Array.from(enabledSkills),
+      connectorGrants: Array.from(enabledConnectors).map((connectorId) => ({
+        connectorId,
+        permissions: ['read', 'write', 'send'],
+      })),
     };
     if (effectiveModel) body.model = effectiveModel;
     return body;
@@ -373,7 +371,7 @@ export function NewAgentDialog({ open, onClose, onCreated }: NewAgentDialogProps
                 onChange={(e) => setMode(e.target.value)}
                 className="rounded-control border border-border-main bg-bg-main px-3 py-2 text-sm text-text-primary outline-none focus:border-border-dark"
               >
-                {LOAM_MODES.map((m) => (
+                {modeOptions.map((m) => (
                   <option key={m.id} value={m.id}>{m.labelAr}</option>
                 ))}
               </select>

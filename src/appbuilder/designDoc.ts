@@ -31,14 +31,14 @@ export function designDocSkeleton(title: string): string {
     "",
     "## Tokens",
     "- Primary: oklch(0.55 0.15 260) — replace with the real colour",
-    "- Base font and size scale in px",
+    "- Base font: 16px; body line height: 24px; spacing unit: 8px",
     "Theme: Neutral",
     "",
     "## Patterns & States",
     "- Key component states (hover, active, disabled, empty)",
     "",
     "## Media",
-    "- Breakpoints in px and what changes at each",
+    "- Below 720px: one column; at 720px and above: use the wider layout",
     "",
   ].join("\n");
 }

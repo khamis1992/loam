@@ -1,3 +1,7 @@
+# Mandatory Development Rules
+
+**Every engineer and AI agent must read and follow [CONTRIBUTING.md](CONTRIBUTING.md) before adding a feature, changing behavior, or fixing a bug.** It defines the required workflow for scope clarification, impact analysis, implementation, security, tests, documentation, review, and completion. Do not present work as complete while its applicable checks are failing or have not been run.
+
 <!-- gitnexus:start -->
 # GitNexus MCP
 

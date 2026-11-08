@@ -110,6 +110,8 @@ export interface CompanionResolveInput {
   workMode?: string;
   /** Per-agent service allowlist. undefined/empty = all services. */
   allowedServices?: string[];
+  /** Disable only personal/shared companion memory, independent of work mode. */
+  memoryEnabled?: boolean;
   disabledTools?: string[];
   registeredTools: string[];
 }
@@ -150,6 +152,7 @@ export function resolveCompanionCapabilities(input: CompanionResolveInput): Comp
   const modeTools = new Set(getLoamMode(input.mode).tools);
   const granted = new Set(input.allowedServices && input.allowedServices.length > 0 ? input.allowedServices : COMPANION_SERVICES.map((s) => s.id));
   const revoked = new Set(workModeDef.revokes);
+  if (input.memoryEnabled === false) revoked.add("companion-memory");
   const disabled = new Set(input.disabledTools ?? []);
   const registered = new Set(input.registeredTools);
   const byTool = toolServiceIndex();

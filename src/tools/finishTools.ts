@@ -154,6 +154,7 @@ const PACK_OUTPUT: Readonly<Record<PackId, { resource: string; artifact: "report
   "loam-schedule": { resource: "file", artifact: "file" },
   "loam-mobile": { resource: "app", artifact: "file" },
   "loam-game": { resource: "page", artifact: "page" },
+  "loam-desktop": { resource: "app", artifact: "file" },
 };
 
 function mimeFor(file: string): string {

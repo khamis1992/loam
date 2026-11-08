@@ -2,10 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { t } from '@/i18n/t';
+import { getLocale, isRtl, t } from '@/i18n/t';
 import { legalApi, type LegalStatus, type Matter } from '@/services/legalApi';
 import { PrivacyBadge } from './PrivacyBadge';
 import { LibrarySearch } from './LibrarySearch';
+import { LegalBackLink } from './LegalBackLink';
+import { CorpusAdmin } from './CorpusAdmin';
+import { LegalOperations } from './LegalOperations';
 
 export function LegalHome() {
   const [matters, setMatters] = useState<Matter[]>([]);
@@ -26,16 +29,16 @@ export function LegalHome() {
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   };
   return (
-    <main className="mx-auto max-w-5xl space-y-4 p-4 [&_input]:bg-bg-main [&_input]:text-text-primary [&_select]:bg-bg-main [&_select]:text-text-primary">
-      <header className="flex items-center justify-between">
-        <div><h1 className="text-xl font-semibold">{t('Loam Legal Qatar')}</h1><p className="text-sm opacity-70">{t('Evidence-bound legal analysis, contracts, defense and responses')}</p></div>
+    <main dir={isRtl(getLocale()) ? 'rtl' : 'ltr'} lang={getLocale()} className="mx-auto max-w-5xl space-y-4 p-4 [&_input]:bg-bg-main [&_input]:text-text-primary [&_select]:bg-bg-main [&_select]:text-text-primary">
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3"><LegalBackLink /><div><h1 className="text-xl font-semibold">{t('Loam Legal Qatar')}</h1><p className="text-sm opacity-70">{t('Evidence-bound legal analysis, contracts, defense and responses')}</p></div></div>
         {status && <PrivacyBadge local={status.localModelApproved} keyAvailable={status.keyAvailable} />}
       </header>
       {error && <p role="alert" className="text-red-700 dark:text-red-300">{error}</p>}
       <form className="flex flex-wrap gap-2 rounded-md border p-3" onSubmit={(e) => { e.preventDefault(); void create(); }}>
         <input dir="auto" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t('Matter title')} className="min-w-0 flex-1 rounded border px-2 py-1" />
         <input type="date" aria-label={t('Applicable law date')} value={asOf} onChange={(e) => setAsOf(e.target.value)} className="rounded border px-2 py-1" />
-        <select value={kind} onChange={(e) => setKind(e.target.value as Matter['kind'])} className="rounded border px-2 py-1">
+        <select aria-label={t('New matter kind')} value={kind} onChange={(e) => setKind(e.target.value as Matter['kind'])} className="rounded border px-2 py-1">
           <option value="defense_memo">{t('Defense memorandum')}</option><option value="contract_review">{t('Contract review')}</option><option value="opinion">{t('Legal opinion')}</option><option value="research">{t('Document analysis')}</option>
         </select>
         <button type="submit" className="rounded border px-3 py-1">{t('New matter')}</button>
@@ -53,6 +56,8 @@ export function LegalHome() {
           {matters.length === 0 && <li className="p-3 text-sm opacity-70">{t('No matters yet')}</li>}
         </ul>
       </section>
+      <CorpusAdmin />
+      <LegalOperations status={status} />
       <LibrarySearch />
     </main>
   );

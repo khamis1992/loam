@@ -67,6 +67,29 @@ export interface Schedule {
   attempts?: number | null;
   lastError?: string | null;
   agentId?: string | null;
+  trigger?: 'cron' | 'webhook' | 'github' | 'slack' | 'microsoftTeams' | 'linear' | 'sentry' | 'pagerduty' | 'email' | null;
+  githubEvents?: string[] | null;
+}
+
+export interface ScheduleDraft {
+  prompt: string;
+  intervalSeconds?: number;
+  cron?: string;
+  timezone?: string;
+  enabled?: boolean;
+  workMode?: string;
+  trigger?: Schedule['trigger'];
+  webhookSecret?: string;
+  events?: string[];
+  playbook?: string;
+}
+
+export interface AutomationDelivery {
+  automationId: string;
+  deliveryId: string;
+  trigger: string;
+  eventKind: string;
+  receivedAt: string;
 }
 
 export interface ChannelStatus {
@@ -138,9 +161,45 @@ async function request<T>(path: string, init: RequestInit = {}, json = false): P
 // Overview: memory, approval rules, scratchpad
 // ---------------------------------------------------------------------------
 
-export function getAgentMemory(agentId: string): Promise<MemoryEntry[]> {
-  return request<{ entries?: MemoryEntry[] }>(`/api/agents/${encodeURIComponent(agentId)}/memory`)
+export function getAgentMemory(agentId: string, scope: 'own' | 'team' = 'own'): Promise<MemoryEntry[]> {
+  const suffix = scope === 'team' ? '?scope=team' : '';
+  return request<{ entries?: MemoryEntry[] }>(`/api/agents/${encodeURIComponent(agentId)}/memory${suffix}`)
     .then((data) => data.entries ?? []);
+}
+
+export interface AgentUsage {
+  runs: number;
+  done: number;
+  errors: number;
+  promptTokens: number;
+  completionTokens: number;
+  toolCalls: number;
+  deviceToolCalls: number;
+}
+
+export function getAgentUsage(agentId: string): Promise<AgentUsage> {
+  return request<AgentUsage>(`/api/agents/${encodeURIComponent(agentId)}/usage`);
+}
+
+export interface SecretEntry {
+  name: string;
+  createdAt?: string;
+}
+
+export function listAgentSecrets(agentId: string): Promise<SecretEntry[]> {
+  return request<{ secrets?: SecretEntry[] }>(`/api/agents/${encodeURIComponent(agentId)}/secrets`)
+    .then((data) => data.secrets ?? []);
+}
+
+export function addAgentSecret(agentId: string, name: string, value: string): Promise<void> {
+  return request<unknown>(`/api/agents/${encodeURIComponent(agentId)}/secrets`, {
+    method: 'POST',
+    body: JSON.stringify({ name, value }),
+  }, true).then(() => undefined);
+}
+
+export function deleteAgentSecret(agentId: string, name: string): Promise<void> {
+  return request<unknown>(`/api/agents/${encodeURIComponent(agentId)}/secrets?name=${encodeURIComponent(name)}`, { method: 'DELETE' }).then(() => undefined);
 }
 
 export function listApprovalRules(agentId: string): Promise<ApprovalRuleRow[]> {
@@ -200,6 +259,25 @@ export function listSchedules(agentId: string): Promise<Schedule[]> {
 
 export function runScheduleNow(id: string): Promise<void> {
   return request<unknown>(`/api/schedules/${encodeURIComponent(id)}/run-now`, { method: 'POST' }).then(() => undefined);
+}
+
+export function createSchedule(agentId: string, draft: ScheduleDraft): Promise<void> {
+  return request<unknown>(`/api/agents/${encodeURIComponent(agentId)}/schedules`, {
+    method: 'POST',
+    body: JSON.stringify(draft),
+  }, true).then(() => undefined);
+}
+
+export function updateSchedule(agentId: string, id: string, patch: { enabled?: boolean; prompt?: string }): Promise<void> {
+  return request<unknown>(`/api/agents/${encodeURIComponent(agentId)}/schedules`, {
+    method: 'PUT',
+    body: JSON.stringify({ id, ...patch }),
+  }, true).then(() => undefined);
+}
+
+export function listAutomationDeliveries(automationId: string): Promise<AutomationDelivery[]> {
+  return request<{ deliveries?: AutomationDelivery[] }>(`/api/automations/${encodeURIComponent(automationId)}/deliveries`)
+    .then((data) => data.deliveries ?? []);
 }
 
 // ---------------------------------------------------------------------------

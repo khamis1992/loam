@@ -24,6 +24,7 @@ const NAMESPACES = [
   "debugMemory",
   // Cap G §4.15.3: App Builder preview helpers (openInBrowser / revealProject / pickImportFile).
   "appPreview",
+  "buildMenu",
 ];
 
 module.exports = { IPC_INVOKE, IPC_EVENT_PREFIX, IPC_META, IPC_SYNC, NAMESPACES };

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { DATA_DIR } from '../config.js';
 import { getTask } from '../server/db.js';
 import type { Tool, ToolRegistry } from './registry.js';
+import { hasExplicitMcpGrant, isMcpExecutionAllowed } from '../server/mcpPolicy.js';
 
 // Kept outside task workspaces: editing a project file cannot grant access.
 function grantFile(taskId: string): string {
@@ -28,6 +29,10 @@ export function saveAgentIntegrationGrants(agentId: string, names: string[], reg
   fs.writeFileSync(agentGrantFile(agentId), JSON.stringify([...new Set(names)], null, 1), 'utf8');
 }
 
+export function deleteAgentIntegrationGrants(agentId: string): void {
+  fs.rmSync(agentGrantFile(agentId), { force: true });
+}
+
 /** Effective grants for a run: task grants ∪ the owning companion's grants. */
 export function effectiveIntegrationGrants(taskId: string, agentId?: string | null): string[] {
   return [...new Set([...integrationGrants(taskId), ...(agentId ? agentIntegrationGrants(agentId) : [])])];
@@ -48,16 +53,22 @@ export function saveIntegrationGrants(taskId: string, names: string[], registry:
 export function integrationCatalog(registry: ToolRegistry) {
   return registry.names().flatMap(name => { const tool = registry.get(name)!; return tool.integration ? [{ name, description: tool.description, parameters: tool.parameters }] : []; });
 }
+
+function integrationGranted(name: string, ctx: Parameters<Tool['run']>[1]): boolean {
+  if (effectiveIntegrationGrants(ctx.taskId ?? '', getTask(ctx.taskId ?? '')?.agentId ?? null).includes(name)) return true;
+  const match = /^mcp__(.+)__[^_]+$/.exec(name);
+  return match ? hasExplicitMcpGrant(ctx, match[1]!) : false;
+}
+
 export function createIntegrationTools(registry: ToolRegistry): Tool[] {
   return [{
     name: 'integration_list', description: 'List external tools explicitly enabled by the user for this task, with their input schemas. Enable tools in Services > Integrations first.',
     parameters: { type: 'object', properties: { query: { type: 'string', description: 'Filter tool names/descriptions' }, offset: { type: 'number', description: 'Pagination offset; returns up to five tools and nextOffset' } } },
     async run(args, ctx) {
       if (!ctx.taskId || getTask(ctx.taskId)?.mode === 'ask') return { ok: false, content: 'An execution task is required' };
-      const granted = new Set(effectiveIntegrationGrants(ctx.taskId, getTask(ctx.taskId)?.agentId ?? null));
       const query = typeof args.query === 'string' ? args.query.toLowerCase() : '';
       const offset = typeof args.offset === 'number' && Number.isFinite(args.offset) ? Math.max(0, Math.floor(args.offset)) : 0;
-      const matches = integrationCatalog(registry).filter(t => granted.has(t.name) && (t.name + ' ' + t.description).toLowerCase().includes(query));
+      const matches = integrationCatalog(registry).filter(t => integrationGranted(t.name, ctx) && (t.name + ' ' + t.description).toLowerCase().includes(query));
       return { ok: true, content: JSON.stringify({ tools: matches.slice(offset, offset + 5), total: matches.length, nextOffset: offset + 5 < matches.length ? offset + 5 : null }) };
     },
   }, {
@@ -66,7 +77,9 @@ export function createIntegrationTools(registry: ToolRegistry): Tool[] {
     async run(args, ctx) {
       if (!ctx.taskId || !getTask(ctx.taskId) || getTask(ctx.taskId)?.mode === 'ask') return { ok: false, content: 'An execution task is required' };
       const name = typeof args.name === 'string' ? args.name : '';
-      if (!registry.get(name)?.integration || !effectiveIntegrationGrants(ctx.taskId, getTask(ctx.taskId)?.agentId ?? null).includes(name)) return { ok: false, content: 'Integration not enabled for this task. Ask the user to enable it in Services > Integrations.' };
+      if (!registry.get(name)?.integration || !integrationGranted(name, ctx)) return { ok: false, content: 'Integration not enabled for this task. Ask the user to enable it in Services > Integrations.' };
+      const mcpMatch = /^mcp__(.+)__[^_]+$/.exec(name);
+      if (mcpMatch && !isMcpExecutionAllowed(ctx, mcpMatch[1]!)) return { ok: false, content: 'MCP execution is not granted for this agent or execution target' };
       if (!args.arguments || typeof args.arguments !== 'object' || Array.isArray(args.arguments)) return { ok: false, content: 'arguments must be an object' };
       if (!ctx.cfg.policy.networkEnabled) return { ok: false, content: 'External integrations are disabled by network policy' };
       ctx.signal?.throwIfAborted();

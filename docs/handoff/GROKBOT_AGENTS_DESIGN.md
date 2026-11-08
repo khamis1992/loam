@@ -52,3 +52,14 @@ Built-in agent row: clicking it opens the existing built-in start behaviour; it 
 
 ## 5. Constraints
 Brand: "Loam". The sidebar item stays "Agent Loam", with no "Cue". Create, edit and run of custom agents keep working (bc9bcc9 POST save; 0fb3695 agentId passed to createTask). No server files are touched (`src/server/http.ts` belongs to ZCode).
+
+
+## Current implementation updates
+
+- Agent capabilities now use separate `enabledSkills`, `connectorGrants`, and `memoryEnabled` fields. `allowedServices` no longer carries skill or connector names. Existing records retain legacy behavior when the new fields are undefined; empty lists explicitly revoke access.
+- The mode selector reads the complete catalog from `GET /api/work-modes`, including Red Team, Dev Flow, Legal and Reverse Engineer.
+- Permanent agent threads are shared by direct chat, external channels and the Grok Bot bridge. Group replies also advance through task-finished events rather than relying only on GET polling.
+- Archiving disables schedules and channel bindings without deleting them. Deleting removes schedules, thread mappings and integration grants, and archived/deleted agents cannot start new runs. Restoring does not silently re-enable routines.
+- The information pane now includes analytics, encrypted secrets, shared team memory, provider automation creation, and the existing computer, channels and members sections.
+- MCP server management supports live add/edit/delete/reload, account aliases, custom instructions, lazy tool discovery and per-tool disabling. Service packs are configuration templates only and require a real user-supplied provider.
+- Local app publishing uses proposal → confirm → update/unpublish with verified ZIP artifacts rather than an unimplemented external deployment claim.

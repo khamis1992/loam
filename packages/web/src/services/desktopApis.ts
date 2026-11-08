@@ -1,6 +1,7 @@
 import { useRouter } from 'next/navigation';
 import { logout, closeSettings, type AppDispatch } from '@/store';
 import { getApiBase } from './rpc';
+import { readWebSessionToken, webLocalSignIn, writeWebSessionToken } from './webAuth';
 import type { UserInfoResponse } from '@shared/proto';
 
 export interface DesktopSyncInfo {
@@ -25,10 +26,23 @@ const noOpSync = () => undefined;
 
 export const desktopApis = {
   auth: {
-    getToken: () => invoke('auth', 'getToken') as Promise<string | null>,
-    localSignIn: () => invoke('auth', 'localSignIn') as Promise<boolean | undefined>,
-    setToken: (token: string) => invoke('auth', 'setToken', [token]),
-    removeToken: () => invoke('auth', 'removeToken'),
+    getToken: async (): Promise<string | null> => {
+      const token = await invoke('auth', 'getToken') as string | null | undefined;
+      return token || readWebSessionToken() || null;
+    },
+    localSignIn: async (): Promise<boolean> => {
+      const signedIn = await invoke('auth', 'localSignIn');
+      if (signedIn === true || isDesktop()) return signedIn === true;
+      return webLocalSignIn(getApiBase());
+    },
+    setToken: async (token: string) => {
+      await invoke('auth', 'setToken', [token]);
+      if (!isDesktop()) writeWebSessionToken(token);
+    },
+    removeToken: async () => {
+      await invoke('auth', 'removeToken');
+      if (!isDesktop()) writeWebSessionToken('');
+    },
     notifyLoginSuccess: () => invoke('auth', 'notifyLoginSuccess'),
   },
   system: {

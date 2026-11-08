@@ -154,6 +154,34 @@ describe("automation event triggers (D14)", () => {
     assert.equal(cap.status, 400);
   });
 
+  it("slack: verifies v0 signatures and claims each delivery only once", async () => {
+    const s = db.addSchedule("slack mentions", 3600, undefined, undefined, undefined, undefined, true, { trigger: "slack", webhookSecret: SECRET, githubEvents: ["app_mention"] });
+    const body = JSON.stringify({ type: "event_callback", event: { type: "app_mention", channel: "C42", text: "status?" } });
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const signature = `v0=${crypto.createHmac("sha256", SECRET).update(`v0:${timestamp}:${body}`).digest("hex")}`;
+    const headers = { "x-slack-request-timestamp": timestamp, "x-slack-signature": signature, "x-slack-request-id": "slack-delivery-1" };
+
+    const before = started.length;
+    const first = await callTrigger(s.id, body, headers);
+    assert.equal(first.status, 202);
+    assert.equal(first.body.started, true);
+    assert.equal(started.length, before + 1);
+    assert.match(started.at(-1)?.prompt ?? "", /\[Slack\] app_mention in C42: status\?/);
+
+    const second = await callTrigger(s.id, body, headers);
+    assert.equal(second.status, 202);
+    assert.equal(second.body.duplicate, true);
+    assert.equal(started.length, before + 1, "duplicate delivery must not start another run");
+  });
+
+  it("maps Teams, Linear, Sentry, PagerDuty and email payloads", () => {
+    assert.match(triggers.automationPayloadToPrompt("microsoftTeams", { type: "message", text: "deploy?" })!, /Microsoft Teams/);
+    assert.match(triggers.automationPayloadToPrompt("linear", { action: "update", data: { title: "Issue 7" } })!, /Issue 7/);
+    assert.match(triggers.automationPayloadToPrompt("sentry", { action: "created", event: { title: "TypeError", level: "error" } })!, /TypeError/);
+    assert.match(triggers.automationPayloadToPrompt("pagerduty", { event: "trigger", data: { title: "Database down", status: "triggered" } })!, /Database down/);
+    assert.match(triggers.automationPayloadToPrompt("email", { from: "a@example.test", subject: "Report", text: "Body" })!, /Report/);
+  });
+
   it("webhook secrets are never returned by the list projection", () => {
     const s = db.addSchedule("secret", 3600, undefined, undefined, undefined, undefined, true, { trigger: "webhook", webhookSecret: SECRET });
     const projected = db.publicSchedule(s);

@@ -1,6 +1,6 @@
 {
   "name": "loam",
-  "version": "0.5.59",
+  "version": "0.5.60",
   "private": true,
   "engines": {
     "node": ">=24.0.0"
@@ -36,6 +36,7 @@
     "check:loam-agents": "tsx src/scripts/check-loam-agents.ts",
     "check:loam-ancillary": "node src/scripts/check-loam-ancillary.mjs",
     "check:loam-e2e": "tsx src/scripts/check-loam-e2e.ts",
+    "check:agent-loam-e2e": "tsx src/scripts/check-agent-loam-e2e.ts",
     "check:loam-ui": "tsx src/scripts/check-loam-ui.mjs",
     "check:local-model": "tsx src/scripts/check-local-model.ts",
     "check:mcp": "tsx src/scripts/check-mcp.ts",
@@ -210,7 +211,7 @@
     "check:companions-voice": "node --import tsx src/scripts/check-voice-accuracy.ts",
     "verify:security": "npm run typecheck && npm run test:red && npm run test:scanners && npm run test:mobile && npm run test:enterprise && npm run test:mobile:scale && npm run test:enterprise:scale && npm run test:advanced && npm run test:catalog && npm run test:next && npm run test:engines && npm run check:red && npm run check:mobile && npm run check:enterprise && npm run check:mobile:scale && npm run check:enterprise:scale && npm run check:advanced && npm run check:catalog && npm run check:next && npm run check:engines && npm run check:security-asar",
     "verify": "npm run typecheck && npm run check:encoding && npm run check:docs && npm run check:eval && npm run check:orchestrator && npm run check:recovery && npm run check:modes && npm run check:codegraph && npm run check:orchestration && npm run check:swarm-lifecycle && npm run check:swarm-repair-order",
-    "verify:loam": "npm run verify && npm run check:isolation && npm run check:resume:http && npm run check:loam-agents && npm run check:loam-ui && npm run check:loam-ancillary && npm run check:loam-e2e && npm run check:qa-artifacts"
+    "verify:loam": "npm run verify && npm run check:isolation && npm run check:resume:http && npm run check:loam-agents && npm run check:loam-ui && npm run check:loam-ancillary && npm run check:loam-e2e && npm run check:agent-loam-e2e && npm run check:qa-artifacts"
   },
   "dependencies": {
     "@jitl/quickjs-singlefile-cjs-release-sync": "^0.32.0",

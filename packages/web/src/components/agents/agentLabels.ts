@@ -62,12 +62,12 @@ const AGENT_LABELS = {
     ar: 'الذاكرة',
   },
   memoryOn: {
-    en: 'Memory enabled (Loam execution)',
-    ar: 'الذاكرة مفعّلة (تنفيذ داخل Loam)',
+    en: 'Memory enabled (personal and shared)',
+    ar: 'الذاكرة مفعّلة (شخصية ومشتركة)',
   },
   memoryOff: {
-    en: 'Memory disabled (Chat only)',
-    ar: 'الذاكرة معطّلة (دردشة فقط)',
+    en: 'Memory disabled (no memory tools or context)',
+    ar: 'الذاكرة معطّلة (لا أدوات أو سياق ذاكرة)',
   },
   allServices: {
     en: 'All services',

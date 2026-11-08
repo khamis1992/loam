@@ -1,5 +1,6 @@
 import { database } from "../sqliteStore.js";
-import { createTask, getTask } from "../db.js";
+import { getTask } from "../db.js";
+import { taskForAgentMessage } from "../agentConversation.js";
 import { getAgent } from "../agents.js";
 import { log } from "../../log.js";
 import { TelegramChannel } from "./telegram.js";
@@ -142,12 +143,10 @@ export class ChannelRouter {
     const binding = findBinding(channel.name, chatId);
     if (!binding) return; // allowlist: chat id not bound -> ignore
     const agent = getAgent(binding.agentId);
-    if (!agent) return;
+    if (!agent || agent.archivedAt) return;
     const text = msg.text;
     if (!text.trim()) return;
-    // Existing task-creation path: the task carries the agent id, so it lands
-    // in that agent's permanent thread (one-thread-per-agent continuity).
-    const task = createTask(text, `${channel.name}: ${text.slice(0, 60)}`, null, binding.agentId);
+    const task = taskForAgentMessage(binding.agentId, text, `${channel.name}: ${text.slice(0, 60)}`);
     log.info(`channels: ${channel.name} inbound chat=${chatId} -> task=${task.id} agent=${binding.agentId}`);
     const runAgentTurn = this.deps.runAgentTurn;
     if (!runAgentTurn) return;

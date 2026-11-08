@@ -65,11 +65,20 @@ test("re-importing the identical pack is a no-op; a changed pack is refused", ()
   assert.throws(() => c.importPack(changed));
 });
 
-test("validatePack requires verifiedBy for official provenance and valid dates/labels", () => {
+test("validatePack requires two reviewers, source rights and exact-text hashes for official provenance", () => {
   const pack = readPack("01-civil-test.json");
   const bad = structuredClone(pack);
   delete bad.source.verifiedBy;
   assert.ok(validatePack(bad).some((e) => e.includes("verifiedBy")));
+  const sameReviewer = structuredClone(pack);
+  sameReviewer.source.secondVerifiedBy = sameReviewer.source.verifiedBy;
+  assert.ok(validatePack(sameReviewer).some((e) => e.includes("different people")));
+  const changedText = structuredClone(pack);
+  changedText.articles[0]!.text += " تغيير لم يراجعه الشخصان";
+  assert.ok(validatePack(changedText).some((e) => e.includes("reviewedTextSha256")));
+  const noRights = structuredClone(pack);
+  delete noRights.source.usageRights;
+  assert.ok(validatePack(noRights).some((e) => e.includes("usageRights")));
   const bad2 = structuredClone(pack);
   bad2.legislation.effectiveDate = "2090-02-30";
   assert.ok(validatePack(bad2).some((e) => e.includes("effectiveDate")));
@@ -82,10 +91,13 @@ test("validatePack requires verifiedBy for official provenance and valid dates/l
 test("correctVersionText keeps the avid, records who corrected it and reindexes", async () => {
   const c = loadFixtureCorpus();
   const avid = makeAvid(`${C}4`, "2090-04-01");
-  const v = c.correctVersionText(avid, "يجب تنفيذ العقد طبقاً لما اشتمل عليه وبطريقة تتفق مع ما يوجبه حسن النية والأمانة.", "مراجع الاختبار");
+  const corrected = "يجب تنفيذ العقد طبقاً لما اشتمل عليه وبطريقة تتفق مع ما يوجبه حسن النية والأمانة.";
+  assert.throws(() => c.correctVersionText(avid, corrected, "مراجع الاختبار", "مراجع الاختبار"), /different people/);
+  const v = c.correctVersionText(avid, corrected, "مراجع الاختبار", "المراجع الثاني");
   assert.equal(v.avid, avid);
   assert.ok(v.text.endsWith("والأمانة."));
   assert.equal(c.getVersion(avid)?.source.verifiedBy, "مراجع الاختبار");
+  assert.equal(c.getVersion(avid)?.source.secondVerifiedBy, "المراجع الثاني");
   const r = await searchLaw(c, "الأمانة", { asOf: "2092-01-01" });
   assert.equal(r.hits[0]?.avid, avid, "new wording is searchable");
 });

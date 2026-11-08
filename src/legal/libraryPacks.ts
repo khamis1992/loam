@@ -2,8 +2,8 @@
  * Convert the library's core-law Markdown files (NN_<slug>.md at the library
  * root) into DRAFT `loam-legal-pack/1` packs with provenance
  * `research_snapshot`: searchable through legal_search but never citable as
- * VERIFIED (corpusStore.ts). `verifiedBy` is always left empty — a person
- * upgrades a law to official provenance through the import screen.
+ * VERIFIED (corpusStore.ts). Verification fields are always left empty — two
+ * independent reviewers upgrade a law to official provenance through the import screen.
  *
  * Articles tagged ملغاة are not imported as current text (listed in
  * `skipped`); articles tagged معدلة keep the text shown on Al Meezan and are

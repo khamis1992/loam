@@ -4,8 +4,9 @@ import crypto from "node:crypto";
 import { DATA_DIR } from "../../config.js";
 import { log } from "../../log.js";
 import { database, transaction } from "../sqliteStore.js";
-import { newId, appendMessage, getTask, createTask } from "../db.js";
+import { newId, appendMessage, getTask } from "../db.js";
 import { getThread } from "../agentThreads.js";
+import { taskForAgentMessage } from "../agentConversation.js";
 import { getAgent, listAgents } from "../agents.js";
 import { BoundedMap } from "../../memory/cache.js";
 import { registerCacheStats } from "../../memory/stats.js";
@@ -217,10 +218,12 @@ export function executeGrokbotTask(input: { agentRef?: unknown; text?: unknown; 
   }
   const agentId = resolveGrokbotAgentRef(typeof input.agentRef === "string" ? input.agentRef : "");
   if (!agentId) return { status: 404, body: { error: "no grokbot agent matches agentRef" } };
+  const agent = getAgent(agentId);
+  if (!agent || agent.archivedAt) return { status: 409, body: { error: "agent is unavailable or archived" } };
   const runTask = runTaskRef();
   if (!runTask) return { status: 503, body: { error: "run engine is not ready" } };
-  const task = createTask(input.text.trim(), "Grok Bot task", null, agentId);
-  const agentName = getAgent(agentId)?.name ?? agentId;
+  const task = taskForAgentMessage(agentId, input.text.trim(), "Grok Bot task");
+  const agentName = agent.name;
   // Fire-and-forget like the remote trigger; failures land in the runtime log.
   void runTask({ taskId: task.id, prompt: input.text.trim(), agentId, emit: () => {} }).catch((e) =>
     log.warn(`grokbot bridge: run failed for agent ${agentName}: ${e instanceof Error ? e.message : String(e)}`),

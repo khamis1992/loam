@@ -21,6 +21,7 @@ export function parsePackResource(value: string): PackResource | null {
 export function packResourceTarget(resource: PackResource, path: string): WorkspaceOpenTarget | null {
   if (resource.packId === 'loam-slides') return { kind: 'craft', craftApp: 'slides', path };
   if (resource.packId === 'loam-video') return { kind: 'loam-video', path };
+  if (resource.packId === 'loam-desktop') return { kind: 'electron-window', path };
   if (resource.packId === 'loam-image') return { kind: 'craft', craftApp: 'photo', path };
   if (resource.packId === 'loam-localfile' || resource.packId === 'loam-office') {
     const craftApp = craftAppForExtension(path.split('.').pop() ?? '');

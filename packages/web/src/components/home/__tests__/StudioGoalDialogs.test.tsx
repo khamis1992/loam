@@ -50,6 +50,14 @@ describe('StudioPickerDialog', () => {
 });
 
 describe('StudioGoalDialog', () => {
+  it('shows local desktop execution and the five usable desktop briefs', () => {
+    const goal = BUILD_GOALS.find((item) => item.id === 'desktop-app')!;
+    render(<StudioGoalDialog goal={goal} onClose={vi.fn()} onLaunch={vi.fn()} />);
+    expect(screen.getByTestId('desktop-goal-this-pc')).toHaveTextContent('This PC');
+    expect(goal.suggestions).toHaveLength(5);
+    for (const suggestion of goal.suggestions) expect(screen.getByText(suggestion)).toBeInTheDocument();
+  });
+
   it('launches a suggested brief with the selected visualization options', async () => {
     const onLaunch = vi.fn().mockResolvedValue(undefined);
     const goal = CREATE_GOALS.find((item) => item.id === 'visualization')!;

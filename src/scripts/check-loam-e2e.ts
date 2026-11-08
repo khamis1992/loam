@@ -26,7 +26,7 @@ const model = http.createServer(async (req, res) => {
   }
   else if(system.includes("ONE executed plan step")) content=JSON.stringify({verdict:"pass",reason:"Document saved in task workspace"});
   else if(messages.at(-1)?.role === "tool") content="تم إنشاء مستند Loam بنجاح داخل مساحة المهمة.";
-  else if(prompt.includes("Use loam_document")) { nativeCalls++; tool_calls=[{function:{name:"loam_document",arguments:{path:"report.md",title:"Loam E2E",content:"Verified integration document",format:"markdown"}}}]; }
+  else if(prompt.includes("Use loam_document") || prompt.includes("Loam Studio:")) { nativeCalls++; tool_calls=[{function:{name:"file_write",arguments:{path:"report.md",content:"Verified integration document"}}}]; }
   else { content="No reusable skill found."; }
   res.setHeader("content-type","application/x-ndjson");res.end(JSON.stringify({model:"test-model",message:{role:"assistant",content,tool_calls},done:true})+"\n");
 });
@@ -71,7 +71,7 @@ try {
   browser=await chromium.launch({headless:true});
   const page=await browser.newPage({viewport:{width:1440,height:1000}});
   const errors:string[]=[];page.on("pageerror",e=>errors.push(e.message));
-  await page.goto(base+"/#/modes/write", { waitUntil: "domcontentloaded" });await page.locator("#modeForm").waitFor();
+  await page.goto(base+"/index.html#/modes/write", { waitUntil: "domcontentloaded" });await page.locator("#modeForm").waitFor();
   await page.locator("#modeForm [data-field]").first().fill("اكتب تقرير اختبار التكامل");
   await page.locator("#uploadPicker").setInputFiles({name:"private-first.txt",mimeType:"text/plain",buffer:Buffer.from("PRIVATE-FIRST")});
   await page.locator("#modeAttachments .attachment").waitFor();
@@ -80,13 +80,13 @@ try {
   const firstId=page.url().split("/tasks/")[1]!;
   try {
     await page.locator("#chatStatus").filter({hasText:"مكتملة"}).waitFor({timeout:90000});
+    await page.locator("#taskResult").getByText("تم إنشاء مستند Loam بنجاح داخل مساحة المهمة.").waitFor();
   } catch (error) {
     const snapshot = await (await fetch(base+"/api/tasks/"+firstId)).json();
     await page.screenshot({path:path.join(tmp,"e2e-failure.png")});
-    console.error(JSON.stringify({ status: await page.locator("#chatStatus").innerText(), snapshot, nativeCalls, logs: logs.slice(-4000), screenshot: tmp }));
+    console.error(JSON.stringify({ status: await page.locator("#chatStatus").innerText(), result: await page.locator("#taskResult").innerText(), snapshot, nativeCalls, logs: logs.slice(-4000), screenshot: tmp }));
     throw error;
   }
-  await page.locator("#taskResult").getByText("تم إنشاء مستند Loam بنجاح داخل مساحة المهمة.").waitFor();
   await page.locator('#taskFiles [data-output="report.md"]').waitFor();
   await page.locator('#taskFiles [data-output="report.md"]').click();
   await page.locator("#fileView pre").filter({hasText:"Verified integration document"}).waitFor();
@@ -94,7 +94,7 @@ try {
   assert.equal(first.task.mode,"write");assert.match(first.task.title,/اختبار التكامل/);assert.doesNotMatch(first.task.title,/مهمة جديدة/);assert.ok(nativeCalls >= 1);
   assert.match(fs.readFileSync(path.join(first.task.workspace,"report.md"),"utf8"),/Verified integration/);
   await page.screenshot({path:path.join(tmp,"actual-server-complete.png")});
-  await page.goto(base+"/#/modes/data");await page.locator("#modeForm").waitFor();
+  await page.goto(base+"/index.html#/modes/data");await page.locator("#modeForm").waitFor();
   const draftResponse=page.waitForResponse(r=>r.url().endsWith("/api/tasks/draft") && r.request().method()==="POST");
   await page.locator("#uploadPicker").setInputFiles({name:"second.csv",mimeType:"text/csv",buffer:Buffer.from("name,value\na,2")});
   const second=(await (await draftResponse).json()) as {task:{id:string;workspace:string;mode:string}};
@@ -103,7 +103,7 @@ try {
   const files=await (await fetch(base+"/api/files?taskId="+second.task.id)).json() as {entries:Array<{path:string}>};
   assert.ok(files.entries.some(e=>e.path.includes("second.csv")));
   assert.ok(files.entries.every(e=>!e.path.includes("report.md")&&!e.path.includes("private-first")));
-  await page.goto(base+"/#/tasks/"+second.task.id);await page.locator("#chatTitle").waitFor();await page.locator("#taskWorkspace").click();
+  await page.goto(base+"/index.html#/tasks/"+second.task.id);await page.locator("#chatTitle").waitFor();await page.locator("#taskWorkspace").click();
   await page.locator("#filesList [data-file]").waitFor();assert.doesNotMatch(await page.locator("#filesList").innerText(),/report.md|private-first/);
   assert.deepEqual(errors,[]);
   console.log("PASS real source HTTP + Edge browser: mode -> isolated upload -> native tool execution -> persisted result/output -> new mode isolated files; screenshots: "+tmp);

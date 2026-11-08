@@ -62,3 +62,15 @@ test("hybrid mode fuses an embedder and applies a reranker without reordering in
   assert.ok(seen > 0);
   assert.equal(r.hits[0]?.articleKey, `${C}4`);
 });
+
+test("embedding and reranking degradation is explicit and never changes the configured model silently", async () => {
+  const corpus = loadFixtureCorpus();
+  const embedder: Embedder = { embed: async () => { throw new Error("offline"); } };
+  const reranker: Reranker = { score: async () => { throw new Error("offline"); } };
+  const result = await searchLaw(corpus, "التعويض الاتفاقي", { asOf: "2092-01-01", embedder, embedModel: "test-embed", reranker });
+  assert.equal(result.mode, "lexical");
+  assert.deepEqual(result.warnings.map((warning) => warning.code), ["EMBEDDER_UNAVAILABLE", "RERANKER_UNAVAILABLE"]);
+  const invalid = await searchLaw(corpus, "التعويض الاتفاقي", { asOf: "2092-01-01", reranker: { score: async () => [Number.NaN] } });
+  assert.deepEqual(invalid.warnings.map((warning) => warning.code), ["RERANKER_INVALID_RESULT"]);
+  corpus.close();
+});

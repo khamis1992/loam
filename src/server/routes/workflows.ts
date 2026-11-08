@@ -16,6 +16,8 @@ import { loamWorkflowPorts } from "../../orchestration/workflows/loamPorts.js";
 import { seedWorkflowTemplates } from "../../orchestration/workflows/templates.js";
 import { isCloudModel } from "../../llm/cloudModel.js";
 import type { WorkflowDef } from "../../orchestration/workflows/types.js";
+import { parseWorkflowText, workflowFromCursorTrack } from "../workflowImport.js";
+import { webTools } from "../../tools/web.js";
 
 export interface WorkflowRouteDeps {
   cfg: Config;
@@ -49,6 +51,27 @@ export async function handleWorkflowRoutes(req: http.IncomingMessage, res: http.
   res.setHeader("cache-control", "no-store");
   const crossOrigin = (origin: string | undefined) => (!!origin && origin !== `http://${req.headers.host}`) || req.headers["sec-fetch-site"] === "cross-site";
   try {
+    if (p === "/api/workflows/import") {
+      if (req.method !== "POST") return reply(405, { error: "Method not allowed" });
+      const body = await readJson(req) as { text?: unknown; url?: unknown; recordingPath?: unknown };
+      let definition: WorkflowDef;
+      if (typeof body.recordingPath === "string" && body.recordingPath.trim()) {
+        definition = workflowFromCursorTrack(body.recordingPath, deps.cfg.workspace);
+      } else {
+        let text = typeof body.text === "string" ? body.text : "";
+        if (!text.trim() && typeof body.url === "string" && body.url.trim()) {
+          const fetchTool = webTools.find((tool) => tool.name === "web_fetch")!;
+          const result = await fetchTool.run({ url: body.url, raw: true, maxBytes: 80_000 }, { cfg: deps.cfg, workspace: deps.cfg.workspace, emit: () => {} });
+          if (!result.ok) return reply(400, { error: result.content });
+          text = result.content;
+        }
+        definition = parseWorkflowText(text);
+      }
+      const errors = validateWorkflow(definition, { maxNodes: deps.cfg.orchestration?.workflows.maxNodes ?? 64, isCloudModel: (model) => isCloudModel(deps.cfg, model) });
+      if (errors.length > 0) return reply(400, { errors });
+      saveWorkflow(definition, "user");
+      return reply(200, { ok: true, workflow: definition });
+    }
     if (p === "/api/workflows") {
       if (req.method === "GET") {
         seedWorkflowTemplates();

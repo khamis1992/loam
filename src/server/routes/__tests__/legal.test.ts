@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { startMockServer, type MockServer } from "../../../scripts/legal-mock-server.js";
-import { fillAvids } from "../../../legal/__tests__/helpers.js";
+import { attestPackForTest, fillAvids } from "../../../legal/__tests__/helpers.js";
+import type { LegalPack } from "../../../legal/corpusStore.js";
 import JSZip from "jszip";
 import { Document, Packer, Paragraph } from "docx";
+import type { EnterpriseIdentity } from "../../../security/enterprise/policy.js";
 
-async function call(srv: MockServer, method: string, p: string, body?: unknown, token = srv.token): Promise<{ status: number; json: Record<string, unknown> }> {
+async function call(srv: MockServer, method: string, p: string, body?: unknown, token = srv.token, bearer?: string): Promise<{ status: number; json: Record<string, unknown> }> {
   const res = await fetch(`${srv.url}${p}`, {
-    method, headers: { "x-loam-local-token": token, ...(body !== undefined ? { "content-type": "application/json" } : {}) },
+    method, headers: { "x-loam-local-token": token, ...(bearer ? { authorization: `Bearer ${bearer}` } : {}), ...(body !== undefined ? { "content-type": "application/json" } : {}) },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
   return { status: res.status, json: (await res.json()) as Record<string, unknown> };
@@ -38,7 +40,7 @@ test("mock server: token, status, search, verify, matters, egress, review gate, 
     assert.equal(created.status, 201);
     const matter = created.json.matter as { id: string; egress: string };
     assert.equal(matter.egress, "local_only");
-    srv.ctx.corpus.db.prepare("UPDATE legislations SET source_json=json_set(source_json,'$.verifiedAt','2092-01-01')").run();
+    srv.ctx.corpus.db.prepare("UPDATE legislations SET source_json=json_set(source_json,'$.verifiedAt','2092-01-01','$.secondVerifiedAt','2092-01-01')").run();
     srv.ctx.corpus.setCoverageManifest([{ legKey: "law/2090/1", titleAr: "القانون المدني الاختباري", requiredFor: ["defense_memo"] }]);
     assert.equal((await call(srv, "PATCH", `/api/legal/matters/${matter.id}`, { egress: "cloud_full" })).status, 400, "confirmation required");
     const widened = await call(srv, "PATCH", `/api/legal/matters/${matter.id}`, { egress: "cloud_redacted", confirmEgress: true });
@@ -60,6 +62,8 @@ test("mock server: token, status, search, verify, matters, egress, review gate, 
     srv.ctx.matters.saveReview(rec);
     assert.equal((await call(srv, "POST", `/api/legal/reviews/${rec.id}/approve`, { text, reviewerName: "x", licenseNo: "1" })).status, 409, "must be submitted first");
     assert.equal((await call(srv, "POST", `/api/legal/reviews/${rec.id}/submit`, {})).status, 200);
+    const assigned = await call(srv, "POST", `/api/legal/reviews/${rec.id}/assign`, { reviewerName: "المحامي المختبر", licenseNo: "QA-0000" });
+    assert.equal((assigned.json.review as { assignedReviewer: { name: string } }).assignedReviewer.name, "المحامي المختبر");
     assert.equal((await call(srv, "POST", `/api/legal/reviews/${rec.id}/approve`, { text: `${text} تعديل`, reviewerName: "x", licenseNo: "1" })).status, 409, "changed text");
     const ok = await call(srv, "POST", `/api/legal/reviews/${rec.id}/approve`, { text, reviewerName: "المحامي المختبر", licenseNo: "QA-0000" });
     assert.equal((ok.json.review as { state: string }).state, "approved");
@@ -94,7 +98,32 @@ test("matter document upload builds an evidence workspace", async () => {
   }
 });
 
-test("import draft + import: refuses unsigned official packs, accepts a signed one", async () => {
+test("signed Legal identities enforce roles and matter ownership through HTTP", async () => {
+  const srv = await startMockServer(0, "t");
+  try {
+    srv.ctx.identity = {
+      tenantId: "qatar",
+      verifier: { verify: async (token): Promise<EnterpriseIdentity> => {
+        if (!["owner", "other", "admin"].includes(token)) throw new Error("invalid");
+        return { id: token, tenantIds: ["qatar"], roles: [token === "admin" ? "admin" : "analyst"], authMethod: "oidc", name: `User ${token}`, licenseNo: `QA-${token}` };
+      } },
+    };
+    assert.equal((await call(srv, "GET", "/api/legal/status")).status, 401);
+    assert.equal((await call(srv, "GET", "/api/legal/status", undefined, srv.token, "owner")).status, 200);
+    const created = await call(srv, "POST", "/api/legal/matters", { title: "مسألة مالك", kind: "research", ownerId: "spoofed" }, srv.token, "owner");
+    const matter = created.json.matter as { id: string; ownerId: string };
+    assert.equal(matter.ownerId, "owner");
+    assert.equal((await call(srv, "GET", `/api/legal/matters/${matter.id}`, undefined, srv.token, "other")).status, 403);
+    assert.equal(((await call(srv, "GET", "/api/legal/matters", undefined, srv.token, "other")).json.matters as unknown[]).length, 0);
+    assert.equal((await call(srv, "GET", `/api/legal/matters/${matter.id}`, undefined, srv.token, "admin")).status, 200);
+    assert.equal((await call(srv, "PUT", "/api/legal/coverage/manifest", { entries: [] }, srv.token, "owner")).status, 403);
+    assert.equal((await call(srv, "PUT", "/api/legal/coverage/manifest", { entries: [] }, srv.token, "admin")).status, 200);
+  } finally {
+    await srv.close();
+  }
+});
+
+test("import draft + import: refuses unattested official packs, accepts two independent attestations", async () => {
   const srv = await startMockServer(0, "t");
   try {
     const raw = "المادة 1\nتسري أحكام هذا القانون الاختباري على جميع العقود الإلكترونية.\nالمادة 2\nيُعمل به من تاريخ نشره.";
@@ -102,9 +131,9 @@ test("import draft + import: refuses unsigned official packs, accepts a signed o
     const source = { provenance: "official_gazette", retrievedAt: "2096-01-02" };
     const d = await call(srv, "POST", "/api/legal/import/draft", { legislation, source, rawText: raw });
     assert.ok((d.json.errors as string[]).some((e) => e.includes("verifiedBy")));
-    const pack = d.json.pack as Record<string, unknown>;
+    const pack = d.json.pack as LegalPack;
     assert.equal((await call(srv, "POST", "/api/legal/import", { pack })).status, 422);
-    const signed = { ...pack, source: { ...source, verifiedBy: "مراجع" } };
+    const signed = attestPackForTest(pack);
     const imp = await call(srv, "POST", "/api/legal/import", { pack: signed });
     assert.equal(imp.status, 200);
     assert.equal(imp.json.articles, 2);
@@ -135,7 +164,7 @@ test("original DOCX redline is produced through the API", async () => {
 test("DOCX artifact verification, lawyer approval and exact-byte export are fail closed", async () => {
   const srv = await startMockServer(0, "t", () => new Date("2092-01-10T08:00:00Z"));
   try {
-    srv.ctx.corpus.db.prepare("UPDATE legislations SET source_json=json_set(source_json,'$.verifiedAt','2092-01-01')").run();
+    srv.ctx.corpus.db.prepare("UPDATE legislations SET source_json=json_set(source_json,'$.verifiedAt','2092-01-01','$.secondVerifiedAt','2092-01-01')").run();
     srv.ctx.corpus.setCoverageManifest([{ legKey: "law/2090/1", titleAr: "القانون المدني الاختباري", requiredFor: ["contract_review"] }]);
     const matter = (await call(srv, "POST", "/api/legal/matters", { title: "اعتماد عقد", kind: "contract_review", asOf: "2092-01-01" })).json.matter as { id: string };
     const citation = fillAvids("«يجب تنفيذ العقد طبقاً لما اشتمل عليه وبطريقة تتفق مع ما يوجبه حسن النية.» ⟦cite:{{law/2090/1:body:4@2090-04-01}}⟧");
@@ -198,6 +227,16 @@ test("DOCX artifact verification, lawyer approval and exact-byte export are fail
     const cipher = new FieldCipher(srv.ctx.keys);
     srv.ctx.matters.db.prepare("UPDATE approval_artifacts SET data_enc=? WHERE id=?").run(cipher.seal(changed.toString("base64"), `approval-artifact:${artifact.id}`), artifact.id);
     assert.equal((await call(srv, "GET", `/api/legal/reviews/${review.id}/export`)).status, 409, "stored bytes must be hashed again at export");
+
+    const unverifiedZip = await JSZip.loadAsync(bytes);
+    const unverifiedXml = await unverifiedZip.file("word/document.xml")!.async("string");
+    unverifiedZip.file("word/document.xml", unverifiedXml.replace("</w:body>", "<w:p><w:r><w:t>[غير موثّق — يحتاج بحث محامٍ]</w:t></w:r></w:p></w:body>"));
+    const unverifiedData = (await unverifiedZip.generateAsync({ type: "nodebuffer" })).toString("base64");
+    const unverified = await call(srv, "POST", "/api/legal/artifacts/verify", { matterId: matter.id, documentName: "redline-unverified.docx", dataBase64: unverifiedData });
+    assert.equal((unverified.json.report as { counts: { unverifiedMarkers: number } }).counts.unverifiedMarkers, 1);
+    const unverifiedReview = unverified.json.review as { id: string };
+    assert.equal((await call(srv, "POST", `/api/legal/reviews/${unverifiedReview.id}/submit`, {})).status, 200);
+    assert.equal((await call(srv, "POST", `/api/legal/reviews/${unverifiedReview.id}/approve-artifact`, { dataBase64: unverifiedData, reviewerName: "مراجع", licenseNo: "QA-1" })).status, 409, "artifact approval must reject open unverified markers");
 
     const badDocx = await Packer.toBuffer(new Document({ sections: [{ children: [new Paragraph("«نص مختلق» ⟦cite:QL-ffffffffff⟧")] }] }));
     const bad = await call(srv, "POST", "/api/legal/artifacts/verify", { matterId: matter.id, documentName: "redline-invalid.docx", dataBase64: badDocx.toString("base64") });

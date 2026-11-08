@@ -54,13 +54,14 @@ import type { MattersStore, NewMatter } from "../../legal/mattersStore.js";
 import { qatarToday } from "../../legal/mattersStore.js";
 import { checkStructure, coverSheetAr, internalLeaks, type DocKind } from "../../legal/memo.js";
 import { searchLaw } from "../../legal/retrieval.js";
-import { acceptReviewWarning, addReviewComment, approve, approveArtifact, canExportArtifact, markVerified, newReview, onContentChanged, reject, ReviewError, submitForReview } from "../../legal/review.js";
+import { acceptReviewWarning, addReviewComment, approve, approveArtifact, assignReview, canExportArtifact, markVerified, newReview, onContentChanged, reject, ReviewError, submitForReview } from "../../legal/review.js";
 import { newDocumentVersion } from "../../legal/review/documentVersion.js";
 import { reviewParagraphs } from "../../legal/review/paragraphs.js";
 import { buildReviewPackage } from "../../legal/review/reviewPackage.js";
 import type { Matter } from "../../legal/types.js";
 import { verifyDocument } from "../../legal/verify.js";
 import { LegalRunManager } from "../../legal/pipeline/manager.js";
+import { assertMatterAccess, legalActor, LegalAccessError, reviewerFor, type LegalIdentityProvider } from "../../legal/security/access.js";
 
 export interface LegalRouteContext {
   corpus: LegalCorpus;
@@ -69,6 +70,7 @@ export interface LegalRouteContext {
   enabled: boolean;
   /** Same provider the MattersStore uses; probed for /status. */
   keys: KeyProvider;
+  identity?: LegalIdentityProvider;
   vault: LegalFileVault;
   model: { port: LegalModelPort };
   buildDefense(matterId: string): ReturnType<typeof buildDefensePackage>;
@@ -77,6 +79,11 @@ export interface LegalRouteContext {
   importDocument(matterId: string, absPath: string): Promise<EvidenceAnalysis>;
   /** Qatar law research library (unverified, inferred status tags). */
   library?: QatarLawLibrary;
+  createBackup?(passphrase: string): { fileName: string; files: number };
+  restoreBackup?(fileName: string, passphrase: string): { directory: string; restored: string[] };
+  listBackups?(): string[];
+  purgeExpired?(): string[];
+  createAuditAnchor?(): { fileName: string; anchor: unknown };
   now?: () => Date;
 }
 
@@ -126,6 +133,21 @@ const s = (v: unknown): string => (typeof v === "string" ? v : "");
 
 function matterJson(m: Matter): Matter { return m; }
 
+function inspectArtifactText(ctx: LegalRouteContext, matter: Matter, documentName: string, text: string) {
+  const report = verifyDocument(ctx.corpus, text, { asOf: matter.asOf, matterKind: matter.kind });
+  const structure = documentName.startsWith("redline")
+    ? (report.renderedDocument ? internalLeaks(report.renderedDocument) : [])
+    : [...checkStructure(matter.kind === "contract_review" ? "contract_report" : matter.kind === "defense_memo" ? "defense_memo" : "opinion", text), ...(report.renderedDocument ? internalLeaks(report.renderedDocument) : [])];
+  return { report, structure };
+}
+
+function matterFor(ctx: LegalRouteContext, actor: Awaited<ReturnType<typeof legalActor>>, id: string): Matter {
+  const matter = ctx.matters.getMatter(id);
+  if (!matter) throw new HttpError(404, "matter not found");
+  assertMatterAccess(matter, actor);
+  return matter;
+}
+
 export async function handleLegalRoutes(req: http.IncomingMessage, res: http.ServerResponse, p: string, ctx: LegalRouteContext): Promise<boolean> {
   if (!p.startsWith("/api/legal")) return false;
   if (req.headers.origin === "app://agent") {
@@ -145,12 +167,14 @@ export async function handleLegalRoutes(req: http.IncomingMessage, res: http.Ser
   const asOf = isDate(asOfParam) ? asOfParam : today;
   const seg = p.split("/").filter(Boolean).slice(2).map(decodeURIComponent); // after "api","legal"
   try {
+    const actor = await legalActor(req, ctx.identity, method, seg);
     if (seg.length === 1 && seg[0] === "status" && method === "GET") {
       let keyAvailable = true;
       try { ctx.keys.key(); } catch (e) { if (e instanceof LegalKeyUnavailableError) keyAvailable = false; else throw e; }
       sendJson(res, 200, {
         enabled: ctx.enabled, today, corpus: ctx.corpus.stats(), keyAvailable,
         localModel: ctx.egress.localModel, localModelApproved: isApprovedLocal(ctx.egress.localModel, ctx.egress),
+        identity: { id: actor.id, roles: actor.roles, authMethod: actor.authMethod },
       });
       return true;
     }
@@ -248,7 +272,7 @@ export async function handleLegalRoutes(req: http.IncomingMessage, res: http.Ser
       const body = await readJson(req);
       const text = s(body.text);
       if (!text.trim()) throw new HttpError(400, "text is required");
-      const matter = s(body.matterId) ? ctx.matters.getMatter(s(body.matterId)) : undefined;
+      const matter = s(body.matterId) ? matterFor(ctx, actor, s(body.matterId)) : undefined;
       const at = isDate(s(body.asOf)) ? s(body.asOf) : matter?.asOf ?? today;
       const report = verifyDocument(ctx.corpus, text, { asOf: at, ...(matter ? { matterKind: matter.kind } : {}) });
       const kind = s(body.kind) as DocKind;
@@ -271,23 +295,26 @@ export async function handleLegalRoutes(req: http.IncomingMessage, res: http.Ser
 
     // ---- matters ------------------------------------------------------------
     if (seg[0] === "matters") {
-      if (seg.length === 1 && method === "GET") { sendJson(res, 200, { matters: ctx.matters.listMatters().map(matterJson) }); return true; }
+      if (seg.length === 1 && method === "GET") {
+        const matters = ctx.matters.listMatters().filter((matter) => { try { assertMatterAccess(matter, actor); return true; } catch { return false; } });
+        sendJson(res, 200, { matters: matters.map(matterJson) }); return true;
+      }
       if (seg.length === 1 && method === "POST") {
         const body = await readJson(req);
-        sendJson(res, 201, { matter: ctx.matters.createMatter(body as unknown as NewMatter, "user") });
+        const { ownerId: _owner, assignedReviewerIds: _assigned, ...input } = body;
+        sendJson(res, 201, { matter: ctx.matters.createMatter({ ...input, ownerId: actor.id } as unknown as NewMatter, actor.id) });
         return true;
       }
-      const matter = ctx.matters.getMatter(seg[1] ?? "");
-      if (!matter) throw new HttpError(404, "matter not found");
+      const matter = matterFor(ctx, actor, seg[1] ?? "");
       if (seg.length === 2 && method === "GET") { sendJson(res, 200, { matter, contracts: ctx.matters.listContracts(matter.id), reviews: ctx.matters.reviewsOf(matter.id) }); return true; }
       if (seg.length === 2 && method === "PATCH") {
         const body = await readJson(req);
         if (body.egress !== undefined && body.confirmEgress !== true) throw new HttpError(400, "changing egress requires confirmEgress: true from the confirmation dialog");
-        const { confirmEgress: _c, ...patch } = body;
-        sendJson(res, 200, { matter: ctx.matters.updateMatter(matter.id, patch as Partial<Matter>, "user", true) });
+        const { confirmEgress: _c, ownerId: _owner, assignedReviewerIds: _assigned, id: _id, createdAt: _created, updatedAt: _updated, ...patch } = body;
+        sendJson(res, 200, { matter: ctx.matters.updateMatter(matter.id, patch as Partial<Matter>, actor.id, true) });
         return true;
       }
-      if (seg.length === 2 && method === "DELETE") { sendJson(res, 200, { deleted: ctx.matters.deleteMatter(matter.id, "user") }); return true; }
+      if (seg.length === 2 && method === "DELETE") { sendJson(res, 200, { deleted: ctx.matters.deleteMatter(matter.id, actor.id) }); return true; }
       if (seg.length === 3 && seg[2] === "runs" && method === "POST") {
         const body = await readJson(req, 10_000_000);
         const kind = s(body.kind);
@@ -410,12 +437,13 @@ export async function handleLegalRoutes(req: http.IncomingMessage, res: http.Ser
       if (seg.length === 1 && method === "GET") {
         const matterId = url.searchParams.get("matterId");
         if (!matterId) throw new HttpError(400, "matterId is required");
-        if (!ctx.matters.getMatter(matterId)) throw new HttpError(404, "matter not found");
+        if (!matterFor(ctx, actor, matterId)) throw new HttpError(404, "matter not found");
         sendJson(res, 200, { runs: runsFor(ctx).list(matterId) });
         return true;
       }
       const run = runsFor(ctx).get(seg[1] ?? "");
       if (!run) throw new HttpError(404, "run not found");
+      matterFor(ctx, actor, run.matterId);
       if (seg.length === 2 && method === "GET") { sendJson(res, 200, { run }); return true; }
       if (seg.length === 3 && method === "POST") {
         if (seg[2] === "cancel") sendJson(res, 200, { run: await runsFor(ctx).cancel(run.id) });
@@ -429,7 +457,7 @@ export async function handleLegalRoutes(req: http.IncomingMessage, res: http.Ser
 
     if (seg.length === 2 && seg[0] === "artifacts" && seg[1] === "verify" && method === "POST") {
       const body = await readJson(req, 30_000_000);
-      const matter = ctx.matters.getMatter(s(body.matterId));
+      const matter = matterFor(ctx, actor, s(body.matterId));
       if (!matter) throw new HttpError(404, "matter not found");
       const data = Buffer.from(s(body.dataBase64), "base64");
       if (data.length === 0) throw new HttpError(400, "artifact is empty");
@@ -447,10 +475,7 @@ export async function handleLegalRoutes(req: http.IncomingMessage, res: http.Ser
         fs.rmSync(temp, { recursive: true, force: true });
       }
       if (!text.trim()) throw new HttpError(400, "artifact text is empty");
-      const report = verifyDocument(ctx.corpus, text, { asOf: matter.asOf, matterKind: matter.kind });
-      const structure = documentName.startsWith("redline")
-        ? (report.renderedDocument ? internalLeaks(report.renderedDocument) : [])
-        : [...checkStructure(matter.kind === "contract_review" ? "contract_report" : matter.kind === "defense_memo" ? "defense_memo" : "opinion", text), ...(report.renderedDocument ? internalLeaks(report.renderedDocument) : [])];
+      const { report, structure } = inspectArtifactText(ctx, matter, documentName, text);
       const contentSha256 = crypto.createHash("sha256").update(data).digest("hex");
       report.documentSha256 = contentSha256;
       const at = (ctx.now?.() ?? new Date()).toISOString();
@@ -471,7 +496,7 @@ export async function handleLegalRoutes(req: http.IncomingMessage, res: http.Ser
     if (seg[0] === "reviews" && seg.length === 3 && seg[2] === "review-package" && method === "GET") {
       const rec = ctx.matters.getReview(seg[1]!);
       if (!rec) throw new HttpError(404, "review not found");
-      const matter = ctx.matters.getMatter(rec.matterId);
+      const matter = matterFor(ctx, actor, rec.matterId);
       if (!matter) throw new HttpError(404, "matter not found");
       const at = (ctx.now?.() ?? new Date()).toISOString();
       const contents = buildReviewPackage(matter, rec, ctx.matters.approvals.latest(rec.id), at);
@@ -479,34 +504,53 @@ export async function handleLegalRoutes(req: http.IncomingMessage, res: http.Ser
       sendJson(res, 200, { fileName: `${rec.documentName.replace(/\.docx$/i, "")}.review.json`, dataBase64: Buffer.from(contents, "utf8").toString("base64"), internal: true });
       return true;
     }
+    if (seg[0] === "reviews" && seg.length === 3 && seg[2] === "assign" && method === "POST") {
+      const rec = ctx.matters.getReview(seg[1]!);
+      if (!rec) throw new HttpError(404, "review not found");
+      const matter = matterFor(ctx, actor, rec.matterId);
+      const body = await readJson(req);
+      const reviewer = reviewerFor(actor, body);
+      const at = (ctx.now?.() ?? new Date()).toISOString();
+      const next = assignReview(rec, reviewer, at);
+      if (actor.authMethod !== "local") ctx.matters.updateMatter(matter.id, { assignedReviewerIds: [...new Set([...(matter.assignedReviewerIds ?? []), actor.id])] }, actor.id, true);
+      ctx.matters.saveReview(next);
+      ctx.matters.audit.append(`${reviewer.name} (${reviewer.licenseNo})`, "review.assign", rec.matterId, rec.documentName, { reviewId: rec.id });
+      sendJson(res, 200, { review: next });
+      return true;
+    }
     if (seg[0] === "reviews" && seg.length === 3 && seg[2] === "comments" && method === "POST") {
       const rec = ctx.matters.getReview(seg[1]!);
       if (!rec) throw new HttpError(404, "review not found");
+      matterFor(ctx, actor, rec.matterId);
       const body = await readJson(req);
+      const reviewer = reviewerFor(actor, body);
       const anchor = (body.anchor ?? {}) as Record<string, unknown>;
       const paragraph = reviewParagraphs(rec.sourceText ?? "").find((item) => item.start === Number(anchor.start) && item.end === Number(anchor.end) && item.quote === s(anchor.quote));
       if (!paragraph) throw new ReviewError("comment anchor does not match the verified document");
       const at = (ctx.now?.() ?? new Date()).toISOString();
-      const next = addReviewComment(rec, { ...paragraph, body: s(body.body) }, { name: s(body.reviewerName), licenseNo: s(body.licenseNo) }, at);
+      const next = addReviewComment(rec, { ...paragraph, body: s(body.body) }, reviewer, at);
       ctx.matters.saveReview(next);
-      ctx.matters.audit.append(`${s(body.reviewerName)} (${s(body.licenseNo)})`, "review.comment", rec.matterId, rec.documentName, { commentId: next.comments.at(-1)!.id, start: paragraph.start, end: paragraph.end });
+      ctx.matters.audit.append(`${reviewer.name} (${reviewer.licenseNo})`, "review.comment", rec.matterId, rec.documentName, { commentId: next.comments.at(-1)!.id, start: paragraph.start, end: paragraph.end });
       sendJson(res, 200, { review: next });
       return true;
     }
     if (seg[0] === "reviews" && seg.length === 3 && seg[2] === "accept-warning" && method === "POST") {
       const rec = ctx.matters.getReview(seg[1]!);
       if (!rec) throw new HttpError(404, "review not found");
+      matterFor(ctx, actor, rec.matterId);
       const body = await readJson(req);
+      const reviewer = reviewerFor(actor, body);
       const at = (ctx.now?.() ?? new Date()).toISOString();
-      const next = acceptReviewWarning(rec, { code: s(body.code), reason: s(body.reason) }, { name: s(body.reviewerName), licenseNo: s(body.licenseNo) }, at);
+      const next = acceptReviewWarning(rec, { code: s(body.code), reason: s(body.reason) }, reviewer, at);
       ctx.matters.saveReview(next);
-      ctx.matters.audit.append(`${s(body.reviewerName)} (${s(body.licenseNo)})`, "review.warning", rec.matterId, rec.documentName, { code: s(body.code) });
+      ctx.matters.audit.append(`${reviewer.name} (${reviewer.licenseNo})`, "review.warning", rec.matterId, rec.documentName, { code: s(body.code) });
       sendJson(res, 200, { review: next });
       return true;
     }
     if (seg[0] === "reviews" && seg.length === 3 && seg[2] === "export" && method === "GET") {
       const rec = ctx.matters.getReview(seg[1]!);
       if (!rec) throw new HttpError(404, "review not found");
+      matterFor(ctx, actor, rec.matterId);
       const artifact = ctx.matters.approvals.latest(rec.id);
       const actualSha256 = artifact?.dataBase64 ? crypto.createHash("sha256").update(Buffer.from(artifact.dataBase64, "base64")).digest("hex") : undefined;
       if (!artifact || actualSha256 !== artifact.artifactSha256 || !canExportArtifact(rec, actualSha256 ?? "")) throw new ReviewError("final artifact is not approved or no longer matches");
@@ -516,7 +560,7 @@ export async function handleLegalRoutes(req: http.IncomingMessage, res: http.Ser
     if (seg[0] === "reviews" && seg.length === 3 && seg[2] === "approve-artifact" && method === "POST") {
       const rec = ctx.matters.getReview(seg[1]!);
       if (!rec) throw new HttpError(404, "review not found");
-      const matter = ctx.matters.getMatter(rec.matterId);
+      const matter = matterFor(ctx, actor, rec.matterId);
       if (!matter) throw new HttpError(404, "matter not found");
       const body = await readJson(req, 30_000_000);
       const data = Buffer.from(s(body.dataBase64), "base64");
@@ -524,17 +568,17 @@ export async function handleLegalRoutes(req: http.IncomingMessage, res: http.Ser
       const at = (ctx.now?.() ?? new Date()).toISOString();
       const contentSha256 = crypto.createHash("sha256").update(data).digest("hex");
       if (rec.verifiedSha256 !== contentSha256) throw new ReviewError("artifact content changed since verification");
+      if (!rec.sourceText) throw new ReviewError("verified artifact text is unavailable; verify again");
+      const { report, structure } = inspectArtifactText(ctx, matter, rec.documentName, rec.sourceText);
+      report.documentSha256 = contentSha256;
+      if (structure.some((issue) => issue.level === "error")) throw new ReviewError(`document structure failed: ${structure.filter((issue) => issue.level === "error").map((issue) => issue.code).join(",")}`);
       const finalData = rec.documentName.startsWith("redline") ? await finalizeApprovedRedlineDocx(data) : data;
       const artifact = {
         id: `aa-${crypto.randomBytes(6).toString("hex")}`, reviewId: rec.id, matterId: matter.id, documentName: rec.documentName,
         kind: "docx" as const, contentSha256, artifactSha256: crypto.createHash("sha256").update(finalData).digest("hex"),
         corpusSnapshotId: ctx.corpus.snapshot({ persist: true }).id, model: ctx.egress.localModel, dataBase64: finalData.toString("base64"), createdAt: at,
       };
-      if (rec.verifiedCorpusSnapshotId === artifact.corpusSnapshotId) {
-        const coverage = ctx.corpus.coverage({ asOf: matter.asOf, matterKind: matter.kind, now: ctx.now?.() });
-        if (coverage.status !== "complete") throw new ReviewError(`cannot approve with corpus coverage ${coverage.status}; resolve every required source first`);
-      }
-      const next = approveArtifact(rec, artifact, { name: s(body.reviewerName), licenseNo: s(body.licenseNo) }, at);
+      const next = approveArtifact(rec, artifact, report, reviewerFor(actor, body), at);
       ctx.matters.saveReview(next);
       ctx.matters.approvals.save(artifact);
       ctx.matters.audit.append(`${next.reviewer!.name} (${next.reviewer!.licenseNo})`, "review.transition", matter.id, rec.documentName, { from: rec.state, to: next.state, artifactSha256: artifact.artifactSha256 });
@@ -544,38 +588,70 @@ export async function handleLegalRoutes(req: http.IncomingMessage, res: http.Ser
     if (seg[0] === "reviews" && seg.length === 3 && method === "POST") {
       const rec = ctx.matters.getReview(seg[1]!);
       if (!rec) throw new HttpError(404, "review not found");
-      const matter = ctx.matters.getMatter(rec.matterId);
+      const matter = matterFor(ctx, actor, rec.matterId);
       if (!matter) throw new HttpError(404, "matter not found");
       const body = await readJson(req);
       const at = (ctx.now?.() ?? new Date()).toISOString();
       let next = rec;
-      if (seg[2] === "submit") next = submitForReview(rec, "user", at);
+      if (seg[2] === "submit") next = submitForReview(rec, actor.id, at);
       else if (seg[2] === "approve") {
         const text = s(body.text);
         const report = verifyDocument(ctx.corpus, text, { asOf: matter.asOf, matterKind: matter.kind });
         const kind: DocKind = matter.kind === "contract_review" ? "contract_report" : matter.kind === "defense_memo" ? "defense_memo" : "opinion";
         const structure = [...checkStructure(kind, text), ...(report.renderedDocument ? internalLeaks(report.renderedDocument) : [])];
         if (structure.some((issue) => issue.level === "error")) throw new ReviewError(`document structure failed: ${structure.filter((issue) => issue.level === "error").map((issue) => issue.code).join(",")}`);
-        next = approve(rec, report, { name: s(body.reviewerName), licenseNo: s(body.licenseNo) }, at);
-      } else if (seg[2] === "reject") next = reject(rec, "user", s(body.note), at);
+        next = approve(rec, report, reviewerFor(actor, body), at);
+      } else if (seg[2] === "reject") next = reject(rec, actor.id, s(body.note), at);
       else throw new HttpError(404, "unknown review action");
       ctx.matters.saveReview(next);
-      ctx.matters.audit.append(next.reviewer ? `${next.reviewer.name} (${next.reviewer.licenseNo})` : "user", "review.transition", matter.id, rec.documentName, { from: rec.state, to: next.state });
+      ctx.matters.audit.append(next.reviewer ? `${next.reviewer.name} (${next.reviewer.licenseNo})` : actor.id, "review.transition", matter.id, rec.documentName, { from: rec.state, to: next.state });
       sendJson(res, 200, { review: next });
       return true;
+    }
+
+    // ---- backup, recovery and retention -----------------------------------------
+    if (seg[0] === "operations") {
+      if (seg.length === 2 && seg[1] === "backups" && method === "GET") {
+        if (!ctx.listBackups) throw new HttpError(501, "backup operations are unavailable");
+        sendJson(res, 200, { files: ctx.listBackups() }); return true;
+      }
+      const body = await readJson(req, 100_000);
+      if (seg.length === 2 && seg[1] === "backup" && method === "POST") {
+        if (!ctx.createBackup) throw new HttpError(501, "backup operations are unavailable");
+        const result = ctx.createBackup(s(body.passphrase));
+        ctx.matters.audit.append(actor.id, "backup.create", null, result.fileName, { files: result.files });
+        sendJson(res, 201, result); return true;
+      }
+      if (seg.length === 2 && seg[1] === "restore" && method === "POST") {
+        if (!ctx.restoreBackup) throw new HttpError(501, "restore operations are unavailable");
+        const result = ctx.restoreBackup(s(body.fileName), s(body.passphrase));
+        ctx.matters.audit.append(actor.id, "backup.restore", null, s(body.fileName), { files: result.restored.length });
+        sendJson(res, 201, result); return true;
+      }
+      if (seg.length === 2 && seg[1] === "purge" && method === "POST") {
+        if (!ctx.purgeExpired) throw new HttpError(501, "retention operations are unavailable");
+        sendJson(res, 200, { purged: ctx.purgeExpired() }); return true;
+      }
+      if (seg.length === 2 && seg[1] === "audit-anchor" && method === "POST") {
+        if (!ctx.createAuditAnchor) throw new HttpError(501, "audit anchor export is unavailable");
+        sendJson(res, 201, ctx.createAuditAnchor()); return true;
+      }
+      throw new HttpError(404, "unknown operations action");
     }
 
     // ---- audit -------------------------------------------------------------------
     if (seg[0] === "audit" && method === "GET") {
       if (seg[1] === "verify") { const broken = ctx.matters.audit.verifyChain(); sendJson(res, 200, { intact: broken === null, firstBrokenSeq: broken }); return true; }
       const matterId = url.searchParams.get("matterId");
+      if (matterId) matterFor(ctx, actor, matterId);
+      else if (ctx.identity && !actor.roles.includes("admin")) throw new LegalAccessError(403, "global audit access requires an administrator");
       sendJson(res, 200, { events: ctx.matters.audit.list({ ...(matterId ? { matterId } : {}), limit: Number(url.searchParams.get("limit") ?? 200) || 200 }) });
       return true;
     }
     sendJson(res, 404, { error: "not found" });
     return true;
   } catch (err) {
-    if (err instanceof HttpError) sendJson(res, err.status, { error: err.message });
+    if (err instanceof HttpError || err instanceof LegalAccessError) sendJson(res, err.status, { error: err.message });
     else if (err instanceof LegalKeyUnavailableError) sendJson(res, 423, { error: "matters store is locked: the encryption key is not available" });
     else if (err instanceof ReviewError) sendJson(res, 409, { error: err.message });
     else {

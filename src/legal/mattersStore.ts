@@ -25,6 +25,8 @@ export interface NewMatter {
   court?: Matter["court"];
   parties?: MatterParty[];
   retainUntil?: string | null;
+  ownerId?: string;
+  assignedReviewerIds?: string[];
 }
 
 type Row = Record<string, unknown>;
@@ -44,7 +46,7 @@ export class MattersStore {
   readonly approvals: ApprovalArtifactStore;
   private readonly cipher: FieldCipher;
 
-  constructor(dbPath: string, keys: KeyProvider, private readonly now: () => Date = () => new Date()) {
+  constructor(dbPath: string, keys: KeyProvider, private readonly now: () => Date = () => new Date(), private readonly defaultRetentionDays: number | null = null) {
     if (dbPath !== ":memory:") fs.mkdirSync(path.dirname(dbPath), { recursive: true });
     this.db = new DatabaseSync(dbPath);
     this.db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON;");
@@ -67,6 +69,8 @@ export class MattersStore {
     const confidentiality = input.confidentiality ?? "confidential";
     if (!CONFIDENTIALITY.includes(confidentiality)) throw new Error("invalid confidentiality");
     const at = this.iso();
+    const retainUntil = input.retainUntil === undefined && this.defaultRetentionDays !== null
+      ? new Date(this.now().getTime() + this.defaultRetentionDays * 86_400_000).toISOString().slice(0, 10) : input.retainUntil ?? null;
     const m: Matter = {
       id: `mt-${crypto.randomBytes(6).toString("hex")}`,
       title: input.title.trim(),
@@ -78,7 +82,9 @@ export class MattersStore {
       parties: input.parties ?? [],
       createdAt: at,
       updatedAt: at,
-      retainUntil: input.retainUntil ?? null,
+      ...(input.ownerId ? { ownerId: input.ownerId } : {}),
+      ...(input.assignedReviewerIds ? { assignedReviewerIds: [...new Set(input.assignedReviewerIds)] } : {}),
+      retainUntil,
     };
     this.db.prepare("INSERT INTO matters(id,kind,confidentiality,egress,created_at,updated_at,retain_until,payload_enc) VALUES(?,?,?,?,?,?,?,?)")
       .run(m.id, m.kind, m.confidentiality, m.egress, at, at, m.retainUntil, this.cipher.sealJson(m, `matter:${m.id}`));

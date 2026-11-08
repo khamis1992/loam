@@ -11,6 +11,32 @@ function invoke(ns, method, args) {
   return ipcRenderer.invoke(IPC_INVOKE, { ns, method, args });
 }
 
+// Inlined because a sandboxed preload cannot require reveal.cjs. Only the two
+// ids are forwarded. An absolute path, or a path that leaves the workspace, stops here.
+const REVEAL_PROJECT_ID = /^app_[a-z2-7]{12}$/;
+const REVEAL_ARTIFACT_ID = /^art_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+function isCallerPath(value) {
+  if (typeof value !== "string") return false;
+  return value.includes("\0")
+    || value.includes("/")
+    || value.includes("\\")
+    || value.includes("..")
+    || /^[A-Za-z]:/.test(value);
+}
+
+function revealArtifactPayload(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) throw new Error("invalid_request");
+  const keys = Object.keys(payload);
+  if (keys.length !== 2 || !keys.includes("projectId") || !keys.includes("artifactId")) throw new Error("invalid_request");
+  const projectId = payload.projectId;
+  const artifactId = payload.artifactId;
+  if (typeof projectId !== "string" || typeof artifactId !== "string") throw new Error("invalid_request");
+  if (isCallerPath(projectId) || isCallerPath(artifactId)) throw new Error("invalid_request");
+  if (!REVEAL_PROJECT_ID.test(projectId) || !REVEAL_ARTIFACT_ID.test(artifactId)) throw new Error("invalid_request");
+  return { projectId, artifactId };
+}
+
 // Plain objects only — contextBridge cannot clone Proxy objects.
 const apis = {
   auth: {
@@ -91,6 +117,9 @@ const apis = {
     rendererReady: (...args) => invoke("desktopActivityIndicator", "rendererReady", args),
     setEnabled: (...args) => invoke("desktopActivityIndicator", "setEnabled", args),
     setExpanded: (...args) => invoke("desktopActivityIndicator", "setExpanded", args),
+  },
+  buildMenu: {
+    revealArtifact: (payload) => invoke("buildMenu", "revealArtifact", [revealArtifactPayload(payload)]),
   },
   storage: {
     getItem: (...args) => invoke("storage", "getItem", args),

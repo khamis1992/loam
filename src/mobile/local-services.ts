@@ -19,6 +19,20 @@ export type LocalState = {
 const empty = (): RecordState => ({ version: 1, revision: 0, collections: {} });
 const hash = (s: string) => createHash('sha256').update(s).digest('hex');
 const bad = (message: string, status = 400): never => { throw new MobileError(message, status); };
+function refuseLinked(file: string): void {
+    let stat: fs.Stats;
+    try {
+        stat = fs.lstatSync(file);
+    }
+    catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === 'EPERM' || code === 'EACCES')
+            throw error;
+        throw new MobileError('unsafe_path');
+    }
+    if (stat.nlink > 1)
+        bad('unsafe_path');
+}
 function object(v: unknown): Record<string, any> { if (!v || typeof v !== 'object' || Array.isArray(v))
     return bad('Expected object'); return v as Record<string, any>; }
 function bounded(v: unknown, max: number, label: string) { if (typeof v !== 'string' || !v.trim() || v.length > max)
@@ -206,13 +220,15 @@ export class MobileLocalServices {
         bytes: Buffer;
     } { if (typeof id !== 'string' || !/^[-\w]{36}$/.test(id))
         return bad('Invalid file id'); const row = this.db.prepare('SELECT * FROM files WHERE id=?' + (scope ? ' AND owner=?' : '')).get(id, ...(scope ? [scope] : [])) as Row | undefined; if (!row)
-        return bad('File not found', 404); const file = taskPath(this.root, '.loam/mobile-local/files/' + id); return { ...row, id: String(row.id), name: String(row.name), bytes: fs.readFileSync(file) }; }
+        return bad('File not found', 404); const file = taskPath(this.root, '.loam/mobile-local/files/' + id); refuseLinked(file); return { ...row, id: String(row.id), name: String(row.name), bytes: fs.readFileSync(file) }; }
     mutateFile(scope: string, input: unknown, admin = false) {
         const body = object(input);
         if (body.action === 'delete') {
             const row = this.file(admin ? undefined : scope, body.id);
+            const stored = taskPath(this.root, '.loam/mobile-local/files/' + row.id);
+            refuseLinked(stored);
             this.db.prepare('DELETE FROM files WHERE id=?').run(row.id);
-            fs.unlinkSync(taskPath(this.root, '.loam/mobile-local/files/' + row.id));
+            fs.unlinkSync(stored);
             this.audit('files.delete', scope, row.id);
             return { ok: true };
         }
@@ -237,7 +253,9 @@ export class MobileLocalServices {
             this.audit('files.upload', scope, id);
         }
         catch (e) {
-            fs.unlinkSync(taskPath(this.root, '.loam/mobile-local/files/' + id));
+            const stored = taskPath(this.root, '.loam/mobile-local/files/' + id);
+            refuseLinked(stored);
+            fs.unlinkSync(stored);
             throw e;
         } });
         return { file: { id, name, type, size: bytes.length, owner: scope, createdAt } };
@@ -249,7 +267,7 @@ export class MobileLocalServices {
         return { ok: true };
     } if (body.action !== 'set')
         return bad('Unknown secret action'); const value = bounded(body.value, 10000, 'secret value'); const keyFile = taskPath(this.root, '.loam/mobile-local/secrets.key'); if (!fs.existsSync(keyFile))
-        fs.writeFileSync(keyFile, randomBytes(32), { flag: 'wx', mode: 0o600 }); try {
+        fs.writeFileSync(keyFile, randomBytes(32), { flag: 'wx', mode: 0o600 }); refuseLinked(keyFile); try {
         fs.chmodSync(keyFile, 0o600);
     }
     catch { /* Windows ACLs remain inherited from the local workspace. */ } const key = fs.readFileSync(keyFile); if (key.length !== 32)

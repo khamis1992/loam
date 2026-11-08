@@ -9,6 +9,16 @@ import { bool, num, str } from "./registry.js";
 import { installFromCatalog, searchCatalog } from "./skillsRegistry.js";
 import { proposeSkillSuggestion, type ProposeResult } from "./skillSuggest.js";
 import type { OllamaClient } from "../ollama.js";
+import { getTask } from "../server/db.js";
+import { getAgent } from "../server/agents.js";
+
+function skillAllowed(ctx: ToolContext, name: string): boolean {
+  const task = ctx.taskId ? getTask(ctx.taskId) : undefined;
+  const enabled = task?.agentId ? getAgent(task.agentId)?.enabledSkills : undefined;
+  if (enabled === undefined) return true;
+  const target = name.trim().toLowerCase();
+  return enabled.some((skill) => skill.toLowerCase() === target);
+}
 
 export interface SkillRecord {
   name: string;
@@ -344,7 +354,8 @@ function summarize(kind: SkillMutation, payload: Record<string, unknown>): strin
 export function createSkillTools(opts: SkillToolOptions = {}): Tool[] {
   const { onApply, gate, projectRoot, ollama } = opts;
 
-  const findVisibleRecord = (name: string): SkillRecord | undefined => {
+  const findVisibleRecord = (ctx: ToolContext, name: string): SkillRecord | undefined => {
+    if (!skillAllowed(ctx, name)) return undefined;
     if (projectRoot) {
       const rec = listProjectSkillRecords(projectRoot).records.find(
         (r) => r.name.toLowerCase() === name.trim().toLowerCase() || path.basename(r.dir).toLowerCase() === name.trim().toLowerCase(),
@@ -376,8 +387,9 @@ export function createSkillTools(opts: SkillToolOptions = {}): Tool[] {
       description:
         "List installed skills (name + description), including repo-local skills from .loam/skills and .agents/skills. Call this before creating a skill so you improve an existing one instead of duplicating it.",
       parameters: { type: "object", properties: {} },
-      async run(): Promise<ToolResult> {
-        const recs = projectRoot ? listProjectSkillRecords(projectRoot).records : listSkillRecords();
+      async run(_args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+        const recs = (projectRoot ? listProjectSkillRecords(projectRoot).records : listSkillRecords())
+          .filter((record) => skillAllowed(ctx, record.name));
         if (recs.length === 0) return { ok: true, content: "(no skills installed)" };
         return {
           ok: true,
@@ -389,8 +401,8 @@ export function createSkillTools(opts: SkillToolOptions = {}): Tool[] {
       name: "skill_view",
       description: "Read the full content of one skill so you can follow it or patch it.",
       parameters: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
-      async run(args: Record<string, unknown>): Promise<ToolResult> {
-        const rec = findVisibleRecord(str(args, "name"));
+      async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+        const rec = findVisibleRecord(ctx, str(args, "name"));
         if (!rec) return { ok: false, content: `skill not found: ${str(args, "name")}` };
         return { ok: true, content: fs.readFileSync(rec.file, "utf8") };
       },

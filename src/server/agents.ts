@@ -8,6 +8,23 @@ import { normalizeWorkMode, validateServiceIds } from "./companionGateway.js";
 import { getThread } from "./agentThreads.js";
 import { getTask, type TaskMessage } from "./db.js";
 
+export type ConnectorPermission = "read" | "write" | "send";
+
+export interface ConnectorGrant {
+  connectorId: string;
+  accountId?: string;
+  permissions: ConnectorPermission[];
+}
+
+export interface AgentCapabilityInput {
+  /** Installed skill names visible to this agent. Undefined preserves legacy all-skills access. */
+  enabledSkills?: unknown;
+  /** First-party connector grants. Undefined preserves legacy connected-connector access. */
+  connectorGrants?: unknown;
+  /** Personal and shared companion-memory access; undefined means enabled. */
+  memoryEnabled?: boolean | null;
+}
+
 export interface AgentRecord {
   id: string;
   name: string;
@@ -29,6 +46,12 @@ export interface AgentRecord {
   workMode?: string;
   /** Service grants from the companion gateway. Empty/undefined = all services. */
   allowedServices?: string[];
+  /** Installed skills visible to this agent. Undefined = legacy unrestricted access. */
+  enabledSkills?: string[];
+  /** Explicit first-party connector grants. Undefined = legacy connected-connector access. */
+  connectorGrants?: ConnectorGrant[];
+  /** Personal/shared companion-memory access. Undefined = enabled. */
+  memoryEnabled?: boolean;
   /** Voice name used by the UI speech engine for this companion (section 13). */
   voice?: string;
   /** Speech rate 0.5..2 (default 1). */
@@ -282,6 +305,35 @@ function sanitizeServices(value: unknown): { allowedServices?: string[] } {
   return { allowedServices: unique };
 }
 
+function sanitizeEnabledSkills(value: unknown): { enabledSkills?: string[] } {
+  if (!Array.isArray(value)) return {};
+  const names = value
+    .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    .map((item) => item.trim().slice(0, 120));
+  return { enabledSkills: [...new Set(names)].slice(0, 200) };
+}
+
+function sanitizeConnectorGrants(value: unknown): { connectorGrants?: ConnectorGrant[] } {
+  if (!Array.isArray(value)) return {};
+  const grants: ConnectorGrant[] = [];
+  const seen = new Set<string>();
+  for (const candidate of value.slice(0, 100)) {
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) continue;
+    const raw = candidate as Record<string, unknown>;
+    const connectorId = typeof raw.connectorId === "string" ? raw.connectorId.trim().slice(0, 120) : "";
+    if (!connectorId) continue;
+    const accountId = typeof raw.accountId === "string" && raw.accountId.trim() ? raw.accountId.trim().slice(0, 120) : undefined;
+    const key = `${connectorId}\0${accountId ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const permissions = Array.isArray(raw.permissions)
+      ? raw.permissions.filter((item): item is ConnectorPermission => item === "read" || item === "write" || item === "send")
+      : [];
+    grants.push({ connectorId, ...(accountId ? { accountId } : {}), permissions: [...new Set(permissions)] });
+  }
+  return { connectorGrants: grants };
+}
+
 /** Grok Bot-style avatar shapes (all agents render one of these). */
 export const AVATAR_SHAPES: readonly string[] = ["squircle", "teardrop", "pebble", "hex", "blob", "cloud", "wedge", "tablet"];
 
@@ -329,7 +381,7 @@ export function sanitizeAvatarFields(input: { avatarShape?: unknown; avatarColor
   return out;
 }
 
-export function createAgent(input: { name: string; emoji?: string; description?: string; instructions?: string; model?: string; mode?: string; effort?: string; disabledTools?: unknown; workMode?: string; allowedServices?: unknown; voice?: string; voiceRate?: number; voiceAuto?: boolean; source?: string; avatarShape?: string; avatarColor?: string; avatarImage?: string; pinned?: boolean; pinnedAt?: number; sortOrder?: number; title?: string; notifications?: boolean }): AgentRecord {
+export function createAgent(input: { name: string; emoji?: string; description?: string; instructions?: string; model?: string; mode?: string; effort?: string; disabledTools?: unknown; workMode?: string; allowedServices?: unknown; voice?: string; voiceRate?: number; voiceAuto?: boolean; source?: string; avatarShape?: string; avatarColor?: string; avatarImage?: string; pinned?: boolean; pinnedAt?: number; sortOrder?: number; title?: string; notifications?: boolean } & AgentCapabilityInput): AgentRecord {
   const mode = input.mode ? getLoamMode(input.mode).id : undefined;
   const workMode = input.workMode ? normalizeWorkMode(input.workMode) : undefined;
   const wantsPin = (input.pinned === true) || typeof input.pinnedAt === "number";
@@ -352,6 +404,9 @@ export function createAgent(input: { name: string; emoji?: string; description?:
     ...sanitizeDisabled(input.disabledTools),
     ...(workMode ? { workMode } : {}),
     ...sanitizeServices(input.allowedServices),
+    ...sanitizeEnabledSkills(input.enabledSkills),
+    ...sanitizeConnectorGrants(input.connectorGrants),
+    ...(typeof input.memoryEnabled === "boolean" ? { memoryEnabled: input.memoryEnabled } : {}),
     ...(input.voice && input.voice.trim() ? { voice: input.voice.trim().slice(0, 60) } : {}),
     ...(Number.isFinite(Number(input.voiceRate)) ? { voiceRate: Math.max(0.5, Math.min(2, Number(input.voiceRate))) } : {}),
     ...(typeof input.voiceAuto === "boolean" ? { voiceAuto: input.voiceAuto } : {}),
@@ -375,7 +430,7 @@ function sanitizeDisabled(value: unknown): { disabledTools?: string[] } {
   return list.length > 0 ? { disabledTools: [...new Set(list)].slice(0, 500) } : { disabledTools: [] };
 }
 
-export function updateAgent(id: string, patch: { name?: string; emoji?: string; description?: string; title?: string | null; instructions?: string; model?: string | null; mode?: string | null; effort?: string | null; disabledTools?: unknown; workMode?: string | null; allowedServices?: unknown; voice?: string | null; voiceRate?: number | null; voiceAuto?: boolean | null; notifications?: boolean | null; avatarShape?: string | null; avatarColor?: string | null; avatarImage?: string | null; pinned?: boolean | null; pinnedAt?: number | null; sortOrder?: number | null }): AgentRecord | undefined {
+export function updateAgent(id: string, patch: { name?: string; emoji?: string; description?: string; title?: string | null; instructions?: string; model?: string | null; mode?: string | null; effort?: string | null; disabledTools?: unknown; workMode?: string | null; allowedServices?: unknown; voice?: string | null; voiceRate?: number | null; voiceAuto?: boolean | null; notifications?: boolean | null; avatarShape?: string | null; avatarColor?: string | null; avatarImage?: string | null; pinned?: boolean | null; pinnedAt?: number | null; sortOrder?: number | null } & AgentCapabilityInput): AgentRecord | undefined {
   const agent = agents.find((a) => a.id === id);
   if (!agent) return undefined;
   const mode = typeof patch.mode === "string" ? getLoamMode(patch.mode).id : undefined;
@@ -417,6 +472,20 @@ export function updateAgent(id: string, patch: { name?: string; emoji?: string; 
     const s = sanitizeServices(patch.allowedServices);
     if (s.allowedServices) agent.allowedServices = s.allowedServices;
     else delete agent.allowedServices;
+  }
+  if (patch.enabledSkills !== undefined) {
+    const s = sanitizeEnabledSkills(patch.enabledSkills);
+    if (s.enabledSkills) agent.enabledSkills = s.enabledSkills;
+    else delete agent.enabledSkills;
+  }
+  if (patch.connectorGrants !== undefined) {
+    const s = sanitizeConnectorGrants(patch.connectorGrants);
+    if (s.connectorGrants) agent.connectorGrants = s.connectorGrants;
+    else delete agent.connectorGrants;
+  }
+  if (patch.memoryEnabled !== undefined) {
+    if (patch.memoryEnabled === null) delete agent.memoryEnabled;
+    else agent.memoryEnabled = patch.memoryEnabled;
   }
   for (const field of ["avatarShape", "avatarColor", "avatarImage"] as const) {
     if (patch[field] === null) delete agent[field];

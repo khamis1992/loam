@@ -1,0 +1,11 @@
+{
+  "schema": "loam.service-pack/v1",
+  "id": "loam-desktop",
+  "version": "1.0.0",
+  "modes": ["desktop", "build"],
+  "skills": [{"name": "loam-desktop", "path": "packs/loam-desktop/SKILL.md"}],
+  "wraps": ["app_task_create", "app_verify"],
+  "gate": {"tool": "desktop_present", "timeoutMs": 120000},
+  "legacyRoutes": "keep",
+  "update": "hot"
+}

@@ -22,6 +22,9 @@ interface Agent {
   sortOrder?: number;
   hiddenAt?: string;
   createdAt: string;
+  enabledSkills?: string[];
+  connectorGrants?: Array<{ connectorId: string; permissions: string[] }>;
+  memoryEnabled?: boolean;
 }
 
 interface Reply {
@@ -31,6 +34,8 @@ interface Reply {
     agents?: Agent[];
     pinned?: Agent[];
     hidden?: boolean;
+    deleted?: boolean;
+    loamModes?: Array<{ id: string }>;
     error?: string;
   };
 }
@@ -219,5 +224,33 @@ describe("agent pin / reorder / hide endpoints", () => {
     const res = await call("POST", "/api/agents/agent_missing/hide", { hidden: true });
     assert.equal(res.status, 404);
     assert.ok(res.body.error);
+  });
+
+  it("accepts capability grants and the complete mode catalog over HTTP", async () => {
+    const created = await call("POST", "/api/agents", {
+      name: "HTTP Capabilities",
+      enabledSkills: ["docs"],
+      connectorGrants: [{ connectorId: "github", permissions: ["read"] }],
+      memoryEnabled: false,
+    });
+    assert.equal(created.status, 200, JSON.stringify(created.body));
+    const id = created.body.agent!.id;
+    assert.deepEqual(created.body.agent?.enabledSkills, ["docs"]);
+    assert.equal(created.body.agent?.memoryEnabled, false);
+
+    const modes = await call("GET", "/api/work-modes");
+    assert.equal(modes.status, 200);
+    for (const id of ["redteam", "devflow", "legal", "reverse-engineer"]) {
+      assert.ok(modes.body.loamModes?.some((mode) => mode.id === id), `missing mode ${id}`);
+    }
+
+    const updated = await call("POST", `/api/agents/${id}`, { memoryEnabled: true, connectorGrants: [] });
+    assert.equal(updated.status, 200);
+    assert.equal(updated.body.agent?.memoryEnabled, true);
+    assert.deepEqual(updated.body.agent?.connectorGrants, []);
+
+    const removed = await call("DELETE", `/api/agents/${id}`);
+    assert.equal(removed.status, 200);
+    assert.equal(removed.body.deleted, true);
   });
 });

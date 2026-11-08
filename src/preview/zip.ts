@@ -43,11 +43,23 @@ export interface ZipEntry {
 }
 
 /** Compress ordered entries into a single ZIP archive buffer (deflate, no AES/zip64). */
-export function zipBuffer(entries: readonly ZipEntry[], now = new Date()): Buffer {
-  const cleaned = entries.map((e) => ({ name: e.name.replace(/\\/g, "/").replace(/^\/+/, ""), data: e.data }));
-  if (cleaned.some((e) => e.name.length === 0 || e.name.length > 500)) {
-    throw new Error("zip: invalid entry name length");
+function archiveName(name: string): string {
+  const slashed = name.replace(/\\/g, "/");
+  const parts = slashed.split("/");
+  if (
+    slashed.startsWith("/")
+    || /^[A-Za-z]:/.test(slashed)
+    || slashed.length === 0
+    || slashed.length > 500
+    || parts.some((part) => part.length === 0 || part === "." || part === ".." || part.includes(":"))
+  ) {
+    throw new Error("zip: unsafe entry name");
   }
+  return slashed;
+}
+
+export function zipBuffer(entries: readonly ZipEntry[], now = new Date()): Buffer {
+  const cleaned = entries.map((e) => ({ name: archiveName(e.name), data: e.data }));
   const { time, date } = dosTime(now);
   const locals: Buffer[] = [];
   const centrals: Buffer[] = [];
@@ -145,4 +157,94 @@ export function collectFiles(root: string, opts: ZipCollector = {}): ZipEntry[] 
 /** Zip an entire directory tree (files only, forward-slash archive paths). */
 export function zipDirectory(root: string, opts: ZipCollector = {}): Buffer {
   return zipBuffer(collectFiles(root, opts));
+}
+
+const MAX_EXTRACT_ENTRIES = 5_000;
+const MAX_EXTRACT_BYTES = 100_000_000;
+
+/** Unpack a ZIP into dest. Names must stay inside dest, and nothing is executed. */
+export function extractZip(bytes: Buffer, dest: string): string[] {
+  const rootStat = fs.existsSync(dest) ? fs.lstatSync(dest) : undefined;
+  if (!rootStat || rootStat.isSymbolicLink() || !rootStat.isDirectory()) throw new Error("zip: unsafe entry name");
+  const root = fs.realpathSync(dest);
+  const entries = readStoredEntries(bytes);
+  const names = entries.map((entry) => {
+    const name = archiveName(entry.name);
+    if (deniedZipPart(name)) throw new Error("zip: unsafe entry name");
+    return name;
+  });
+  entries.forEach((entry, index) => {
+    const target = path.resolve(root, ...names[index]!.split("/"));
+    assertInside(root, target);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    assertInside(root, target);
+    fs.writeFileSync(target, entry.data);
+  });
+  return names;
+}
+
+function deniedZipPart(name: string): boolean {
+  return name.split("/").some((part) => part === "node_modules" || part === ".git" || part === ".loam" || part === "credentials.json" || part.startsWith(".env"));
+}
+
+function assertInside(root: string, target: string): void {
+  const relative = path.relative(root, target);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("zip: unsafe entry name");
+  let current = root;
+  for (const part of relative.split(path.sep)) {
+    current = path.join(current, part);
+    if (!fs.existsSync(current)) return;
+    const stat = fs.lstatSync(current);
+    if (stat.isSymbolicLink()) throw new Error("zip: unsafe entry name");
+  }
+}
+
+function readStoredEntries(bytes: Buffer): ZipEntry[] {
+  const entries: ZipEntry[] = [];
+  let offset = 0;
+  let total = 0;
+  while (offset + 30 <= bytes.length && bytes.readUInt32LE(offset) === 0x04034b50) {
+    if (entries.length >= MAX_EXTRACT_ENTRIES) throw new Error("zip: unsafe entry name");
+    const flags = bytes.readUInt16LE(offset + 6);
+    const method = bytes.readUInt16LE(offset + 8);
+    const compressed = bytes.readUInt32LE(offset + 18);
+    const uncompressed = bytes.readUInt32LE(offset + 22);
+    const nameLength = bytes.readUInt16LE(offset + 26);
+    const extraLength = bytes.readUInt16LE(offset + 28);
+    if ((flags & 0x8) !== 0 || (method !== 0 && method !== 8)) throw new Error("zip: unsafe entry name");
+    const name = bytes.subarray(offset + 30, offset + 30 + nameLength).toString("utf8");
+    const start = offset + 30 + nameLength + extraLength;
+    if (start + compressed > bytes.length) throw new Error("zip: unsafe entry name");
+    const body = bytes.subarray(start, start + compressed);
+    const data = method === 0 ? Buffer.from(body) : zlib.inflateRawSync(body);
+    if (data.length !== uncompressed) throw new Error("zip: unsafe entry name");
+    total += data.length;
+    if (total > MAX_EXTRACT_BYTES) throw new Error("zip: unsafe entry name");
+    entries.push({ name, data });
+    offset = start + compressed;
+  }
+  if (entries.length === 0) throw new Error("zip: unsafe entry name");
+  return entries;
+}
+
+/** Names stored in the central directory. Unsafe paths and zip64 are refused. */
+export function zipEntryNames(bytes: Buffer): string[] {
+  const marker = Buffer.from([0x50, 0x4b, 0x05, 0x06]);
+  const eocd = bytes.lastIndexOf(marker);
+  if (eocd < 0 || eocd + 22 > bytes.length) throw new Error("zip: unsafe entry name");
+  const count = bytes.readUInt16LE(eocd + 10);
+  let cursor = bytes.readUInt32LE(eocd + 16);
+  if (count === 0xffff || cursor === 0xffffffff) throw new Error("zip: unsafe entry name");
+  const names: string[] = [];
+  for (let i = 0; i < count; i += 1) {
+    if (cursor + 46 > bytes.length || bytes.readUInt32LE(cursor) !== 0x02014b50) throw new Error("zip: unsafe entry name");
+    const nameLen = bytes.readUInt16LE(cursor + 28);
+    const extraLen = bytes.readUInt16LE(cursor + 30);
+    const commentLen = bytes.readUInt16LE(cursor + 32);
+    const end = cursor + 46 + nameLen + extraLen + commentLen;
+    if (end > bytes.length) throw new Error("zip: unsafe entry name");
+    names.push(archiveName(bytes.subarray(cursor + 46, cursor + 46 + nameLen).toString("utf8")));
+    cursor = end;
+  }
+  return names;
 }

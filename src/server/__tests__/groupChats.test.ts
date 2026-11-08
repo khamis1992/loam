@@ -24,6 +24,7 @@ interface GroupChatsApi {
     startRun?: (input: { groupId: string; agentId: string; prompt: string; title?: string }) => { taskId: string },
   ) => Promise<number>;
   listPendingGroupTasks: () => Array<{ taskId: string; groupId: string; agentId: string; handoffTo: string | null; handoffNote: string | null }>;
+  createGroupRunStarter: (runTask: (opts: { taskId: string; prompt: string; agentId: string; emit: () => void }) => Promise<{ taskId: string; text: string }>) => (input: { groupId: string; agentId: string; prompt: string; title?: string }) => { taskId: string };
 }
 
 interface GroupToolsApi {
@@ -138,6 +139,18 @@ describe("groupChats", () => {
     const pending = api.listPendingGroupTasks();
     assert.equal(pending.length, 1);
     assert.equal(pending[0]!.agentId, "agent_b");
+  });
+
+  it("collects completed replies from the task event without a GET poll", async () => {
+    const group = api.createGroup("Event replies", ["agent_a"]);
+    const start = api.createGroupRunStarter(async (opts) => ({ taskId: opts.taskId, text: "queued" }));
+    const posted = await api.postToGroup(group.id, "finish without polling", "user", start);
+    db.completeTaskRun(posted.taskId!, "event reply", "test-model");
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const messages = api.listGroupMessages(group.id);
+    assert.equal(messages.length, 2);
+    assert.equal(messages[1]!.text, "event reply");
   });
 
   it("rejects handoffs to agents outside the group", () => {

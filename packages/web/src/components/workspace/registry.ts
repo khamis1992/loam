@@ -28,6 +28,7 @@ const GENERATION_BY_KIND: Record<WorkspaceKind, number> = {
   canvas: 2,
   'loam-video': 3,
   'loam-recorder': 3,
+  'electron-window': 3,
   craft: 3,
 };
 

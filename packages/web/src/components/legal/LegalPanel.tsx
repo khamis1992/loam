@@ -71,7 +71,8 @@ function SearchTab({ today }: { today: string }) {
         <button type="submit" disabled={busy} className="rounded-md border px-3 py-1">{t('Search')}</button>
       </form>
       {result && <CorpusCoverage coverage={result.coverage} snapshotId={result.corpusSnapshotId} />}
-      {result?.noAuthority && <p className="rounded-md bg-zinc-100 p-2 dark:bg-zinc-900">{t('No article in the verified corpus matches. Nothing may be cited for this point.')}</p>}
+      {result?.warnings.map((warning) => <p role="status" key={warning.code} className="rounded-md bg-amber-50 p-2 text-amber-900 dark:bg-amber-950 dark:text-amber-100">{warning.messageAr}</p>)}
+      {result?.noAuthority && <p className="rounded-md bg-zinc-100 p-2 dark:bg-zinc-900">{t('No article in the verified corpus matches. Nothing may be cited for this point. This may mean the source is missing, not that no legal rule exists.')}</p>}
       <ul className="space-y-3">
         {result?.hits.map((h) => (
           <li key={h.avid} className="space-y-1 rounded-lg border p-3">

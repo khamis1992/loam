@@ -125,8 +125,9 @@ Code: `src/tools/mirofish/pipeline.ts`, `src/tools/mirofish/seed.ts`, `src/tools
 
 4. **Run in development mode**
    
-   For web interface:
+   Build the shared Agent Studio interface, then run the web server:
    ```bash
+   npm --prefix packages/web run build
    npm start
    # Open the printed URL in your browser
    ```
@@ -135,6 +136,8 @@ Code: `src/tools/mirofish/pipeline.ts`, `src/tools/mirofish/seed.ts`, `src/tools
    ```bash
    npm run desktop
    ```
+
+   The browser and desktop app use the same Next.js interface from `packages/web/out`. The legacy command workspace remains available directly at `/index.html`, and legacy studio documents stay under `ui/`.
 
 ### Building for Distribution
 
@@ -213,13 +216,13 @@ loam/
 │   ├── memory/        # Vector memory system
 │   ├── llm/           # LLM client abstractions
 │   └── ...
-├── ui/                # Frontend HTML/CSS/JS
-│   ├── index.html     # Main UI entry
-│   ├── app.js         # Application controller
-│   ├── loam.css       # Styles
+├── ui/                # Legacy command workspace and studio documents
+│   ├── index.html     # Legacy UI entry at /index.html
+│   ├── app.js         # Legacy application controller
+│   ├── loam.css       # Legacy styles
 │   └── ...
 ├── packages/
-│   └── web/           # Next.js web version (optional)
+│   └── web/           # Shared Next.js interface for browser and desktop
 ├── docs/              # Documentation
 ├── skills/            # Agent skill definitions
 └── addons/            # MCP server addons
@@ -232,7 +235,19 @@ loam/
 - **Tool Registry** (`src/tools/`): All tool implementations with type safety and permission checks
 - **Mode Catalog** (`src/modes/catalog.ts`): Mode definitions with tool allowlists and UI configurations
 - **Agent Engine** (`src/agent/`): Execution loop, planning, tool calling, and result handling
-- **UI Layer** (`ui/`): Renderer process interface with task views, editors, and panels
+- **UI Layer** (`packages/web/`): Shared browser and desktop interface with task views, editors, and panels; `ui/` retains the legacy workspace and studio documents
+
+## Agent Loam and service packs
+
+Agent Loam provides persistent agent conversations, per-agent skills and service grants, connector-specific permissions, independent memory controls, groups, scheduled and event-driven automations, encrypted secrets, usage analytics, live computer previews, and verified local app publishing.
+
+- **Capabilities**: `enabledSkills`, `connectorGrants`, and `memoryEnabled` are separate from `allowedServices`. Undefined legacy fields preserve existing agents; an empty grant list is an explicit revocation.
+- **Continuity and lifecycle**: channel and bridge messages reuse the agent's permanent thread. Archiving disables schedules and bindings; deleting also removes schedules, thread mappings and integration grants. Restoring never re-enables a routine silently.
+- **MCP center**: Settings > Connectors supports STDIO and HTTP/SSE servers, account aliases, custom instructions, lazy tool discovery, per-tool disabling, and live reload. Secret header/environment values are never returned by the API. `own_device` never executes host STDIO tools.
+- **Automations**: cron, generic webhook, GitHub, Slack, Microsoft Teams, Linear, Sentry, PagerDuty and email triggers use signed deliveries and persistent deduplication. `GET /api/automations/:id/deliveries` exposes receipt history without secrets.
+- **Workflows and teaching**: `POST /api/workflows/import` accepts workflow JSON, plain-text steps, a URL, or a workspace `.cursor.json` recording. Teach recordings become explicit click and verification steps.
+- **Local publishing**: `POST /api/app-projects/:id/publish/proposals` creates a proposal. Confirming produces a verified ZIP excluding dependencies, databases, credentials and environment files. Update and unpublish use the same lifecycle; downloads use `/download`.
+- **Service packs**: Settings > Service packs offers installable MCP providers for Slack, Teams, email, iMessage, Mac Notes, meetings, voice calls, iOS home/health/reminders, mobile calendar/contacts/location, 1Password, virtual cards, flights, restaurants, products, weather, GitLab, Bitbucket and Azure DevOps. A pack is only a configuration template until the user supplies a real provider; no provider is downloaded or contacted automatically.
 
 ## Development & Testing
 
@@ -279,23 +294,9 @@ See `config.example.json` for all available options and defaults.
 
 ## Contributing
 
-Contributions are welcome! Here's how you can help:
+Contributions are welcome. **Every engineer and AI agent must read and follow [CONTRIBUTING.md](CONTRIBUTING.md) before changing the project.**
 
-1. **Fork the repository**
-2. **Create a feature branch** (`git checkout -b feature/amazing-feature`)
-3. **Make your changes** and ensure tests pass
-4. **Commit your changes** (`git commit -m 'Add amazing feature'`)
-5. **Push to the branch** (`git push origin feature/amazing-feature`)
-6. **Open a Pull Request**
-
-### Development Guidelines
-
-- Keep code changes minimal and focused
-- Add tests for new functionality
-- Update documentation for user-facing changes
-- Follow existing code style and patterns
-- Respect the mode-based tool permission system
-- Don't break task isolation boundaries
+The unified rules cover feature intake, impact analysis, implementation, security, testing, documentation, pull requests, and the definition of done. Keep changes focused, preserve task isolation and tool permissions, and do not mark work complete until the applicable checks pass.
 
 ## License
 

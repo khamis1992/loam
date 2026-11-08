@@ -49,6 +49,13 @@ export const CITABLE_PROVENANCE: ReadonlySet<SourceProvenance> = new Set<SourceP
 
 export type ArticlePart = "issuance" | "body";
 
+export interface SourceUsageRights {
+  basis: string;
+  reference: string;
+  confirmedBy: string;
+  confirmedAt: string;
+}
+
 export interface SourceRef {
   provenance: SourceProvenance;
   /** Canonical URL (Al Meezan page or Official Gazette issue page). */
@@ -58,10 +65,15 @@ export interface SourceRef {
   gazetteDate?: string;
   /** sha256 of the source file the text was taken from (PDF/HTML), when kept. */
   sourceSha256?: string;
+  /** sha256 of the canonical legal text attested by both reviewers. */
+  reviewedTextSha256?: string;
+  usageRights?: SourceUsageRights;
   retrievedAt: string;
-  /** Person who checked the text against the official source. */
+  /** First and second independent reviewers. Distinct identities are mandatory for citable sources. */
   verifiedBy?: string;
   verifiedAt?: string;
+  secondVerifiedBy?: string;
+  secondVerifiedAt?: string;
 }
 
 export interface Legislation {
@@ -162,6 +174,8 @@ export interface Matter {
   parties: MatterParty[];
   createdAt: string;
   updatedAt: string;
+  ownerId?: string;
+  assignedReviewerIds?: string[];
   /** Purge deadline (ISO); null = keep until the user deletes. */
   retainUntil: string | null;
 }
@@ -291,7 +305,7 @@ export interface ReviewComment {
 
 export interface ReviewDecision {
   id: string;
-  action: "comment" | "accept_warning" | "approve" | "reject";
+  action: "comment" | "accept_warning" | "approve" | "reject" | "assign";
   actor: { name: string; licenseNo: string };
   subject: string;
   reason?: string;
@@ -323,6 +337,7 @@ export interface ReviewRecord {
   acceptedWarnings: AcceptedWarning[];
   decisions: ReviewDecision[];
   reviewer?: { name: string; licenseNo: string };
+  assignedReviewer?: { name: string; licenseNo: string };
   decidedAt?: string;
   note?: string;
   history: Array<{ at: string; from: ReviewState; to: ReviewState; actor: string }>;
@@ -331,7 +346,7 @@ export interface ReviewRecord {
 export type AuditAction =
   | "corpus.import" | "corpus.amend" | "search" | "cite_check" | "contract.import" | "evidence.import"
   | "contract.review" | "matter.create" | "matter.update" | "matter.delete" | "egress.decision"
-  | "review.transition" | "review.comment" | "review.warning" | "run.start" | "run.cancel" | "run.resume" | "export.final" | "export.draft" | "purge"
+  | "review.transition" | "review.comment" | "review.warning" | "review.assign" | "run.start" | "run.cancel" | "run.resume" | "export.final" | "export.draft" | "purge" | "backup.create" | "backup.restore"
   | "work.create" | "work.update" | "work.delete";
 
 export interface AuditEvent {

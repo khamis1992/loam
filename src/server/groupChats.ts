@@ -18,6 +18,21 @@ import { database, transaction } from "./sqliteStore.js";
 import { createTask, getTask } from "./db.js";
 import { getAgent } from "./agents.js";
 import { log } from "../log.js";
+import { taskEvents, type TaskFinishedEvent } from "./taskEvents.js";
+
+let currentRunStarter: GroupRunStarter | undefined;
+let replyListenerInstalled = false;
+
+function ensureReplyListener(): void {
+  if (replyListenerInstalled) return;
+  replyListenerInstalled = true;
+  taskEvents.on("task:finished", (_event: TaskFinishedEvent) => {
+    if (!currentRunStarter) return;
+    void collectGroupReplies(currentRunStarter).catch((error) => {
+      log.warn(`group reply collection failed: ${String(error)}`);
+    });
+  });
+}
 
 export interface GroupChat {
   id: string;
@@ -286,7 +301,7 @@ export function createGroupRunStarter(runTask: (opts: {
   agentId: string;
   emit: () => void;
 }) => Promise<{ taskId: string; text: string }>): GroupRunStarter {
-  return (input) => {
+  const starter: GroupRunStarter = (input) => {
     const title = input.title ?? `Group: ${input.groupId}`;
     const task = createTask(input.prompt, title, null, input.agentId);
     recordPendingTask(input.groupId, task.id, input.agentId);
@@ -294,6 +309,9 @@ export function createGroupRunStarter(runTask: (opts: {
       .catch((error) => log.warn(`group run ${task.id}: ${String(error)}`));
     return { taskId: task.id };
   };
+  currentRunStarter = starter;
+  ensureReplyListener();
+  return starter;
 }
 
 /**

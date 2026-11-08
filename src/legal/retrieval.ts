@@ -61,6 +61,12 @@ export interface LegalHit {
   reasons: string[];
 }
 
+export interface RetrievalWarning {
+  code: "EMBEDDER_UNAVAILABLE" | "EMBEDDINGS_UNAVAILABLE" | "RERANKER_UNAVAILABLE" | "RERANKER_INVALID_RESULT";
+  messageAr: string;
+  messageEn: string;
+}
+
 export interface LegalSearchResult {
   query: string;
   asOf: string;
@@ -72,6 +78,7 @@ export interface LegalSearchResult {
   authorityReason?: "COVERAGE_UNCONFIGURED" | "COVERAGE_INCOMPLETE" | "NO_MATCH";
   coverage: CoverageReport;
   corpusSnapshotId: string;
+  warnings: RetrievalWarning[];
 }
 
 const RRF_K = 60;
@@ -81,6 +88,16 @@ const W_DIRECT = 10;
 const MAX_TEXT = 4000;
 const K1 = 1.2;
 const B = 0.75;
+
+function retrievalWarning(code: RetrievalWarning["code"]): RetrievalWarning {
+  const messages: Record<RetrievalWarning["code"], { messageAr: string; messageEn: string }> = {
+    EMBEDDER_UNAVAILABLE: { messageAr: "تعذّر تشغيل نموذج المتجهات؛ النتائج الحالية معتمدة على البحث المعجمي فقط.", messageEn: "The embedding model failed; results are lexical only." },
+    EMBEDDINGS_UNAVAILABLE: { messageAr: "لا توجد متجهات مفهرسة صالحة لهذه النسخة؛ النتائج الحالية معتمدة على البحث المعجمي فقط.", messageEn: "No usable embeddings are indexed; results are lexical only." },
+    RERANKER_UNAVAILABLE: { messageAr: "تعذّر تشغيل إعادة الترتيب؛ تم الاحتفاظ بالترتيب الاندماجي الأصلي.", messageEn: "The reranker failed; the original fused order is preserved." },
+    RERANKER_INVALID_RESULT: { messageAr: "أعادت إعادة الترتيب نتائج غير صالحة؛ تم تجاهلها والاحتفاظ بالترتيب الأصلي.", messageEn: "The reranker returned invalid scores; its result was ignored." },
+  };
+  return { code, ...messages[code] };
+}
 
 /** Legislations whose alias appears in the query (orthographic containment). */
 export function aliasMatches(corpus: LegalCorpus, query: string): Legislation[] {
@@ -118,6 +135,7 @@ function statusOf(v: ArticleVersion, asOf: string): LegalHit["status"] {
 export async function searchLaw(corpus: LegalCorpus, query: string, opts: LegalSearchOptions): Promise<LegalSearchResult> {
   const k = Math.min(Math.max(opts.k ?? 6, 1), 20);
   const asOf = opts.asOf;
+  const warnings: RetrievalWarning[] = [];
   const laws = lawsInQuery(corpus, query);
   const mentions = findArticleMentions(query);
   const labels = new Set(mentions.flatMap((m) => m.labels));
@@ -161,13 +179,15 @@ export async function searchLaw(corpus: LegalCorpus, query: string, opts: LegalS
   if (opts.embedder && opts.embedModel) {
     try {
       const [qv] = await opts.embedder.embed([query]);
-      if (qv && qv.length > 0) {
+      if (qv && qv.length > 0 && qv.every(Number.isFinite)) {
         const q = normalize(qv);
         for (const { avid, vec } of corpus.vectorsFor(opts.embedModel)) vecScore.set(avid, dot(q, vec));
         hybrid = vecScore.size > 0;
       }
+      if (!hybrid) warnings.push(retrievalWarning("EMBEDDINGS_UNAVAILABLE"));
     } catch {
-      hybrid = false; // embedder down: lexical results stay valid, never silently mixed
+      hybrid = false;
+      warnings.push(retrievalWarning("EMBEDDER_UNAVAILABLE"));
     }
   }
 
@@ -219,15 +239,17 @@ export async function searchLaw(corpus: LegalCorpus, query: string, opts: LegalS
   if (opts.reranker && top.length > 1) {
     try {
       const scores = await opts.reranker.score(query, top.map((h) => ({ avid: h.avid, text: h.text })), opts.signal);
-      if (scores.length === top.length) {
+      if (scores.length === top.length && scores.every(Number.isFinite)) {
         const directFirst = (h: LegalHit): number => (direct.has(h.avid) ? 1 : 0);
         top = top
           .map((h, i) => ({ h, r: scores[i] ?? 0 }))
           .sort((a, b) => directFirst(b.h) - directFirst(a.h) || b.r - a.r || a.h.avid.localeCompare(b.h.avid))
           .map(({ h }) => ({ ...h, reasons: [...h.reasons, "reranked"] }));
+      } else {
+        warnings.push(retrievalWarning("RERANKER_INVALID_RESULT"));
       }
     } catch {
-      /* reranker failure keeps the fused order */
+      warnings.push(retrievalWarning("RERANKER_UNAVAILABLE"));
     }
   }
   top = top.slice(0, k);
@@ -235,6 +257,6 @@ export async function searchLaw(corpus: LegalCorpus, query: string, opts: LegalS
   const authorityReason = top.length > 0 ? undefined : coverage.status === "unconfigured" ? "COVERAGE_UNCONFIGURED" : coverage.status === "incomplete" ? "COVERAGE_INCOMPLETE" : "NO_MATCH";
   return {
     query, asOf, hits: top, mode: hybrid ? "hybrid" : "lexical", direct: direct.size > 0, noAuthority: top.length === 0,
-    ...(authorityReason ? { authorityReason } : {}), coverage, corpusSnapshotId: corpus.snapshot({ persist: false }).id,
+    ...(authorityReason ? { authorityReason } : {}), coverage, corpusSnapshotId: corpus.snapshot({ persist: false }).id, warnings,
   };
 }

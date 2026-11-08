@@ -119,6 +119,14 @@ export interface McpServerConfig {
    *  the mcp_* bridge tools (list / search / schema / call). Use it for large
    *  catalogues so connector count no longer costs context. */
   lazy?: boolean;
+  /** Optional display alias for account-specific server entries. */
+  accountName?: string;
+  /** Tools hidden from discovery and execution for this server. */
+  disabledTools?: string[];
+  /** Natural-language guidance appended to discovered tool descriptions. */
+  customInstructions?: string;
+  /** Optional service-pack catalog id used to provision this entry. */
+  servicePackId?: string;
 }
 
 import type { CodeGraphConfig } from "./codegraph/config.js";
@@ -384,6 +392,8 @@ export interface Config {
   routing?: import("./llm/router.js").RoutingConfig;
   /** Legal mode (Qatar). Absent = disabled; normalized by src/legal/config.ts. */
   legal?: Partial<import("./legal/config.js").LegalConfig>;
+  /** Build menu stays off until a Windows smoke run turns it on. */
+  buildMenu?: { enabled: boolean };
 }
 
 export const DEFAULTS: Config = {
@@ -391,6 +401,7 @@ export const DEFAULTS: Config = {
   fallbackModel: "qwen2.5:14b",
   ollamaUrl: "http://127.0.0.1:11434",
   server: { host: "127.0.0.1", port: 3939 },
+  buildMenu: { enabled: false },
   agent: { maxSteps: 40, temperature: 0.2, requestTimeoutMs: 600000 },
   // D19: sessions idle 30 minutes before their resources are reclaimed; the
   // per-session compute budget warns at 80% and stops at 100% (both raisable).
@@ -624,16 +635,10 @@ function merge<T>(base: T, over: unknown): T {
 }
 
 /**
- * O6b: parse an opt-in flag. Only `1` and `true` (as a JSON boolean or an
- * untrimmed string) enable it; every other value — including `"0"`, `1` as a
- * number, `"yes"`, `null` and a missing key — keeps it off.
- *
- * Shared by the `config.json` value and the environment variables, so the two
- * paths cannot drift apart. `config.json` is user-editable, and a stray `"0"`
- * there is truthy, so without this an interrupted task would resume without
- * review on the next boot.
+ * O6b: parse an opt-in flag. Boolean `true`, `"1"`, and `"true"` enable it.
+ * `"yes"`, `"on"`, `"0"`, numbers, `null`, and a missing key stay off.
  */
-function parseOptInFlag(value: unknown): boolean {
+export function parseOptInFlag(value: unknown): boolean {
   return value === true || value === "1" || value === "true";
 }
 
@@ -646,6 +651,7 @@ export function loadConfig(): Config {
     console.warn(`[config] failed to parse ${p}: ${String(err)}`);
   }
   const cfg = merge(DEFAULTS, raw);
+  cfg.buildMenu = { enabled: parseOptInFlag(cfg.buildMenu?.enabled) };
   // Orchestration Core §4.0.1: deep-merge each section over the shipped defaults, then clamp.
   cfg.orchestration = clampOrchestration({
     ...ORCHESTRATION_DEFAULTS,

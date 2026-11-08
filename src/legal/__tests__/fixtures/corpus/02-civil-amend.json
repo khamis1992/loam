@@ -5,7 +5,7 @@
     "titleAr": "قانون اختباري رقم (2) لسنة 2091 بتعديل بعض أحكام القانون المدني الاختباري",
     "issueDate": "2091-06-01", "publishDate": "2091-06-20", "effectiveDate": "2091-07-01"
   },
-  "source": { "provenance": "official_gazette", "gazetteIssue": "FIXTURE-2", "gazetteDate": "2091-06-20", "retrievedAt": "2026-10-26T00:00:00Z", "verifiedBy": "fixture-author" },
+  "source": { "provenance": "official_gazette", "gazetteIssue": "FIXTURE-2", "gazetteDate": "2091-06-20", "retrievedAt": "2026-10-26T00:00:00Z", "verifiedBy": "fixture-author", "verifiedAt": "2026-10-26T00:00:00Z", "secondVerifiedBy": "fixture-reviewer", "secondVerifiedAt": "2026-10-26T00:00:00Z", "sourceSha256": "cb3f23d19ae0dda3d96173acc7ad66afd23b4894ac5fe698a5ff973c3ff7806a", "reviewedTextSha256": "1096f07cab6696d67e827530c46fc3ffd8bca8be088ef064a1f86576f96a0fb5", "usageRights": { "basis": "fictional test fixture", "reference": "FIXTURE-2", "confirmedBy": "fixture-rights-reviewer", "confirmedAt": "2026-10-26T00:00:00Z" } },
   "articles": [
     { "label": "1", "text": "يُستبدل بنص المادة (3) من القانون المدني الاختباري النص الآتي، وتُضاف إليه مادة جديدة برقم (3 مكرراً)، وتُلغى المادة (5) منه." }
   ],

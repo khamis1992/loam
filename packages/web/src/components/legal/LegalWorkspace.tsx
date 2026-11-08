@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { t } from '@/i18n/t';
-import { legalApi, type DefensePackage, type DocumentAnalysisReport, type EvidenceWorkspace, type LegalResponsePackage, type LegalStatus, type Matter } from '@/services/legalApi';
+import { useCallback, useEffect, useState, type KeyboardEvent } from 'react';
+import { getLocale, isRtl, t } from '@/i18n/t';
+import { legalApi, type DefensePackage, type DocumentAnalysisReport, type EvidenceWorkspace, type LegalResponsePackage, type LegalStatus, type Matter, type ReviewRecord } from '@/services/legalApi';
 import { EvidenceBoard } from './EvidenceBoard';
 import { ContractReview } from './ContractReview';
 import { DefenseStrategy } from './DefenseStrategy';
@@ -11,8 +11,11 @@ import { DocumentAnalysisView } from './DocumentAnalysisView';
 import { DocumentViewer } from './DocumentViewer';
 import { PrivacyBadge } from './PrivacyBadge';
 import { LegalRunControls } from './LegalRunControls';
+import { LegalBackLink } from './LegalBackLink';
+import { ReviewWorkQueue } from './ReviewWorkQueue';
 
-type Tab = 'analysis' | 'evidence' | 'contract' | 'defense' | 'response' | 'document';
+type Tab = 'analysis' | 'evidence' | 'contract' | 'defense' | 'response' | 'document' | 'reviews';
+const TABS: readonly Tab[] = ['analysis', 'evidence', 'contract', 'defense', 'response', 'document', 'reviews'];
 
 async function fileBase64(file: File): Promise<string> {
   const bytes = new Uint8Array(await file.arrayBuffer());
@@ -26,6 +29,7 @@ export function LegalWorkspace({ matterId }: { matterId: string }) {
   const [matter, setMatter] = useState<Matter | null>(null);
   const [workspace, setWorkspace] = useState<EvidenceWorkspace | null>(null);
   const [status, setStatus] = useState<LegalStatus | null>(null);
+  const [reviews, setReviews] = useState<ReviewRecord[]>([]);
   const [analysis, setAnalysis] = useState<DocumentAnalysisReport | null>(null);
   const [defense, setDefense] = useState<DefensePackage | null>(null);
   const [response, setResponse] = useState<LegalResponsePackage | null>(null);
@@ -34,7 +38,7 @@ export function LegalWorkspace({ matterId }: { matterId: string }) {
   const refresh = useCallback(async () => {
     try {
       const [matterResult, documentResult, statusResult] = await Promise.all([legalApi.getMatter(matterId), legalApi.getMatterDocuments(matterId), legalApi.status()]);
-      setMatter(matterResult.matter); setWorkspace(documentResult); setStatus(statusResult);
+      setMatter(matterResult.matter); setReviews(matterResult.reviews); setWorkspace(documentResult); setStatus(statusResult);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }, [matterId]);
   useEffect(() => { void refresh(); }, [refresh]);
@@ -46,22 +50,35 @@ export function LegalWorkspace({ matterId }: { matterId: string }) {
     await legalApi.uploadMatterDocument(matterId, file.name, await fileBase64(file));
     await refresh();
   });
+  const onTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    let next = index;
+    const direction = isRtl(getLocale()) ? 1 : -1;
+    if (event.key === 'ArrowLeft') next = (index + direction + TABS.length) % TABS.length;
+    else if (event.key === 'ArrowRight') next = (index - direction + TABS.length) % TABS.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = TABS.length - 1;
+    else return;
+    event.preventDefault();
+    const id = TABS[next]!;
+    setTab(id);
+    document.getElementById(`legal-tab-${id}`)?.focus();
+  };
   return (
-    <main className="space-y-3 p-3 text-sm [&_input]:bg-bg-main [&_input]:text-text-primary [&_select]:bg-bg-main [&_select]:text-text-primary [&_textarea]:bg-bg-main [&_textarea]:text-text-primary">
+    <main dir={isRtl(getLocale()) ? 'rtl' : 'ltr'} lang={getLocale()} className="space-y-3 p-3 text-sm [&_input]:bg-bg-main [&_input]:text-text-primary [&_select]:bg-bg-main [&_select]:text-text-primary [&_textarea]:bg-bg-main [&_textarea]:text-text-primary">
       <header className="flex flex-wrap items-center justify-between gap-2">
-        <div><h1 className="text-lg font-semibold">{matter?.title ?? t('Legal workspace')}</h1><p dir="ltr" className="text-xs opacity-60">{matter?.kind} · {matter?.asOf}</p></div>
+        <div className="flex items-center gap-3"><LegalBackLink href="/legal" label={t('Back to Legal Qatar')} /><div><h1 className="text-lg font-semibold">{matter?.title ?? t('Legal workspace')}</h1><p dir="ltr" className="text-xs opacity-60">{matter?.kind} · {matter?.asOf}</p></div></div>
         {status && <PrivacyBadge local={status.localModelApproved} keyAvailable={status.keyAvailable} />}
       </header>
       <div className="flex flex-wrap items-center gap-2">
-        <input type="file" accept=".pdf,.docx,.txt,.md,.png,.jpg,.jpeg,.webp" onChange={(e) => e.target.files?.[0] && void upload(e.target.files[0])} />
+        <input aria-label={t('Upload evidence document')} type="file" accept=".pdf,.docx,.txt,.md,.png,.jpg,.jpeg,.webp" onChange={(e) => e.target.files?.[0] && void upload(e.target.files[0])} />
         <LegalRunControls matterId={matterId} kind="document_analysis" label={t('Analyze documents')} onDone={(result: { report: DocumentAnalysisReport }) => setAnalysis(result.report)} />
         <LegalRunControls matterId={matterId} kind="defense_memo" label={t('Build defense')} onDone={setDefense} />
       </div>
       {error && <p role="alert" className="text-red-700 dark:text-red-300">{error}</p>}
-      <nav role="tablist" className="flex flex-wrap gap-1 border-b">
-        {(['analysis', 'evidence', 'contract', 'defense', 'response', 'document'] as const).map((id) => <button key={id} role="tab" aria-selected={tab === id} type="button" onClick={() => setTab(id)} className={`px-3 py-1 ${tab === id ? 'border-b-2 border-teal-600 font-semibold' : ''}`}>{t(id)}</button>)}
+      <nav role="tablist" aria-label={t('Legal workspace sections')} className="flex flex-wrap gap-1 border-b">
+        {TABS.map((id, index) => <button id={`legal-tab-${id}`} key={id} role="tab" aria-selected={tab === id} aria-controls={`legal-panel-${id}`} tabIndex={tab === id ? 0 : -1} type="button" onKeyDown={(event) => onTabKeyDown(event, index)} onClick={() => setTab(id)} className={`min-h-9 px-3 py-1 focus-visible:outline-2 focus-visible:outline-teal-600 ${tab === id ? 'border-b-2 border-teal-600 font-semibold' : ''}`}>{t(id)}</button>)}
       </nav>
-      <div className="grid gap-3 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)_minmax(0,1fr)]">
+      <div id={`legal-panel-${tab}`} role="tabpanel" aria-labelledby={`legal-tab-${tab}`} className="grid gap-3 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)_minmax(0,1fr)]">
         <aside aria-label={t('Source document')}><DocumentViewer document={workspace?.documents[0]} /></aside>
         <section>
           {tab === 'analysis' && (analysis ? <DocumentAnalysisView report={analysis} /> : <p className="opacity-70">{t('Run document analysis to see the report.')}</p>)}
@@ -70,12 +87,13 @@ export function LegalWorkspace({ matterId }: { matterId: string }) {
           {tab === 'defense' && (defense ? <DefenseStrategy result={defense} /> : <p className="opacity-70">{t('Build a defense to see the strategy.')}</p>)}
           {tab === 'response' && (
             <div className="space-y-3">
-              <textarea dir="auto" rows={6} value={sourceText} onChange={(e) => setSourceText(e.target.value)} placeholder={t('Paste the opposing memorandum or legal letter')} className="w-full rounded border p-2" />
+              <label className="grid gap-1">{t('Opposing memorandum or legal letter')}<textarea dir="auto" rows={6} value={sourceText} onChange={(e) => setSourceText(e.target.value)} placeholder={t('Paste the opposing memorandum or legal letter')} className="w-full rounded border p-2" /></label>
               <LegalRunControls matterId={matterId} kind="legal_response" label={t('Build legal response')} sourceText={sourceText} onDone={setResponse} />
               {response && <ResponseMatrix result={response} />}
             </div>
           )}
           {tab === 'document' && workspace && <DocumentViewer document={workspace.documents[0]} />}
+          {tab === 'reviews' && <ReviewWorkQueue reviews={reviews} onChange={setReviews} />}
         </section>
         <aside aria-label={t('Evidence and notes')}>{workspace && <EvidenceBoard workspace={workspace} />}</aside>
       </div>

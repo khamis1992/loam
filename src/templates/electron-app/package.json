@@ -1,0 +1,21 @@
+{
+  "name": "loam-desktop-app",
+  "private": true,
+  "version": "0.1.0",
+  "main": "electron/main.cjs",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build && node --check electron/main.cjs && node --check electron/preload.cjs",
+    "check": "node --test tests/*.test.mjs",
+    "lint": "node --check electron/main.cjs && node --check electron/preload.cjs",
+    "typecheck": "tsc --noEmit",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "electron": "^44.7.2",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.7"
+  }
+}

@@ -6,7 +6,7 @@
     "aliases": ["القانون المدني الاختباري"],
     "issueDate": "2090-03-01", "publishDate": "2090-03-15", "effectiveDate": "2090-04-01"
   },
-  "source": { "provenance": "official_gazette", "gazetteIssue": "FIXTURE-1", "gazetteDate": "2090-03-15", "retrievedAt": "2026-10-26T00:00:00Z", "verifiedBy": "fixture-author", "url": "https://example.invalid/fixture/law/2090/1" },
+  "source": { "provenance": "official_gazette", "gazetteIssue": "FIXTURE-1", "gazetteDate": "2090-03-15", "retrievedAt": "2026-10-26T00:00:00Z", "verifiedBy": "fixture-author", "verifiedAt": "2026-10-26T00:00:00Z", "secondVerifiedBy": "fixture-reviewer", "secondVerifiedAt": "2026-10-26T00:00:00Z", "sourceSha256": "75d7d1f2bfe1acbc54e02b3daca067f99ce653420c9ba72db0e9ea5a888415a5", "reviewedTextSha256": "420011e565fe82cb848478cff2b7e6746931f0afb5e0c80c5e89a6b59757a84b", "usageRights": { "basis": "fictional test fixture", "reference": "FIXTURE-1", "confirmedBy": "fixture-rights-reviewer", "confirmedAt": "2026-10-26T00:00:00Z" }, "url": "https://example.invalid/fixture/law/2090/1" },
   "articles": [
     { "part": "issuance", "label": "1", "text": "يُعمل بأحكام القانون المدني الاختباري المرافق لهذا القانون." },
     { "part": "issuance", "label": "2", "text": "على جميع الجهات المختصة، كلٌّ فيما يخصه، تنفيذ هذا القانون، ويُنشر في الجريدة الرسمية." },

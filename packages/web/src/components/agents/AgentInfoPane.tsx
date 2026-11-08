@@ -23,6 +23,12 @@ import { Button, Spinner } from '@/components/ui/Button';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
 import {
   getAgentMemory,
+  getAgentUsage,
+  listAgentSecrets,
+  addAgentSecret,
+  deleteAgentSecret,
+  createSchedule,
+  updateSchedule,
   listApprovalRules,
   removeApprovalRule,
   listScratchpad,
@@ -44,6 +50,9 @@ import {
 import type {
   MemoryEntry,
   Schedule,
+  AgentUsage,
+  SecretEntry,
+  ScheduleDraft,
   ApprovalRuleRow,
   UrlWatch,
   ChannelStatus,
@@ -180,6 +189,12 @@ export function AgentInfoPane({ agent, threadUid, onClose, onRenameAgent, onDele
             <>
               <Section title={t('Overview')}>
                 <OverviewSection agent={agent} />
+              </Section>
+              <Section title={t('Analytics')}>
+                <AnalyticsSection agentId={agent.id} />
+              </Section>
+              <Section title={t('Secrets')}>
+                <SecretsSection agentId={agent.id} />
               </Section>
               <Section title={t('Routines')}>
                 <RoutinesTab agentId={agent.id} />
@@ -542,6 +557,97 @@ function ComputerPreviewCard({ agentId, agentName, threadUid }: { agentId: strin
   );
 }
 
+function AnalyticsSection({ agentId }: { agentId: string }) {
+  const [usage, setUsage] = useState<AgentUsage | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    getAgentUsage(agentId).then((data) => {
+      if (mounted) setUsage(data);
+    }).catch((e) => {
+      if (mounted) setError(e instanceof Error ? e.message : String(e));
+    });
+    return () => { mounted = false; };
+  }, [agentId]);
+
+  if (error) return <p className="text-xs text-function-error">{error}</p>;
+  if (!usage) return <Spinner className="size-4" />;
+  const successRate = usage.runs > 0 ? Math.round((usage.done / usage.runs) * 100) : 0;
+  const rows = [
+    [t('Runs'), usage.runs],
+    [t('Completed'), usage.done],
+    [t('Errors'), usage.errors],
+    [t('Success rate'), `${successRate}%`],
+    [t('Prompt tokens'), usage.promptTokens],
+    [t('Completion tokens'), usage.completionTokens],
+    [t('Tool calls'), usage.toolCalls],
+    [t('Device tool calls'), usage.deviceToolCalls],
+  ] as const;
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {rows.map(([label, value]) => (
+        <div key={label} className="rounded-control border border-border-main bg-bg-main p-2">
+          <p className="text-[11px] text-text-tertiary">{label}</p>
+          <p className="text-sm font-medium text-text-primary">{value}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SecretsSection({ agentId }: { agentId: string }) {
+  const [secrets, setSecrets] = useState<SecretEntry[]>([]);
+  const [name, setName] = useState('');
+  const [value, setValue] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = async () => {
+    try {
+      setSecrets(await listAgentSecrets(agentId));
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  useEffect(() => { void refresh(); }, [agentId]);
+
+  const add = async () => {
+    if (!name.trim() || !value) return;
+    setSaving(true);
+    try {
+      await addAgentSecret(agentId, name.trim(), value);
+      setName('');
+      setValue('');
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      {secrets.map((secret) => (
+        <div key={secret.name} className="flex items-center gap-2 rounded-control border border-border-main bg-bg-main px-2 py-1.5">
+          <span className="min-w-0 flex-1 truncate text-xs text-text-secondary">{secret.name}</span>
+          <Button type="button" variant="ghost" size="sm" aria-label={t('Delete')} onClick={() => void deleteAgentSecret(agentId, secret.name).then(refresh)}>
+            <Trash2 className="size-3.5" />
+          </Button>
+        </div>
+      ))}
+      <input className="rounded-control border border-border-main bg-bg-main px-2 py-1.5 text-xs text-text-primary outline-none focus:border-border-dark" value={name} onChange={(e) => setName(e.target.value)} placeholder={t('Secret name')} />
+      <input className="rounded-control border border-border-main bg-bg-main px-2 py-1.5 text-xs text-text-primary outline-none focus:border-border-dark" type="password" value={value} onChange={(e) => setValue(e.target.value)} placeholder={t('Secret value')} autoComplete="off" />
+      <Button type="button" variant="secondary" size="sm" loading={saving} disabled={!name.trim() || !value} onClick={() => void add()}>{t('Add secret')}</Button>
+      <p className="text-[11px] text-text-tertiary">{t('Values are encrypted and never shown again.')}</p>
+      {error && <p className="text-xs text-function-error">{error}</p>}
+    </div>
+  );
+}
+
 function OverviewSection({ agent }: { agent: AgentWithMeta }) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
@@ -604,12 +710,13 @@ function MemorySection({ agentId }: { agentId: string }) {
   const [memory, setMemory] = useState<MemoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [scope, setScope] = useState<'own' | 'team'>('own');
 
   useEffect(() => {
     let mounted = true;
     setLoading(true);
     setError(null);
-    getAgentMemory(agentId)
+    getAgentMemory(agentId, scope)
       .then((entries) => {
         if (mounted) setMemory(entries);
       })
@@ -622,10 +729,14 @@ function MemorySection({ agentId }: { agentId: string }) {
     return () => {
       mounted = false;
     };
-  }, [agentId]);
+  }, [agentId, scope]);
 
   return (
     <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+          <Button type="button" variant={scope === 'own' ? 'secondary' : 'ghost'} size="sm" onClick={() => setScope('own')}>{t('Personal memory')}</Button>
+          <Button type="button" variant={scope === 'team' ? 'secondary' : 'ghost'} size="sm" onClick={() => setScope('team')}>{t('Shared team memory')}</Button>
+      </div>
       <span className="text-xs font-medium text-text-tertiary">{t('Memory')}</span>
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-text-secondary">
@@ -1028,6 +1139,72 @@ function ScratchpadSection({ agentId }: { agentId: string }) {
   );
 }
 
+function AutomationComposer({ agentId, onCreated }: { agentId: string; onCreated: () => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [prompt, setPrompt] = useState('');
+  const [trigger, setTrigger] = useState<NonNullable<ScheduleDraft['trigger']>>('cron');
+  const [cron, setCron] = useState('0 9 * * *');
+  const [events, setEvents] = useState('*');
+  const [secret, setSecret] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const create = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      await createSchedule(agentId, {
+        prompt: prompt.trim(),
+        trigger,
+        ...(trigger === 'cron' ? { cron: cron.trim(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone } : {}),
+        ...(trigger !== 'cron' ? { webhookSecret: secret, events: events.split(',').map((item) => item.trim()).filter(Boolean) } : {}),
+      });
+      setPrompt('');
+      setSecret('');
+      setOpen(false);
+      await onCreated();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="rounded-card border border-border-main bg-bg-main p-2">
+      <Button type="button" variant="ghost" size="sm" onClick={() => setOpen((value) => !value)}>
+        <Plus className="size-3.5" /> {t('Add automation')}
+      </Button>
+      {open && (
+        <div className="mt-2 flex flex-col gap-2">
+          <input className="rounded-control border border-border-main bg-bg-menu px-2 py-1.5 text-xs text-text-primary outline-none focus:border-border-dark" value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder={t('Prompt or playbook')} />
+          <select className="rounded-control border border-border-main bg-bg-menu px-2 py-1.5 text-xs text-text-primary outline-none focus:border-border-dark" value={trigger} onChange={(e) => setTrigger(e.target.value as NonNullable<ScheduleDraft['trigger']>)}>
+            <option value="cron">Cron</option>
+            <option value="webhook">Webhook</option>
+            <option value="github">GitHub</option>
+            <option value="slack">Slack</option>
+            <option value="microsoftTeams">Microsoft Teams</option>
+            <option value="linear">Linear</option>
+            <option value="sentry">Sentry</option>
+            <option value="pagerduty">PagerDuty</option>
+            <option value="email">Email</option>
+          </select>
+          {trigger === 'cron' ? (
+            <input className="rounded-control border border-border-main bg-bg-menu px-2 py-1.5 text-xs text-text-primary outline-none focus:border-border-dark" value={cron} onChange={(e) => setCron(e.target.value)} placeholder="0 9 * * *" />
+          ) : (
+            <>
+              <input className="rounded-control border border-border-main bg-bg-menu px-2 py-1.5 text-xs text-text-primary outline-none focus:border-border-dark" value={events} onChange={(e) => setEvents(e.target.value)} placeholder={t('Event kinds (comma separated)')} />
+              <input className="rounded-control border border-border-main bg-bg-menu px-2 py-1.5 text-xs text-text-primary outline-none focus:border-border-dark" type="password" value={secret} onChange={(e) => setSecret(e.target.value)} placeholder={t('Webhook secret')} autoComplete="off" />
+            </>
+          )}
+          <Button type="button" variant="secondary" size="sm" loading={saving} disabled={!prompt.trim() || (trigger !== 'cron' && !secret)} onClick={() => void create()}>{t('Create automation')}</Button>
+          {error && <p className="text-xs text-function-error">{error}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RoutinesTab({ agentId }: { agentId: string }) {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1100,6 +1277,7 @@ function RoutinesTab({ agentId }: { agentId: string }) {
   if (schedules.length === 0) {
     return (
       <div className="flex flex-col gap-4">
+        <AutomationComposer agentId={agentId} onCreated={load} />
         <WatchesSection agentId={agentId} />
         <p className="text-sm text-text-tertiary">{t('No routines for this agent.')}</p>
       </div>
@@ -1108,6 +1286,7 @@ function RoutinesTab({ agentId }: { agentId: string }) {
 
   return (
     <div className="flex flex-col gap-4">
+      <AutomationComposer agentId={agentId} onCreated={load} />
       <WatchesSection agentId={agentId} />
       <div className="flex flex-col gap-2">
         <p className="text-[11px] text-text-tertiary">{t('Scheduled routines')}</p>
@@ -1135,6 +1314,15 @@ function RoutinesTab({ agentId }: { agentId: string }) {
           {s.lastStatus === 'failed' && s.lastError && (
             <p className="text-[11px] text-function-error">{s.lastError}</p>
           )}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => void updateSchedule(agentId, s.id, { enabled: !s.enabled }).then(load)}
+            className="mt-1 w-full"
+          >
+            {s.enabled ? t('Disable') : t('Enable')}
+          </Button>
           <Button
             type="button"
             variant="secondary"

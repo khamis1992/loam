@@ -78,7 +78,7 @@ export function coverageReport(corpus: LegalCorpus, opts: { asOf: string; matter
       continue;
     }
     const source = legislation.source;
-    if (!source.verifiedBy || !source.verifiedAt || !CITABLE_PROVENANCE.has(source.provenance)) {
+    if (!source.verifiedBy || !source.verifiedAt || !source.secondVerifiedBy || !source.secondVerifiedAt || !source.sourceSha256 || !source.reviewedTextSha256 || !source.usageRights || source.verifiedBy.trim().localeCompare(source.secondVerifiedBy.trim(), undefined, { sensitivity: "base" }) === 0 || !CITABLE_PROVENANCE.has(source.provenance)) {
       issues.push({ legKey: entry.legKey, titleAr: entry.titleAr, reason: "unverified" });
       continue;
     }
@@ -86,7 +86,8 @@ export function coverageReport(corpus: LegalCorpus, opts: { asOf: string; matter
       issues.push({ legKey: entry.legKey, titleAr: entry.titleAr, reason: "not_in_force" });
       continue;
     }
-    const age = now.getTime() - Date.parse(source.verifiedAt);
+    const oldestReview = Math.min(Date.parse(source.verifiedAt), Date.parse(source.secondVerifiedAt));
+    const age = now.getTime() - oldestReview;
     if (!Number.isFinite(age) || age > (entry.maxReviewAgeDays ?? 30) * 86_400_000) {
       issues.push({ legKey: entry.legKey, titleAr: entry.titleAr, reason: "stale" });
     }

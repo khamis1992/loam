@@ -38,9 +38,9 @@ describe('AgentInfoPane section set (Grok Bot parity)', () => {
     vi.restoreAllMocks();
   });
 
-  it('renders Overview, Routines, Channels and Members in a single scroll', () => {
+  it('renders Overview, Analytics, Secrets, Routines, Channels and Members in a single scroll', () => {
     render(<AgentInfoPane agent={agent} threadUid={null} onClose={() => {}} />);
-    expect(sectionHeadings()).toEqual(['Overview', 'Routines', 'Channels', 'Members']);
+    expect(sectionHeadings()).toEqual(['Overview', 'Analytics', 'Secrets', 'Routines', 'Channels', 'Members']);
     expect(screen.queryByText('Media')).not.toBeInTheDocument();
     expect(screen.queryByText('Computer')).not.toBeInTheDocument();
   });

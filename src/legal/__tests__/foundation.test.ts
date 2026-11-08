@@ -8,7 +8,7 @@ import { test } from "node:test";
 import { FieldCipher, StaticKeyProvider } from "../crypto.js";
 import { migrateLegalDatabase } from "../db/migrations.js";
 import { createLegalModelPort } from "../model/legalModelPort.js";
-import { createLegalBackup, restoreLegalBackup } from "../security/backup.js";
+import { createLegalBackup, inspectLegalBackup, restoreLegalBackup } from "../security/backup.js";
 import { openLegalPayload, sealLegalPayload } from "../security/transcriptSeal.js";
 import { LegalFileVault } from "../security/fileVault.js";
 import { MattersStore } from "../mattersStore.js";
@@ -66,15 +66,46 @@ test("legal backup restores encrypted matters with the recovery passphrase", () 
   const original = vault.put(Buffer.from("secret original", "utf8"));
   createLegalBackup({ outputPath, mattersPath, corpusPath, filesDir, keys: provider, passphrase: "correct horse battery" });
   assert.equal(fs.readFileSync(outputPath, "utf8").includes("شركة الاختبار"), false);
+  const inspected = inspectLegalBackup(outputPath, "correct horse battery");
+  assert.deepEqual(inspected.files.map((file) => file.name).sort(), [`files/${original.id}.json`, "matters.db", "qatar-law.db"].sort());
+  assert.ok(inspected.files.every((file) => /^[0-9a-f]{64}$/.test(file.sha256)));
+  assert.throws(() => inspectLegalBackup(outputPath, "wrong passphrase"));
   assert.throws(() => restoreLegalBackup({ inputPath: outputPath, mattersPath, corpusPath, passphrase: "wrong passphrase" }));
   const restoredMatters = path.join(dir, "restored-matters.db");
   const restoredCorpus = path.join(dir, "restored-corpus.db");
   const restoredFilesDir = path.join(dir, "restored-files");
   const restored = restoreLegalBackup({ inputPath: outputPath, mattersPath: restoredMatters, corpusPath: restoredCorpus, filesDir: restoredFilesDir, passphrase: "correct horse battery" });
+  assert.throws(() => restoreLegalBackup({ inputPath: outputPath, mattersPath: restoredMatters, corpusPath: restoredCorpus, filesDir: restoredFilesDir, passphrase: "correct horse battery" }), /explicitly allow overwrite/);
   assert.equal(new LegalFileVault(restoredFilesDir, new StaticKeyProvider(restored.mattersKey)).get(original.id).toString("utf8"), "secret original");
   const reopened = new MattersStore(restoredMatters, new StaticKeyProvider(restored.mattersKey));
   assert.equal(reopened.getMatter(matter.id)?.title, "شركة الاختبار");
   reopened.close();
   assert.equal(fs.readFileSync(restoredCorpus, "utf8"), "public corpus fixture");
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+
+test("legal runtime creates and restores isolated backups and applies default retention", async () => {
+  const { createLegalRuntime } = await import("../runtime.js");
+  const { normalizeLegalConfig } = await import("../config.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "legal-runtime-backup-"));
+  const provider = keys();
+  const now = () => new Date("2092-03-01T08:00:00Z");
+  const runtime = createLegalRuntime({ dataDir: dir, config: normalizeLegalConfig({ enabled: true, retentionDays: 30 }), ollamaUrl: "http://127.0.0.1:11434", keys: provider, now });
+  try {
+    const matter = runtime.matters.createMatter({ title: "نسخة تشغيلية", kind: "research" }, "user");
+    assert.equal(matter.retainUntil, "2092-03-31");
+    const backup = runtime.createBackup("correct horse battery");
+    assert.deepEqual(runtime.listBackups(), [backup.fileName]);
+    assert.equal(runtime.createAuditAnchor().anchor.format, "loam-legal-audit-anchor/1");
+    const restored = runtime.restoreBackup(backup.fileName, "correct horse battery");
+    const reopened = new MattersStore(path.join(restored.directory, "matters.db"), provider);
+    assert.equal(reopened.getMatter(matter.id)?.title, "نسخة تشغيلية");
+    reopened.close();
+    assert.notEqual(path.resolve(restored.directory), path.resolve(path.join(dir, "legal")));
+    assert.throws(() => runtime.restoreBackup("../outside.loam-legal", "correct horse battery"), /file name/);
+  } finally {
+    runtime.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

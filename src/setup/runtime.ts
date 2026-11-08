@@ -111,6 +111,8 @@ export interface Runtime {
   mcpServers: string[];
   /** Direct handle on the running MCP servers (null when they are disabled). */
   mcp: McpToolset | null;
+  /** Rebuild the MCP process/catalogue set after a configuration change. */
+  reloadMcp(servers: Record<string, import("../config.js").McpServerConfig>): Promise<McpToolset | null>;
   /** Legal mode runtime (corpus + encrypted matters); null when cfg.legal.enabled is false. */
   legal: LegalRuntime | null;
   /**
@@ -282,7 +284,27 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   // Loam-managed server with its policy hooks. Disabled by default until H4 passes.
   // Blueprint gap 5: curated BYOK presets (supabase/vercel/google-*) overlay first.
   const apiAnything = prepareApiAnything(cfg, applyMcpPresets(cfg.mcpServers));
-  const mcp = opts.mcp === false ? null : await registerMcpTools(registry, apiAnything.servers, cfg.workspace, apiAnything.hooks);
+  let mcp = opts.mcp === false ? null : await registerMcpTools(registry, apiAnything.servers, cfg.workspace, apiAnything.hooks);
+  let reloading = false;
+  const reloadMcp = async (servers: Record<string, import("../config.js").McpServerConfig>): Promise<McpToolset | null> => {
+    if (reloading) throw new Error("MCP reload is already in progress");
+    reloading = true;
+    try {
+      if (mcp) await mcp.close();
+      for (const name of registry.names()) {
+        if (name.startsWith("mcp__") || ["mcp_list_servers", "mcp_search_tools", "mcp_tool_schema", "mcp_call_tool"].includes(name)) registry.unregister(name);
+      }
+      if (opts.mcp === false) {
+        mcp = null;
+      } else {
+        const prepared = prepareApiAnything(cfg, applyMcpPresets(servers));
+        mcp = await registerMcpTools(registry, prepared.servers, cfg.workspace, prepared.hooks);
+      }
+      return mcp;
+    } finally {
+      reloading = false;
+    }
+  };
   // Cap H §6.5: the nine api_* learn tools exist only while the Loam-managed
   // server is running; they register integration:true (per-task grant), the
   // policy envelope guards every call (§6.5 P3 acceptance 1).
@@ -304,6 +326,7 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
     mcpServers: mcp?.servers ?? [],
     codeGraph,
     mcp,
+    reloadMcp,
     dispose: async (): Promise<void> => {
       stopDream?.();
       screenLive.stop();

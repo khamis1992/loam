@@ -88,9 +88,10 @@ agent with `source === "grokbot"`.
   (rate-limited: max 20 executions per agentRef per 60s window).
 - The token is fixed-length timing-safe compared (sha256 digests), and is never
   logged; logs contain the agent name only.
-- When valid, the instruction becomes a normal agent run: a task is created for
-  the agent and executed through the shared `__loamRunTask` engine (202 response
-  with `{ taskId, agentId }`).
+- When valid, the instruction becomes a normal agent run through the shared
+  `__loamRunTask` engine (202 response with `{ taskId, agentId }`). A new thread
+  is created on the first message; later tasks reuse the same permanent thread
+  instead of creating a detached transcript for every message.
 
 ## Bridge token setup
 

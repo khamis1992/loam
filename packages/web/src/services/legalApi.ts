@@ -14,6 +14,7 @@ export type Verdict = 'pass' | 'pass_with_warnings' | 'fail';
 export interface LegalStatus {
   enabled: boolean; today: string; keyAvailable: boolean; localModel: string; localModelApproved: boolean;
   corpus: { legislations: number; articles: number; versions: number; avgLen: number };
+  identity?: { id: string; roles: string[]; authMethod: 'oidc' | 'saml-gateway' | 'local' };
 }
 
 export interface LegalHit {
@@ -22,12 +23,32 @@ export interface LegalHit {
   status: 'in_force' | 'historical' | 'not_yet_in_force'; provenance: string; citable: boolean; score: number; reasons: string[];
 }
 export interface CoverageIssue { legKey: string; titleAr: string; reason: 'missing' | 'unverified' | 'stale' | 'not_in_force' }
+export interface CoverageEntry { legKey: string; titleAr: string; requiredFor: string[]; maxReviewAgeDays?: number }
+export interface LegalSourceRef {
+  provenance: string; url?: string; gazetteIssue?: string; gazetteDate?: string; sourceSha256?: string; reviewedTextSha256?: string;
+  usageRights?: { basis: string; reference: string; confirmedBy: string; confirmedAt: string }; retrievedAt: string;
+  verifiedBy?: string; verifiedAt?: string; secondVerifiedBy?: string; secondVerifiedAt?: string;
+}
+export interface LegalLegislation {
+  key: string; type: string; year: number; number: number; titleAr: string; titleEn?: string; aliases: string[];
+  issueDate?: string; publishDate?: string; effectiveDate?: string; status: string; source: LegalSourceRef;
+}
+export interface LegalPack {
+  format: 'loam-legal-pack/1';
+  legislation: { type: string; year: number; number: number; titleAr: string; titleEn?: string; aliases?: string[]; issueDate?: string; publishDate?: string; effectiveDate?: string; status?: string };
+  source: LegalSourceRef;
+  articles: Array<{ part?: 'issuance' | 'body'; label: string; heading?: string; text: string }>;
+  amends?: Array<Record<string, unknown>>;
+  repeals?: Array<{ legKey: string; effectiveDate?: string }>;
+}
+export interface RetrievalWarning { code: 'EMBEDDER_UNAVAILABLE' | 'EMBEDDINGS_UNAVAILABLE' | 'RERANKER_UNAVAILABLE' | 'RERANKER_INVALID_RESULT'; messageAr: string; messageEn: string }
 export interface CoverageReport {
   status: 'unconfigured' | 'complete' | 'incomplete'; matterKind: string; asOf: string; entries: number; issues: CoverageIssue[]; checkedAt: string;
 }
 export interface LegalSearchResult {
   query: string; asOf: string; hits: LegalHit[]; mode: 'lexical' | 'hybrid'; direct: boolean; noAuthority: boolean;
   authorityReason?: 'COVERAGE_UNCONFIGURED' | 'COVERAGE_INCOMPLETE' | 'NO_MATCH'; coverage: CoverageReport; corpusSnapshotId: string;
+  warnings: RetrievalWarning[];
 }
 export interface LegalArticleVersion {
   avid: string; articleKey: string; text: string; effectiveFrom: string; effectiveTo: string | null; origin: 'original' | 'amendment'; introducedBy?: string;
@@ -55,17 +76,18 @@ export interface Matter {
   confidentiality: Confidentiality; egress: EgressPolicy; asOf: string;
   court?: { name: string; circuit?: string; caseNumber?: string; hearingDate?: string };
   parties: MatterParty[]; createdAt: string; updatedAt: string; retainUntil: string | null;
+  ownerId?: string; assignedReviewerIds?: string[];
 }
 export interface ReviewParagraph { index: number; start: number; end: number; quote: string }
 export interface ReviewComment { id: string; anchor: Omit<ReviewParagraph, 'index'>; body: string; author: { name: string; licenseNo: string }; createdAt: string }
-export interface ReviewDecision { id: string; action: 'comment' | 'accept_warning' | 'approve' | 'reject'; actor: { name: string; licenseNo: string }; subject: string; reason?: string; at: string }
+export interface ReviewDecision { id: string; action: 'comment' | 'accept_warning' | 'approve' | 'reject' | 'assign'; actor: { name: string; licenseNo: string }; subject: string; reason?: string; at: string }
 export interface AcceptedWarning { code: string; reason: string; reviewer: { name: string; licenseNo: string }; acceptedAt: string }
 export interface ReviewRecord {
   id: string; matterId: string; documentName: string; state: ReviewState; verifiedSha256?: string; approvedSha256?: string;
   documentVersion?: { id: string; contentSha256: string; corpusSnapshotId: string; model: string; createdAt: string };
   verification?: VerificationReport;
   comments: ReviewComment[]; acceptedWarnings: AcceptedWarning[]; decisions: ReviewDecision[];
-  reviewer?: { name: string; licenseNo: string }; decidedAt?: string; note?: string;
+  reviewer?: { name: string; licenseNo: string }; assignedReviewer?: { name: string; licenseNo: string }; decidedAt?: string; note?: string;
   history: Array<{ at: string; from: ReviewState; to: ReviewState; actor: string }>;
 }
 export interface EvidenceAnchor { documentId: string; page?: number; paragraph?: number; start: number; end: number; quote: string; sha256: string }
@@ -176,9 +198,10 @@ export const legalApi = {
   libraryStatus: () => request<{ installed: boolean; path: string | null; warningAr: string; warningEn: string }>('/api/legal/library/status'),
   librarySearch: (q: string, folder?: LibraryFolder, limit = 20) => request<LibrarySearchResult>(`/api/legal/library/search?q=${enc(q)}${folder ? `&folder=${folder}` : ''}&limit=${limit}`),
   coverage: (matterKind = 'research', asOf?: string) => request<{ coverage: CoverageReport; snapshot: { id: string; contentSha256: string; versions: number } }>(`/api/legal/coverage?matterKind=${enc(matterKind)}${asOf ? `&asOf=${enc(asOf)}` : ''}`),
-  getCoverageManifest: () => request<{ entries: Array<{ legKey: string; titleAr: string; requiredFor: string[]; maxReviewAgeDays?: number }> }>('/api/legal/coverage/manifest'),
-  setCoverageManifest: (entries: Array<{ legKey: string; titleAr: string; requiredFor: string[]; maxReviewAgeDays?: number }>) =>
-    request<{ entries: typeof entries }>('/api/legal/coverage/manifest', jsonInit('PUT', { entries })),
+  getCoverageManifest: () => request<{ entries: CoverageEntry[] }>('/api/legal/coverage/manifest'),
+  setCoverageManifest: (entries: CoverageEntry[]) => request<{ entries: CoverageEntry[] }>('/api/legal/coverage/manifest', jsonInit('PUT', { entries })),
+  listLaws: () => request<{ laws: LegalLegislation[] }>('/api/legal/laws'),
+  importPack: (pack: LegalPack) => request<{ legKey: string; articles: number; versions: number; amendmentsApplied: number; warnings: string[] }>('/api/legal/import', jsonInit('POST', { pack })),
   search: (q: string, opts: { asOf?: string; lawKey?: string; k?: number; historical?: boolean; matterKind?: string } = {}) => {
     const params = new URLSearchParams({ q });
     if (opts.asOf) params.set('asOf', opts.asOf);
@@ -211,6 +234,8 @@ export const legalApi = {
     request<{ report: VerificationReport; structure: StructureIssue[]; review: ReviewRecord; paragraphs: ReviewParagraph[] }>('/api/legal/artifacts/verify', jsonInit('POST', input)),
   approveArtifact: (id: string, dataBase64: string, reviewerName: string, licenseNo: string) =>
     request<{ review: ReviewRecord; artifact: ApprovalArtifact }>(`/api/legal/reviews/${enc(id)}/approve-artifact`, jsonInit('POST', { dataBase64, reviewerName, licenseNo })),
+  assignReview: (id: string, reviewerName: string, licenseNo: string) =>
+    request<{ review: ReviewRecord }>(`/api/legal/reviews/${enc(id)}/assign`, jsonInit('POST', { reviewerName, licenseNo })),
   addReviewComment: (id: string, input: { anchor: Omit<ReviewParagraph, 'index'>; body: string; reviewerName: string; licenseNo: string }) =>
     request<{ review: ReviewRecord }>(`/api/legal/reviews/${enc(id)}/comments`, jsonInit('POST', input)),
   acceptReviewWarning: (id: string, input: { code: string; reason: string; reviewerName: string; licenseNo: string }) =>
@@ -231,6 +256,11 @@ export const legalApi = {
   approveReview: (id: string, text: string, reviewerName: string, licenseNo: string) =>
     request<{ review: ReviewRecord }>(`/api/legal/reviews/${enc(id)}/approve`, jsonInit('POST', { text, reviewerName, licenseNo })),
   rejectReview: (id: string, note: string) => request<{ review: ReviewRecord }>(`/api/legal/reviews/${enc(id)}/reject`, jsonInit('POST', { note })),
+  listBackups: () => request<{ files: string[] }>('/api/legal/operations/backups'),
+  createBackup: (passphrase: string) => request<{ fileName: string; files: number }>('/api/legal/operations/backup', jsonInit('POST', { passphrase })),
+  restoreBackup: (fileName: string, passphrase: string) => request<{ directory: string; restored: string[] }>('/api/legal/operations/restore', jsonInit('POST', { fileName, passphrase })),
+  purgeExpired: () => request<{ purged: string[] }>('/api/legal/operations/purge', jsonInit('POST', {})),
+  createAuditAnchor: () => request<{ fileName: string; anchor: unknown }>('/api/legal/operations/audit-anchor', jsonInit('POST', {})),
   audit: (matterId?: string) => request<{ events: Array<{ seq: number; at: string; actor: string; action: string; subject: string }> }>(`/api/legal/audit${matterId ? `?matterId=${enc(matterId)}` : ''}`),
   auditVerify: () => request<{ intact: boolean; firstBrokenSeq: number | null }>('/api/legal/audit/verify'),
 };

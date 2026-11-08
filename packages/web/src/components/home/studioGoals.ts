@@ -14,7 +14,7 @@ export interface StudioGoal {
   section?: 'Document' | 'Media';
   description?: string;
   subtitle?: string;
-  outputType?: 'website' | 'slides' | 'image' | 'video';
+  outputType?: 'website' | 'slides' | 'image' | 'video' | 'desktop';
   directRoute?: string;
   actionLabel?: string;
   actionPrompt?: string;
@@ -35,13 +35,13 @@ export const BUILD_GOALS: StudioGoal[] = [
   },
   {
     id: 'desktop-app', label: 'Desktop app', title: 'Build a desktop app',
-    placeholder: 'Describe the desktop app you want to build', loamMode: 'build', icon: 'desktop',
+    placeholder: 'Describe the desktop app you want to build', loamMode: 'build', icon: 'desktop', outputType: 'desktop',
     suggestions: [
-      'Build a local screenshot organizer with tagging and search',
-      'Create a daily focus dashboard with a timer and notes',
-      'Build a private bookmark search tool with saved collections',
-      'Design a lightweight invoice and expense tracker',
-      'Create a media library with duplicate file detection',
+      'Develop a local file organizer for the Downloads folder',
+      'Make a habit tracker with reminders and weekly streaks',
+      'Create an offline Markdown editor with live preview',
+      'Design a password manager with encrypted local storage',
+      'Create a desktop photo sorter with duplicate detection',
     ],
   },
   {

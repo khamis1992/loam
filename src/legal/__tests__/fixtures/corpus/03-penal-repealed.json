@@ -6,7 +6,7 @@
     "aliases": ["قانون الجرائم الاقتصادية الاختباري"],
     "effectiveDate": "2088-01-01"
   },
-  "source": { "provenance": "almeezan_manual", "retrievedAt": "2026-10-26T00:00:00Z", "verifiedBy": "fixture-author" },
+  "source": { "provenance": "almeezan_manual", "retrievedAt": "2026-10-26T00:00:00Z", "verifiedBy": "fixture-author", "verifiedAt": "2026-10-26T00:00:00Z", "secondVerifiedBy": "fixture-reviewer", "secondVerifiedAt": "2026-10-26T00:00:00Z", "sourceSha256": "460ef3f6beaa85347596cd5ce2bb1036d3fdb8a51dd6d82e18e08072ee4e2b98", "reviewedTextSha256": "c449dc41d543bade4adbc32774927c18f3cbd57c2bf2d903e968672c0aa9e1ef", "usageRights": { "basis": "fictional test fixture", "reference": "FIXTURE-3", "confirmedBy": "fixture-rights-reviewer", "confirmedAt": "2026-10-26T00:00:00Z" } },
   "articles": [
     { "label": "1", "text": "يُعاقب بالحبس مدة لا تجاوز سنتين كل من استولى بغير حق على مال عام." },
     { "label": "2", "text": "تنقضي الدعوى الجنائية في الجرائم المنصوص عليها في هذا المرسوم بقانون بمضي عشر سنوات." }

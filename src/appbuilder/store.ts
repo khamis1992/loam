@@ -240,6 +240,7 @@ interface ProjectRow {
 function toProject(r: ProjectRow): AppProject {
   return {
     id: r.id,
+    kind: r.template_id as AppProject["kind"],
     taskId: r.task_id,
     title: r.title,
     description: r.description,

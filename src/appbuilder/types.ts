@@ -25,8 +25,9 @@ export type AppProjectStatus =
   | "failed"
   | "stopped";
 
-export type TemplateId = "web-app";
-export type TemplateFeatureId = "fullstack" | "seo-blog";
+export type BuildKind = "web-app" | "electron-app";
+export type TemplateId = BuildKind;
+export type TemplateFeatureId = "fullstack" | "seo-blog" | "file-organizer" | "habit-tracker" | "markdown-editor" | "password-manager" | "photo-sorter";
 
 export type AppScenario =
   | "web_app"
@@ -51,6 +52,7 @@ export interface AppProjectSettings {
 
 export interface AppProject {
   id: string;                    // "app_" + 12 lowercase base32 chars
+  kind?: BuildKind;
   taskId: string;                // Loam task id that owns the workspace
   title: string;
   description: string;

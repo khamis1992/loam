@@ -33,6 +33,7 @@ import { applyPlanApprovalGate, applyPlanModeGate } from "./tools/planTools.js";
 import { applyAskUserGate } from "./tools/askUserTools.js";
 import { connectedConnectorToolNames } from "./server/connectors/index.js";
 import { mergeAlwaysOnTools } from "./server/runTools.js";
+import { filterMcpToolsForWorkMode, setMcpAgentResolver } from "./server/mcpPolicy.js";
 import { applyKnowledgeGate } from "./server/knowledgeTools.js";
 import { planQuickEditRoute } from "./agent/quickEdit.js";
 import { SIDE_CHAT_READ_ONLY_TOOLS } from "./agent/sideChat.js";
@@ -47,6 +48,7 @@ import { singleSlideRequest, runSingleSlideFastPath } from "./agent/singleSlide.
 import { presentationVideoRequest, runPresentationVideoFastPath } from "./agent/presentationVideo.js";
 import { staticWebsiteRequest, runStaticWebsiteFastPath } from "./agent/staticWebsite.js";
 import { svgImageRequest, runSvgImageFastPath } from "./agent/svgImage.js";
+import { desktopTemplateRequest, runDesktopFastPath } from "./packs/desktop/fastPath.js";
 import { resolvePackId } from "./packs/intent.js";
 import { toolsForPack } from "./packs/loader.js";
 import { getPackManifest } from "./packs/registry.js";
@@ -129,6 +131,11 @@ function missionBudgetFor(cfg: ReturnType<typeof loadConfig>, carried?: MissionC
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
+  setMcpAgentResolver((ctx) => {
+    const task = ctx.taskId ? getTask(ctx.taskId) : undefined;
+    const agentId = task?.agentId ?? ctx.agentId;
+    return agentId ? getAgent(agentId) : undefined;
+  });
   const startup = initializeStartup(cfg);
   if (startup.recovered) log.info(`recovery: ${startup.recovered} interrupted task(s) awaiting resume`);
   if (startup.admittedInputs > 0) log.info(`recovery: admitted ${startup.admittedInputs} queued message(s)`);
@@ -294,6 +301,7 @@ async function main(): Promise<void> {
     // Agent (multi-agent) resolution: agent model overrides the default; instructions inject into the system prompt.
     const agentId = opts.agentId ?? previous?.agentId;
     const agent = agentId ? getAgent(agentId) : undefined;
+    if (agentId && (!agent || agent.archivedAt)) throw new Error("Agent is unavailable or archived");
     const chosenModel = opts.model && opts.model.trim().length > 0 ? opts.model : agent?.model ?? settings.model;
     const baseEffectiveCfg = { ...cfg, policy: { ...cfg.policy, allowOutsideWorkspaceRead: false }, workspace: opts.savedRun.workspace, model: chosenModel || cfg.model };
     // Legal mode: pin the approved local model and close every silent model switch
@@ -400,7 +408,7 @@ async function main(): Promise<void> {
           (s) => recallGraphHandle().getNode(s.nodeId, s.runId),
         ) ?? undefined,
     });
-    const memoryContextEntries = !legalRun && agentId ? memoryContext(agentId) : [];
+    const memoryContextEntries = !legalRun && agentId && agent?.memoryEnabled !== false ? memoryContext(agentId) : [];
     const memoryContextSuffix =
       memoryContextEntries.length > 0
         ? [`ذاكرة «${agent?.name ?? agentId}» الشخصية (احترمها وراجعها مع المستخدم عند التعارض):`, ...memoryContextEntries.map((e) => `- (${e.source === "user" ? "قاله المستخدم" : "استنتاج"} | ثقة ${e.confidence.toFixed(2)}) ${e.text}`)].join("\n")
@@ -409,6 +417,7 @@ async function main(): Promise<void> {
       mode: effectiveMode,
       workMode: effectiveWorkMode,
       allowedServices: agent?.allowedServices,
+      memoryEnabled: agent?.memoryEnabled,
       disabledTools: agent?.disabledTools,
       registeredTools: [...registry.names(), ...COMPANION_DYNAMIC_TOOL_NAMES],
     });
@@ -508,13 +517,14 @@ async function main(): Promise<void> {
       // device_* tools are bound to the companion's device; companion-memory tools
       // are bound to this agent in every mode.
       const dynamicAllow = new Set(capabilities.allow);
-      const baseRunAllow = mergeAlwaysOnTools({ resolvedAllow: [...capabilities.allow, ...connectedConnectorToolNames(agent?.disabledTools)], registeredTools: registry.names(), disabledTools: agent?.disabledTools });
+      const baseRunAllow = mergeAlwaysOnTools({ resolvedAllow: [...capabilities.allow, ...connectedConnectorToolNames(agent?.disabledTools, agent?.connectorGrants)], registeredTools: registry.names(), disabledTools: agent?.disabledTools });
       // Side-chat ("/btw question") runs are read-only: even when a mutating
       // tool is granted by the mode/work mode, the side-chat question may never
       // modify files, run commands or drive the browser while the main run lives.
       const runAllow = opts.savedRun.sideChat
         ? baseRunAllow.filter((name) => SIDE_CHAT_READ_ONLY_TOOLS.includes(name))
         : baseRunAllow;
+      const executionRunAllow = filterMcpToolsForWorkMode(runAllow, effectiveWorkMode, cfg.mcpServers);
       // N3 Knowledge Garden: kb_* tools stay registered (the companion gateway
       // advertises them) but only reach the model when the run's garden is on.
       // «تحدث مع ملفاتك» (Phase-2 W2): in the core ask/build modes the garden
@@ -522,7 +532,7 @@ async function main(): Promise<void> {
       // every other mode keeps the explicit per-run opt-in toggle.
       const knowledgeDefaultOn =
         (effectiveMode === "ask" || effectiveMode === "build") && getSettings().knowledgeRag !== false;
-      const knowledgeRunAllow = applyKnowledgeGate(runAllow, opts.savedRun.knowledge === true || knowledgeDefaultOn);
+      const knowledgeRunAllow = applyKnowledgeGate(executionRunAllow, opts.savedRun.knowledge === true || knowledgeDefaultOn);
       const runAllowSet = new Set(knowledgeRunAllow);
       // N16: recall/recall_status are always-on names (runTools.ts) but the
       // run-scoped instances above are the ones that can attach a hit to THIS
@@ -729,12 +739,20 @@ async function main(): Promise<void> {
       const fastPresentationVideo = !missionRun && presentationVideoRequest(commandPrompt, effectiveMode);
       const fastStaticWebsite = !missionRun && activePackId === "loam-build" && staticWebsiteRequest(commandPrompt, effectiveMode);
       const fastSvgImage = !missionRun && activePackId === "loam-image" && svgImageRequest(commandPrompt, effectiveMode);
+      const fastDesktop = !missionRun && activePackId === "loam-desktop" && desktopTemplateRequest(commandPrompt, effectiveMode);
       // Orchestration Core §4.0.3: one Core per run (root span loam.run) for
       // orchestrated runs; plain runAgent runs keep today's behaviour untouched.
-      const core = !fastSvgImage && !fastStaticWebsite && !fastSingleSlide && !fastPresentationVideo && opts.savedRun.orchestrated && !activePackId ? createOrchestrationCore(effectiveCfg, ollama, task, task) : undefined;
+      const core = !fastDesktop && !fastSvgImage && !fastStaticWebsite && !fastSingleSlide && !fastPresentationVideo && opts.savedRun.orchestrated && !activePackId ? createOrchestrationCore(effectiveCfg, ollama, task, task) : undefined;
       if (core) emit({ type: "trace_started", traceId: core.runSpan.context.traceId, traceparent: core.traceparentEnv().TRACEPARENT ?? "" });
       try {
-      const result = fastSvgImage ? await runSvgImageFastPath({
+      const result = fastDesktop ? await runDesktopFastPath({
+        cfg: effectiveCfg,
+        tools: fastPathAgentTools,
+        emit: wrappedEmit,
+        prompt: commandPrompt,
+        taskId: task,
+        signal: runSignal,
+      }) : fastSvgImage ? await runSvgImageFastPath({
         cfg: effectiveCfg,
         ollama: runOllama,
         tools: fastPathAgentTools,
@@ -1134,7 +1152,8 @@ async function main(): Promise<void> {
     screenLive: rt.screenLive,
     preview: rt.preview,
     codeGraph: rt.codeGraph,
-  mcp,
+    mcp,
+    reloadMcp: rt.reloadMcp,
   });
 
   // O6b: opt-in startup auto-resume. `recoverInterruptedTasks` above already

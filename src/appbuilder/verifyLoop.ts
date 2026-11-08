@@ -7,6 +7,7 @@ import { PreviewScreenshotService, type ShotResult } from "../preview/shot.js";
 import { checkDesignDoc } from "./designDoc.js";
 import { redactSecrets } from "./redact.js";
 import { appProcessEnv } from "./processEnv.js";
+import { ROOT as APP_ROOT } from "../config.js";
 import type { AppProject, VerifyReport, VerifyStepId, VerifyStepResult, VerifyTier } from "./types.js";
 
 export const MAX_VERIFY_CALLS_PER_RUN = 3;
@@ -133,10 +134,10 @@ export class VerifyLoop {
     const started = Date.now();
     switch (step) {
       case "install": {
-        if (fs.existsSync(path.join(appDir, "node_modules", ".bin"))) {
+        if (project.kind !== "electron-app" && fs.existsSync(path.join(appDir, "node_modules", ".bin"))) {
           return result(step, true, 0, "", { skipped: true });
         }
-        const r = await runCommand(appDir, "node", ["scripts/link-deps.mjs"], appProcessEnv(project), STEP_TIMEOUT_MS.install, signal);
+        const r = await runCommand(appDir, "node", ["scripts/link-deps.mjs"], appProcessEnv(project, { LOAM_ROOT: APP_ROOT }), STEP_TIMEOUT_MS.install, signal);
         log.push(`===== node scripts/link-deps.mjs (exit ${r.code}, ${r.ms} ms) =====`, r.output);
         return result(step, r.code === 0, r.ms, r.code === 0 ? "" : tailLines(r.output, MAX_FAIL_LINES), { command: "node scripts/link-deps.mjs", exitCode: r.code });
       }

@@ -25,6 +25,7 @@ import type {
   UpdateSessionRequest,
   UserInfoResponse,
 } from '@shared/proto';
+import { readWebSessionToken, writeWebSessionToken } from './webAuth';
 
 export const PROTOCOL_API_BASE = 'http://localhost:8787';
 const DEFAULT_API_BASE = '/api';
@@ -71,23 +72,23 @@ export async function getSessionToken(): Promise<string> {
     const stored = await storage.getItem('session_token');
     if (stored) return stored;
   }
-  return '';
+  return readWebSessionToken();
 }
 
 export function handleAuthFailure() {
   if (typeof window === 'undefined') return;
   (window as unknown as { __apis?: { auth?: { removeToken?: () => Promise<unknown> } } }).__apis?.auth?.removeToken?.();
+  writeWebSessionToken('');
   window.location.href = '/login';
 }
 
-/** Return the current session token synchronously from Electron's injected API
- *  or from desktopLocalStorage if available. */
+/** Return the native session token synchronously, or the browser's persisted token. */
 export function getCurrentSessionToken(): string | undefined {
   if (typeof window === 'undefined') return undefined;
   const apis = (window as unknown as { __apis?: { auth?: { getToken?: () => string | null | Promise<string | null> } } }).__apis;
   const token = apis?.auth?.getToken?.();
   if (typeof token === 'string' && token) return token;
-  return undefined;
+  return readWebSessionToken() || undefined;
 }
 
 export async function getApiHeaders(): Promise<Record<string, string>> {

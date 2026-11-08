@@ -330,11 +330,18 @@ export function StudioGoalDialog({
           rows={2}
           className="w-full resize-none bg-transparent px-1 py-1 text-sm text-text-primary outline-none placeholder:text-text-tertiary"
         />
-        <div className="flex items-center justify-between">
-          <span className="flex items-center gap-1.5 rounded-control bg-fill-tsp px-2 py-1 text-xs text-icon-blue">
-            {(() => { const Icon = ICONS[goal.icon]; return <Icon className="size-3.5" />; })()}
-            {t(goal.label)}
-          </span>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="flex items-center gap-1.5 rounded-control bg-fill-tsp px-2 py-1 text-xs text-icon-blue">
+              {(() => { const Icon = ICONS[goal.icon]; return <Icon className="size-3.5" />; })()}
+              {t(goal.label)}
+            </span>
+            {goal.outputType === 'desktop' && (
+              <span className="flex items-center gap-1.5 rounded-control border border-border-main px-2 py-1 text-xs text-text-secondary" data-testid="desktop-goal-this-pc">
+                <Monitor className="size-3.5" />{t('This PC')}
+              </span>
+            )}
+          </div>
           <button
             type="submit"
             disabled={!draft.trim() || busy}

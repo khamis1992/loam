@@ -111,6 +111,10 @@ export function sha256(text: string): string {
   return crypto.createHash("sha256").update(text, "utf8").digest("hex");
 }
 
+export function legalTextSha256(pack: Pick<LegalPack, "legislation" | "articles" | "amends" | "repeals">): string {
+  return sha256(JSON.stringify({ legislation: pack.legislation, articles: pack.articles, amends: pack.amends ?? [], repeals: pack.repeals ?? [] }));
+}
+
 /** Validate a pack before any write. Returns a list of errors (empty = valid). */
 export function validatePack(pack: unknown): string[] {
   const errors: string[] = [];
@@ -134,8 +138,16 @@ export function validatePack(pack: unknown): string[] {
   else {
     if (!src.provenance) errors.push("source.provenance is required");
     if (!isIsoDate((src.retrievedAt ?? "").slice(0, 10))) errors.push("source.retrievedAt must start with YYYY-MM-DD");
-    if (src.provenance && CITABLE_PROVENANCE.has(src.provenance) && !src.verifiedBy?.trim()) {
-      errors.push("source.verifiedBy is required for official provenance (a person must check the text)");
+    if (src.provenance && CITABLE_PROVENANCE.has(src.provenance)) {
+      if (!src.verifiedBy?.trim()) errors.push("source.verifiedBy is required for official provenance (the first reviewer must check the text)");
+      if (!src.secondVerifiedBy?.trim()) errors.push("source.secondVerifiedBy is required for official provenance (an independent second reviewer must check the text)");
+      if (src.verifiedBy?.trim() && src.secondVerifiedBy?.trim() && src.verifiedBy.trim().localeCompare(src.secondVerifiedBy.trim(), undefined, { sensitivity: "base" }) === 0) errors.push("source reviewers must be different people");
+      if (!src.verifiedAt || !Number.isFinite(Date.parse(src.verifiedAt))) errors.push("source.verifiedAt must be an ISO timestamp");
+      if (!src.secondVerifiedAt || !Number.isFinite(Date.parse(src.secondVerifiedAt))) errors.push("source.secondVerifiedAt must be an ISO timestamp");
+      if (!src.sourceSha256 || !/^[0-9a-f]{64}$/.test(src.sourceSha256)) errors.push("source.sourceSha256 must be the source file SHA-256");
+      if (src.reviewedTextSha256 !== legalTextSha256(p as LegalPack)) errors.push("source.reviewedTextSha256 must match the canonical legal text");
+      const rights = src.usageRights;
+      if (!rights?.basis.trim() || !rights.reference.trim() || !rights.confirmedBy.trim() || !Number.isFinite(Date.parse(rights.confirmedAt))) errors.push("source.usageRights must record basis, reference, confirmedBy and confirmedAt");
     }
   }
   const seen = new Set<string>();
@@ -420,14 +432,16 @@ export class LegalCorpus {
     });
   }
 
-  /** Fix a transcription error in one version. The caller must audit this. */
-  correctVersionText(avid: string, newText: string, verifiedBy: string): ArticleVersion {
+  /** Fix a transcription error after two independent reviewers attest the corrected text. The caller must audit this. */
+  correctVersionText(avid: string, newText: string, verifiedBy: string, secondVerifiedBy: string): ArticleVersion {
     if (!newText.trim()) throw new Error("corrected text is empty");
-    if (!verifiedBy.trim()) throw new Error("verifiedBy is required");
+    if (!verifiedBy.trim() || !secondVerifiedBy.trim()) throw new Error("two reviewers are required");
+    if (verifiedBy.trim().localeCompare(secondVerifiedBy.trim(), undefined, { sensitivity: "base" }) === 0) throw new Error("reviewers must be different people");
     return this.tx(() => {
       const v = this.getVersion(avid);
       if (!v) throw new Error(`unknown version ${avid}`);
-      const source: SourceRef = { ...v.source, verifiedBy, verifiedAt: new Date().toISOString() };
+      const reviewedAt = new Date().toISOString();
+      const source: SourceRef = { ...v.source, verifiedBy, verifiedAt: reviewedAt, secondVerifiedBy, secondVerifiedAt: reviewedAt, reviewedTextSha256: sha256(newText) };
       this.db.prepare("UPDATE article_versions SET text=?, text_sha256=?, source_json=? WHERE avid=?")
         .run(newText, sha256(newText), JSON.stringify(source), avid);
       this.db.prepare("DELETE FROM postings WHERE avid=?").run(avid);

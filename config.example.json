@@ -119,6 +119,15 @@
     "maxReplans": 1,
     "verifyFinal": true
   },
+  "legal": {
+    "enabled": false,
+    "localModel": "qwen3.6:35b-a3b",
+    "approvedLocalModels": ["qwen3.6:35b-a3b"],
+    "embedModel": "",
+    "rerank": "off",
+    "retentionDays": null,
+    "backupIntervalHours": null
+  },
   "mcpServers": {
     "filesystem": { "sandbox": true,
       "command": "node",
@@ -169,6 +178,15 @@
       "env": {
         "CUA_DRIVER_PERMISSION_MODE": "standard"
       }
+    },
+    "slack-work": {
+      "transport": "http",
+      "url": "https://provider.example/mcp",
+      "servicePackId": "slack",
+      "accountName": "Work Slack",
+      "customInstructions": "Use the approved workspace only and confirm before sending messages.",
+      "lazy": true,
+      "disabledTools": []
     }
   }
 }

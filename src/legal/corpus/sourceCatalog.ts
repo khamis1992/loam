@@ -3,7 +3,7 @@ import type { SourceRef } from "../types.js";
 
 export interface OfficialSourceCandidate {
   legislation: LegalPack["legislation"];
-  source: Omit<SourceRef, "verifiedBy" | "verifiedAt">;
+  source: Omit<SourceRef, "verifiedBy" | "verifiedAt" | "secondVerifiedBy" | "secondVerifiedAt" | "reviewedTextSha256" | "usageRights">;
   reviewNotes: string[];
 }
 

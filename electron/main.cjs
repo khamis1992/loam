@@ -1,5 +1,8 @@
 const { app, BrowserWindow, Menu, Tray, nativeImage, shell, dialog, ipcMain, protocol, utilityProcess, safeStorage, globalShortcut } = require("electron");
 const path = require("node:path");
+const { spawn } = require("node:child_process");
+const { planWidgetQuit, ownedStopArgs, readWidgetStartIdentity } = require("../src/buildMenu/widget/quitPlan.cjs");
+const { assertRevealCaller, revealArtifactFile } = require("../src/buildMenu/reveal.cjs");
 const fs = require("node:fs");
 const http = require("node:http");
 const { createHash } = require("node:crypto");
@@ -545,6 +548,19 @@ const ipcHandlers = {
       const st = fs.statSync(r.filePaths[0]);
       if (st.size > 10 * 1024 * 1024) throw new Error("file larger than 10 MB");
       return fs.readFileSync(r.filePaths[0], "utf8");
+    },
+  },
+  buildMenu: {
+    revealArtifact: async (sender, payload) => {
+      const senderUrl = typeof sender?.getURL === "function" ? sender.getURL() : "";
+      const origin = senderUrl.startsWith(APP_ORIGIN) ? APP_ORIGIN : BASE;
+      const request = assertRevealCaller({ senderUrl, appOrigin: origin, sessionToken: localAuthToken, body: payload });
+      const res = await fetch(`${BASE}/api/app-projects/${request.projectId}`, { headers: authHeader(localAuthToken) });
+      if (!res.ok) throw new Error("not found");
+      const body = await res.json();
+      const workspaceDir = body && body.project && body.project.workspaceDir;
+      if (typeof workspaceDir !== "string") throw new Error("not found");
+      shell.showItemInFolder(revealArtifactFile(workspaceDir, request.projectId, request.artifactId));
     },
   },
   window: {
@@ -1263,9 +1279,39 @@ function startServerWatchdog() {
 app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 app.on("window-all-closed", () => app.quit());
 let quitting = false;
+let widgetQuitChosen = false;
 app.on("before-quit", (event) => {
   if (!quitting) {
-    event.preventDefault(); quitting = true;
+    event.preventDefault();
+    const dataDir = process.env.LOAM_DATA_DIR;
+    const plan = !widgetQuitChosen && typeof dataDir === "string"
+      ? planWidgetQuit(dataDir, (pid) => readWidgetStartIdentity(pid))
+      : { ask: false, pids: [] };
+    if (plan.ask) {
+      const answer = dialog.showMessageBoxSync({
+        type: "question",
+        buttons: ["اترك الويدجت يعمل", "أنهِ الويدجت"],
+        cancelId: 0,
+        defaultId: 0,
+        message: "ويدجت مستقل ما زال يعمل.",
+        detail: "إغلاق Loam لا يوقف برامجاً أخرى. يمكن ترك الويدجت حتى إنهائه من شريط النظام.",
+      });
+      if (answer === 1) {
+        const killer = process.platform === "win32"
+          ? path.join(process.env.SystemRoot || "C:\\Windows", "System32", "taskkill.exe")
+          : null;
+        for (const pid of plan.pids) {
+          if (!killer) {
+            try { process.kill(pid, "SIGTERM"); } catch { /* not our process anymore */ }
+            continue;
+          }
+          const child = spawn(killer, ownedStopArgs(pid), { shell: false, windowsHide: true, stdio: "ignore" });
+          child.unref();
+        }
+      }
+    }
+    widgetQuitChosen = true;
+    quitting = true;
     void mcpBridge.stop().finally(() => app.quit());
   }
   try { globalShortcut.unregister("Ctrl+Shift+Alt+S"); } catch {}

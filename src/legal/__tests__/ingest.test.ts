@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { LegalCorpus, validatePack } from "../corpusStore.js";
 import { draftPackFromText, splitArticles } from "../ingest.js";
+import { attestPackForTest } from "./helpers.js";
 
 const RAW = `قانون رقم (3) لسنة 2093 بإصدار قانون التجارة الاختباري
 نحن ..., أمير دولة قطر الاختباري,
@@ -35,7 +36,7 @@ test("a law without an issuing part is all body; duplicates are reported", () =>
   assert.ok(warnings.some((w) => w.includes("duplicate")));
 });
 
-test("draft packs never claim verification; import needs a person to sign off", () => {
+test("draft packs never claim verification; import needs two reviewers to sign off", () => {
   const draft = draftPackFromText(
     { type: "law", year: 2093, number: 3, titleAr: "قانون رقم (3) لسنة 2093 بإصدار قانون التجارة الاختباري", publishDate: "2093-02-01" },
     { provenance: "official_gazette", retrievedAt: "2093-02-02", url: "https://example.invalid/gazette/2093/3" },
@@ -44,7 +45,7 @@ test("draft packs never claim verification; import needs a person to sign off", 
   assert.equal(draft.pack.source.verifiedBy, undefined);
   assert.ok(validatePack(draft.pack).some((e) => e.includes("verifiedBy")));
   assert.ok(draft.warnings.some((w) => w.includes("effectiveDate")));
-  const signed = { ...draft.pack, source: { ...draft.pack.source, verifiedBy: "مراجع الاختبار", verifiedAt: "2093-02-03" } };
+  const signed = attestPackForTest(draft.pack);
   assert.deepEqual(validatePack(signed), []);
   const c = new LegalCorpus(":memory:");
   const res = c.importPack(signed);

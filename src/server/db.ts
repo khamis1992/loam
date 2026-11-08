@@ -9,6 +9,7 @@ import { assertRunLease, expireAllRunLeases, type RunLease } from "./runLease.js
 import { openSavedRun, openTask, protectSavedRun, protectTask } from "../legal/security/storageProtection.js";
 import { hasLegalProtection } from "../legal/security/protection.js";
 import type { SealedLegalPayload } from "../legal/security/transcriptSeal.js";
+import { emitTaskFinished } from "./taskEvents.js";
 
 export type TaskStatus = "queued" | "running" | "done" | "error" | "interrupted" | "cancelled";
 
@@ -111,8 +112,8 @@ export interface Schedule {
   round?: number;
 }
 
-/** D14: automation trigger kinds. */
-export type AutomationTrigger = "cron" | "webhook" | "github";
+/** Event and schedule trigger kinds supported by the automation center. */
+export type AutomationTrigger = "cron" | "webhook" | "github" | "slack" | "microsoftTeams" | "linear" | "sentry" | "pagerduty" | "email";
 
 /** MF2: timing spec for a schedule (cron / one-shot at / recurring interval). */
 export interface ScheduleSpec {
@@ -187,6 +188,9 @@ export function appendMessage(id: string, role: TaskMessage["role"], content: st
 export function setTaskAgent(id: string, agentId: string | null): void {
   editTask(id, (t) => { if (agentId) t.agentId = agentId; else delete t.agentId; });
 }
+export function setTaskPrompt(id: string, prompt: string): void {
+  editTask(id, (task) => { task.prompt = prompt; });
+}
 
 export function setTaskStatus(id: string, status: TaskStatus, extra?: {model?: string; error?: string}, expectLease?: RunLease): void {
   editTask(id, (t) => { if (expectLease) assertRunLease(expectLease); t.status = status; if (["queued", "running", "done"].includes(status)) delete t.error; if (extra?.model) t.model = extra.model; if (extra?.error) t.error = extra.error; });
@@ -194,6 +198,9 @@ export function setTaskStatus(id: string, status: TaskStatus, extra?: {model?: s
   // kept outside the transaction so the notification store never nests it.
   if (status === "done" || status === "error") {
     notifyTaskStatus(id, status, { title: getTask(id)?.title, error: extra?.error });
+  }
+  if (status === "done" || status === "error" || status === "cancelled" || status === "interrupted") {
+    emitTaskFinished({ taskId: id, status });
   }
 }
 export function createProject(name: string, instruction?: string): Project {
@@ -207,7 +214,7 @@ export function updateProject(id: string, patch: {name?: string; instruction?: s
 export function deleteProjectR(id: string): boolean {
   return transaction(() => { const removed = remove("projects",id); for (const t of listTasks(id)) { t.projectId = null; put("tasks",t); } return removed; });
 }
-const AUTOMATION_TRIGGERS: readonly AutomationTrigger[] = ["cron", "webhook", "github"];
+const AUTOMATION_TRIGGERS: readonly AutomationTrigger[] = ["cron", "webhook", "github", "slack", "microsoftTeams", "linear", "sentry", "pagerduty", "email"];
 export function isAutomationTrigger(value: unknown): value is AutomationTrigger {
   return typeof value === "string" && (AUTOMATION_TRIGGERS as readonly string[]).includes(value);
 }
@@ -219,8 +226,8 @@ function normalizeTriggerSpec(spec?: ScheduleSpec): Pick<Schedule, "trigger" | "
   const githubEvents = spec?.githubEvents?.map((e) => String(e).trim()).filter(Boolean).slice(0, 50);
   const projectId = spec?.projectId?.trim();
   const playbook = spec?.playbook;
-  if (trigger === "webhook" && !webhookSecret) throw new Error("webhook trigger requires webhookSecret");
-  if (trigger === "github" && (!githubEvents || githubEvents.length === 0)) throw new Error("github trigger requires at least one githubEvents entry");
+  if (trigger && trigger !== "cron" && !webhookSecret) throw new Error(`${trigger} trigger requires webhookSecret`);
+  if (trigger && !["cron", "webhook"].includes(trigger) && (!githubEvents || githubEvents.length === 0)) throw new Error(`${trigger} trigger requires at least one event kind entry`);
   if (projectId && !getProject(projectId)) throw new Error(`project not found: ${projectId}`);
   return {
     ...(trigger ? { trigger } : {}),
@@ -416,4 +423,5 @@ export function completeTaskRun(taskId: string, text: string, model: string, exp
     // existing transaction; the notification store shares the entities table.
     notifyTaskStatus(taskId, "done", { title: task.title });
   });
+  emitTaskFinished({ taskId, status: "done" });
 }

@@ -38,6 +38,8 @@ describe('ConnectorsPane', () => {
         });
       }
       if (url === apiUrl('/mcp/status')) return json({ servers: [] });
+      if (url === apiUrl('/mcp/servers')) return json({ servers: [] });
+      if (url === apiUrl('/service-packs')) return json({ packs: [] });
       return json({}, 404);
     });
     render(<ConnectorsPane />);
@@ -58,6 +60,8 @@ describe('ConnectorsPane', () => {
       }
       if (url === apiUrl('/connectors/calendar/connect')) return json({ authUrl: 'https://calendar.example/auth' });
       if (url === apiUrl('/mcp/status')) return json({ servers: [] });
+      if (url === apiUrl('/mcp/servers')) return json({ servers: [] });
+      if (url === apiUrl('/service-packs')) return json({ packs: [] });
       return json({}, 404);
     });
     render(<ConnectorsPane />);
@@ -72,6 +76,8 @@ describe('ConnectorsPane', () => {
       }
       if (url === apiUrl('/connectors/github/disconnect') && init?.method === 'POST') return json({ ok: true });
       if (url === apiUrl('/mcp/status')) return json({ servers: [] });
+      if (url === apiUrl('/mcp/servers')) return json({ servers: [] });
+      if (url === apiUrl('/service-packs')) return json({ packs: [] });
       return json({}, 404);
     });
     render(<ConnectorsPane />);
@@ -84,6 +90,8 @@ describe('ConnectorsPane', () => {
   it('shows a load error when the connectors store is unreachable', async () => {
     stubFetch((url) => {
       if (url === apiUrl('/mcp/status')) return json({ servers: [] });
+      if (url === apiUrl('/mcp/servers')) return json({ servers: [] });
+      if (url === apiUrl('/service-packs')) return json({ packs: [] });
       return json({ error: 'nope' }, 500);
     });
     render(<ConnectorsPane />);

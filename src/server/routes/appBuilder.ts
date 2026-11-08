@@ -15,6 +15,7 @@ import type http from "node:http";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { confirmPublishProposal, createPublishProposal, dismissPublishProposal, listPublishProposals, publishArtifact, unpublishApp, updatePublishedApp } from "../../appbuilder/publishing.js";
 import { getAppProject, listAppProjects, updateAppProject, deleteAppProject, createAppProject } from "../../appbuilder/projects.js";
 import {
   ensureAppBuilderSchema, listAssignments, listPlanDrafts, listRaces, listVersions,
@@ -316,6 +317,33 @@ export async function handleAppBuilderRoutes(req: http.IncomingMessage, res: htt
     return sendJson(res, 200, { reports: listVerifyReports(id, limit) }), true;
   }
 
+  // ---- local publish proposals and downloadable artifacts ----
+  if (area === "publish") {
+    if (sub[0] !== "proposals") return sendJson(res, 404, { error: "not_found" }), true;
+    if (sub.length === 1) {
+      if (method === "GET") return sendJson(res, 200, { proposals: listPublishProposals(id) }), true;
+      if (method === "POST") return sendJson(res, 201, { proposal: createPublishProposal(id) }), true;
+      return sendJson(res, 405, { error: "bad_request" }), true;
+    }
+    const proposalId = sub[1]!;
+    const action = sub[2];
+    try {
+      if (action === "confirm" && method === "POST") return sendJson(res, 200, { proposal: confirmPublishProposal(proposalId) }), true;
+      if (action === "dismiss" && method === "POST") return sendJson(res, 200, { proposal: dismissPublishProposal(proposalId) }), true;
+      if (action === "update" && method === "POST") return sendJson(res, 200, { proposal: updatePublishedApp(proposalId) }), true;
+      if (action === "unpublish" && method === "POST") return sendJson(res, 200, { proposal: unpublishApp(proposalId) }), true;
+      if (action === "download" && method === "GET") {
+        const artifact = publishArtifact(proposalId);
+        res.writeHead(200, { "content-type": "application/zip", "content-disposition": `attachment; filename="${proposalId}.zip"` });
+        fs.createReadStream(artifact).pipe(res);
+        return true;
+      }
+      return sendJson(res, 404, { error: "not_found" }), true;
+    } catch (error) {
+      return sendJson(res, 400, { error: error instanceof Error ? error.message : String(error) }), true;
+    }
+  }
+
   // ---- versions (§4.7, §4.15.2) ----
   if (area === "versions") {
     const num = (v: string | undefined): number | null => {
@@ -412,7 +440,8 @@ export async function handleAppBuilderRoutes(req: http.IncomingMessage, res: htt
         return sendJson(res, 500, { error: "dev_server_failed", message: err instanceof Error ? err.message : String(err) }), true;
       }
     }
-    if ((action === "publish" || action === "security-scan") && method === "POST") return enginePending(res, action === "publish" ? "النشر" : "فحص الأمان");
+    if (action === "publish" && method === "POST") return sendJson(res, 201, { proposal: createPublishProposal(id) }), true;
+    if (action === "security-scan" && method === "POST") return enginePending(res, "فحص الأمان");
     return sendJson(res, 404, { error: "not_found" }), true;
   }
 

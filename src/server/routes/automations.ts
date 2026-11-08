@@ -11,15 +11,20 @@
  * engine (the same path cron routines use).
  */
 import http from "node:http";
+import crypto from "node:crypto";
 import { getSchedule } from "../db.js";
+import { getAgent } from "../agents.js";
 import { log } from "../../log.js";
+import { claimAutomationDelivery, listAutomationDeliveries } from "../automationDeliveries.js";
 import {
+  automationEventKind,
+  automationEventMatches,
   automationTriggerOf,
   buildAutomationPrompt,
-  githubEventMatches,
   githubEventName,
   parseSignatureHeader,
   verifyHmacSignature,
+  verifySlackRequest,
 } from "../webhookTriggers.js";
 
 export interface ScheduledRun {
@@ -80,12 +85,24 @@ export async function handleAutomationsRoutes(
   p: string,
   ctx?: TriggerContext,
 ): Promise<boolean> {
+  const deliveriesMatch = /^\/api\/automations\/([^/]+)\/deliveries$/.exec(p);
+  if (deliveriesMatch && req.method === "GET") {
+    const automationId = decodeURIComponent(deliveriesMatch[1]!);
+    if (!getSchedule(automationId)) return sendJson(res, 404, { error: "automation not found" }), true;
+    sendJson(res, 200, { deliveries: listAutomationDeliveries(automationId) });
+    return true;
+  }
+
   const match = /^\/api\/automations\/trigger\/([^\/]+)$/.exec(p);
   if (!match || req.method !== "POST") return false;
   const id = decodeURIComponent(match[1]!);
   const schedule = getSchedule(id);
   if (!schedule) {
     sendJson(res, 404, { error: "automation not found" });
+    return true;
+  }
+  if (schedule.agentId && getAgent(schedule.agentId)?.archivedAt) {
+    sendJson(res, 409, { error: "agent is archived" });
     return true;
   }
 
@@ -103,42 +120,61 @@ export async function handleAutomationsRoutes(
     return true;
   }
 
-  let githubEvent: string | undefined;
-  if (trigger === "webhook") {
-    const signature = parseSignatureHeader(header(req, "x-loam-signature"));
-    if (!schedule.webhookSecret || !verifyHmacSignature(raw, signature, schedule.webhookSecret)) {
-      sendJson(res, 401, { error: "invalid signature" });
-      return true;
-    }
+  let valid = false;
+  if (trigger === "slack") {
+    valid = verifySlackRequest(raw, header(req, "x-slack-request-timestamp"), header(req, "x-slack-signature"), schedule.webhookSecret);
   } else {
-    const signature = parseSignatureHeader(header(req, "x-hub-signature-256"));
-    if (!schedule.webhookSecret || !verifyHmacSignature(raw, signature, schedule.webhookSecret)) {
-      sendJson(res, 401, { error: "invalid signature" });
-      return true;
-    }
-    const payload = parseJson(raw);
-    const action = (payload && typeof payload === "object" && typeof (payload as { action?: unknown }).action === "string"
+    const signature = trigger === "github"
+      ? parseSignatureHeader(header(req, "x-hub-signature-256"))
+      : trigger === "pagerduty"
+        ? header(req, "x-pagerduty-signature")?.replace(/^v1=/, "")
+        : trigger === "linear"
+          ? header(req, "linear-signature")
+          : trigger === "sentry"
+            ? header(req, "sentry-hook-signature")
+            : parseSignatureHeader(header(req, "x-loam-signature"));
+    valid = verifyHmacSignature(raw, signature, schedule.webhookSecret);
+  }
+  if (!valid) {
+    sendJson(res, 401, { error: "invalid signature" });
+    return true;
+  }
+
+  const payload = parseJson(raw);
+  let githubEvent: string | undefined;
+  if (trigger === "github") {
+    const action = payload && typeof payload === "object" && typeof (payload as { action?: unknown }).action === "string"
       ? (payload as { action: string }).action
-      : undefined);
+      : undefined;
     githubEvent = githubEventName(header(req, "x-github-event"), action);
     if (!githubEvent) {
       sendJson(res, 400, { error: "missing x-github-event" });
       return true;
     }
-    if (!githubEventMatches(schedule.githubEvents, githubEvent)) {
-      sendJson(res, 202, { ignored: true, event: githubEvent, reason: "event not subscribed" });
-      return true;
-    }
+  }
+  const eventKind = automationEventKind(trigger, payload, githubEvent);
+  if (!automationEventMatches(trigger, schedule.githubEvents, eventKind)) {
+    sendJson(res, 202, { ignored: true, event: eventKind, reason: "event not subscribed" });
+    return true;
   }
 
-  const payload = parseJson(raw);
-  const prompt = buildAutomationPrompt(schedule, payload, githubEvent);
   const run = resolveRun(ctx);
   if (!run) {
     sendJson(res, 503, { error: "trigger engine is not initialized" });
     return true;
   }
+  const deliveryId = header(req, "x-delivery-id")
+    ?? header(req, "x-github-delivery")
+    ?? header(req, "x-slack-request-id")
+    ?? header(req, "x-request-id")
+    ?? header(req, "x-event-id")
+    ?? crypto.createHash("sha256").update(raw).digest("hex");
+  if (!claimAutomationDelivery(schedule.id, deliveryId, trigger, eventKind)) {
+    sendJson(res, 202, { started: false, duplicate: true, scheduleId: schedule.id, trigger, event: eventKind });
+    return true;
+  }
 
+  const prompt = buildAutomationPrompt(schedule, payload, githubEvent);
   void run({
     prompt,
     scheduleId: schedule.id,
@@ -149,6 +185,6 @@ export async function handleAutomationsRoutes(
     log.warn(`automation trigger ${schedule.id}: ${String(err)}`);
   });
 
-  sendJson(res, 202, { started: true, scheduleId: schedule.id, trigger, ...(githubEvent ? { event: githubEvent } : {}) });
+  sendJson(res, 202, { started: true, scheduleId: schedule.id, trigger, event: eventKind, deliveryId });
   return true;
 }

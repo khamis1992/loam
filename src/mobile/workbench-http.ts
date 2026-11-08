@@ -12,7 +12,28 @@ import {sourceFiles,saveSource,restoreVersion,materializeSource,writeWorktreeFil
 
 const routes=['/api/mobile/source','/api/mobile/versions','/api/mobile/source-preview','/api/mobile/releases','/api/mobile/git'];
 type Release={id:string;label:string;createdAt:string;revision:number};
-function releases(root:string):{active:string|null;items:Release[]}{const file=taskPath(root,'.loam/mobile-releases.json');return fs.existsSync(file)?JSON.parse(fs.readFileSync(file,'utf8')):{active:null,items:[]};}
+function nodeCode(error:unknown){const code=typeof error==='object'&&error&&'code'in error?(error as {code?:unknown}).code:'';return typeof code==='string'?code:'';}
+function lstatWorkspace(file:string):fs.Stats{
+ let stat:fs.Stats;
+ try{stat=fs.lstatSync(file);}catch(error){const code=nodeCode(error);if(code==='EPERM'||code==='EACCES')throw error;throw error;}
+ if(stat.isSymbolicLink()||!stat.isFile()||stat.nlink > 1)throw new Error('unsafe_path');
+ return stat;
+}
+export function readMobileReleases(root:string):{active:string|null;items:Release[]}{
+ const file=taskPath(root,'.loam/mobile-releases.json');
+ try{lstatWorkspace(file);}catch(error){if(nodeCode(error)==='ENOENT')return{active:null,items:[]};throw error;}
+ return JSON.parse(fs.readFileSync(file,'utf8'));
+}
+export function readMobileReleaseDocument(root:string,id:string):{files:Record<string,string>;project:unknown}{
+ const file=taskPath(root,'.loam/mobile-release-'+id+'.json');
+ lstatWorkspace(file);
+ return JSON.parse(fs.readFileSync(file,'utf8')) as {files:Record<string,string>;project:unknown};
+}
+export function readMobileWorktreeImport(root:string,name:unknown):string{
+ const file=taskPath(root,'.loam/mobile-worktree/'+safeSourcePath(name));
+ if(lstatWorkspace(file).size>1_500_000)throw new MobileError('الملف كبير');
+ return fs.readFileSync(file,'utf8');
+}
 const json=(res:ServerResponse,value:unknown)=>{res.writeHead(200,{'content-type':'application/json; charset=utf-8'});res.end(JSON.stringify(value));};
 const safeJson=(v:unknown)=>JSON.stringify(v).replace(/</g,'\\u003c');
 export function previewHtml(files:Record<string,string>){
@@ -40,7 +61,7 @@ export async function handleMobileWorkbench(req:IncomingMessage,res:ServerRespon
   if(route==='/api/mobile/source'){
    if(post){
     let content=body.content;
-    if(body.action==='import'){const name=safeSourcePath(body.path),file=taskPath(root,'.loam/mobile-worktree/'+name);if(fs.statSync(file).size>1_500_000)throw new MobileError('الملف كبير');content=fs.readFileSync(file,'utf8');}
+    if(body.action==='import')content=readMobileWorktreeImport(root,body.path);
     const saved=saveSource(root,body.path,content,body.expectedRevision,body.tag,body.action==='reset');
     const source=await sourceFiles(root,taskId);if(body.path!=='mobile.json')writeWorktreeFile(root,String(body.path),source.files[String(body.path)]!);
     json(res,{...source,project:saved,history:mobileHistory(root)});
@@ -54,11 +75,11 @@ export async function handleMobileWorkbench(req:IncomingMessage,res:ServerRespon
   }else if(route==='/api/mobile/source-preview'){
    if(post)throw new MobileError('GET required',405);
    let files:Record<string,string>;
-   const id=url.searchParams.get('releaseId');if(id){if(!releases(root).items.some(x=>x.id===id))throw new MobileError('Release not found',404);files=JSON.parse(fs.readFileSync(taskPath(root,'.loam/mobile-release-'+id+'.json'),'utf8')).files;}
+   const id=url.searchParams.get('releaseId');if(id){if(!readMobileReleases(root).items.some(x=>x.id===id))throw new MobileError('Release not found',404);files=readMobileReleaseDocument(root,id).files;}
    else files=(await sourceFiles(root,taskId)).files;
    res.writeHead(200,{'content-type':'text/html; charset=utf-8','content-security-policy':"sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; frame-ancestors 'self'; form-action 'none'; base-uri 'none'"});res.end(previewHtml(files));
   }else if(route==='/api/mobile/releases'){
-   const data=releases(root);
+   const data=readMobileReleases(root);
    if(post&&body.action==='publish'){
     assertSourceRevision(root,body.expectedRevision,body.tag);const source=await sourceFiles(root,taskId),id=randomUUID();
     atomicJson(root,'.loam/mobile-release-'+id+'.json',{project,files:source.files});
@@ -67,7 +88,7 @@ export async function handleMobileWorkbench(req:IncomingMessage,res:ServerRespon
    else if(post)throw new MobileError('Unknown release action');
    const id=url.searchParams.get('releaseId')||data.active;
    const item=id?data.items.find(x=>x.id===id):null;if(id&&!item)throw new MobileError('Release not found',404);
-   const saved=item?JSON.parse(fs.readFileSync(taskPath(root,'.loam/mobile-release-'+item.id+'.json'),'utf8')).project:null;
+   const saved=item?readMobileReleaseDocument(root,item.id).project:null;
    json(res,{...data,project:saved,url:id?'/mobile-published.html?taskId='+encodeURIComponent(taskId)+'&releaseId='+id:null});
   }else if(route==='/api/mobile/git'){
    await materializeSource(root,taskId);const cwd=taskPath(root,'.loam/mobile-worktree');taskPath(root,'.loam/mobile-worktree/.git');

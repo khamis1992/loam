@@ -15,6 +15,12 @@ vi.mock('@/services/rpc', () => ({
 vi.mock('../LibrarySearch', () => ({
   LibrarySearch: () => <div data-testid="library-search">library</div>,
 }));
+vi.mock('../CorpusAdmin', () => ({
+  CorpusAdmin: () => <div data-testid="corpus-admin">sources</div>,
+}));
+vi.mock('../LegalOperations', () => ({
+  LegalOperations: () => <div data-testid="legal-operations">operations</div>,
+}));
 
 import { LegalHome } from '../LegalHome';
 
@@ -39,5 +45,7 @@ describe('LegalHome (L1 unified front door)', () => {
     render(<LegalHome />);
     await waitFor(() => expect(screen.getByText('قضية عقد عمل')).toBeTruthy());
     expect(screen.getByTestId('library-search')).toBeTruthy();
+    expect(screen.getByTestId('corpus-admin')).toBeTruthy();
+    expect(screen.getByRole('link', { name: t('Back') }).getAttribute('href')).toBe('/');
   });
 });

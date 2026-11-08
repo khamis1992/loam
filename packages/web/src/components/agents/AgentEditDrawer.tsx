@@ -38,16 +38,10 @@ interface AgentEditDrawerProps {
   onSaved: () => void;
 }
 
-const LOAM_MODES = [
-  { id: 'ask', labelAr: 'استكشف' },
-  { id: 'research', labelAr: 'ابحث' },
-  { id: 'build', labelAr: 'ابنِ' },
-  { id: 'write', labelAr: 'اكتب' },
-  { id: 'data', labelAr: 'حلّل' },
-  { id: 'media', labelAr: 'صمّم' },
-  { id: 'security', labelAr: 'افحص' },
-  { id: 'automate', labelAr: 'أنجز' },
-];
+interface LoamModeOption {
+  id: string;
+  labelAr: string;
+}
 
 const EFFORT_LEVELS = [
   { id: 'max', labelAr: 'أقصى' },
@@ -62,6 +56,7 @@ const DEFAULT_MODEL_VALUE = '';
 export function AgentEditDrawer({ agent, open, onClose, onSaved }: AgentEditDrawerProps) {
   const [workModes, setWorkModes] = useState<WorkMode[]>([]);
   const [services, setServices] = useState<Service[]>([]);
+  const [modeOptions, setModeOptions] = useState<LoamModeOption[]>([{ id: 'build', labelAr: 'ابنِ' }]);
   const [skills, setSkills] = useState<Skill[]>([]);
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [models, setModels] = useState<string[]>([]);
@@ -80,6 +75,7 @@ export function AgentEditDrawer({ agent, open, onClose, onSaved }: AgentEditDraw
   const [model, setModel] = useState(DEFAULT_MODEL_VALUE);
   const [customModel, setCustomModel] = useState('');
   const [effort, setEffort] = useState('high');
+  const [memoryEnabled, setMemoryEnabled] = useState(true);
   const [enabledServices, setEnabledServices] = useState<Set<string>>(new Set());
   const [enabledSkills, setEnabledSkills] = useState<Set<string>>(new Set());
   const [enabledConnectors, setEnabledConnectors] = useState<Set<string>>(new Set());
@@ -103,7 +99,7 @@ export function AgentEditDrawer({ agent, open, onClose, onSaved }: AgentEditDraw
         if (!skillsRes.ok) throw new Error(`skills ${skillsRes.status}`);
         if (!mcpRes.ok) throw new Error(`mcp ${mcpRes.status}`);
         if (!configRes.ok) throw new Error(`config ${configRes.status}`);
-        const workModesData = (await workModesRes.json()) as { workModes?: WorkMode[]; services?: Service[] };
+        const workModesData = (await workModesRes.json()) as { workModes?: WorkMode[]; services?: Service[]; loamModes?: LoamModeOption[] };
         const skillsData = (await skillsRes.json()) as { skills?: Skill[] };
         const mcpData = (await mcpRes.json()) as { servers?: Connector[] };
         const configData = (await configRes.json()) as { defaultModel?: string; model?: string };
@@ -112,6 +108,7 @@ export function AgentEditDrawer({ agent, open, onClose, onSaved }: AgentEditDraw
         const serviceList = workModesData.services ?? [];
         setWorkModes(workModesData.workModes ?? []);
         setServices(serviceList);
+        if (workModesData.loamModes?.length) setModeOptions(workModesData.loamModes);
         setSkills(skillsData.skills ?? []);
         setConnectors(mcpData.servers ?? []);
         const cfgModel = configData.model || configData.defaultModel || '';
@@ -152,6 +149,7 @@ export function AgentEditDrawer({ agent, open, onClose, onSaved }: AgentEditDraw
         setCustomModel('');
       }
       setEffort((agent as unknown as { effort?: string }).effort || 'high');
+      setMemoryEnabled(agent.memoryEnabled !== false);
     }
   }, [agent, models, configuredModel]);
 
@@ -159,28 +157,24 @@ export function AgentEditDrawer({ agent, open, onClose, onSaved }: AgentEditDraw
     if (agent && services.length > 0) {
       const allowed = (agent as unknown as { allowedServices?: string[] }).allowedServices;
       const serviceIds = services.map((s) => s.id);
-      if (allowed && allowed.length > 0) {
-        const serviceAllowed = allowed.filter((id) => serviceIds.includes(id));
-        const skillAllowed = allowed.filter((id) => skills.some((s) => s.name === id));
-        const connectorAllowed = allowed.filter((id) => connectors.some((c) => c.name === id));
-        setEnabledServices(new Set(serviceAllowed));
-        setEnabledSkills(new Set(skillAllowed));
-        setEnabledConnectors(new Set(connectorAllowed));
-      } else {
-        setEnabledServices(new Set(serviceIds));
-        setEnabledSkills(new Set());
-        setEnabledConnectors(new Set());
-      }
+      const serviceAllowed = allowed?.filter((id) => serviceIds.includes(id)) ?? [];
+      setEnabledServices(new Set(allowed && allowed.length > 0 ? serviceAllowed : serviceIds));
+
+      const legacySkills = allowed?.filter((id) => skills.some((skill) => skill.name === id));
+      const selectedSkills = agent.enabledSkills
+        ?? (legacySkills && legacySkills.length > 0 ? legacySkills : skills.map((skill) => skill.name));
+      setEnabledSkills(new Set(selectedSkills));
+
+      const legacyConnectors = allowed?.filter((id) => connectors.some((connector) => connector.name === id));
+      const selectedConnectors = agent.connectorGrants?.map((grant) => grant.connectorId)
+        ?? (legacyConnectors && legacyConnectors.length > 0 ? legacyConnectors : connectors.map((connector) => connector.name));
+      setEnabledConnectors(new Set(selectedConnectors));
     }
   }, [agent, services, skills, connectors]);
 
   const allServicesEnabled = useMemo(() => {
     return services.length > 0 && services.every((s) => enabledServices.has(s.id));
   }, [services, enabledServices]);
-
-  const memoryEnabled = useMemo(() => {
-    return workMode === 'loam';
-  }, [workMode]);
 
   const toggleService = (id: string) => {
     setEnabledServices((prev) => {
@@ -223,12 +217,6 @@ export function AgentEditDrawer({ agent, open, onClose, onSaved }: AgentEditDraw
     setSaving(true);
     setError(null);
     try {
-      const serviceIds = Array.from(enabledServices);
-      const chosenCapabilityIds = [...serviceIds, ...enabledSkills, ...enabledConnectors];
-      const uniqueCapabilities = [...new Set(chosenCapabilityIds)];
-      const allowedServices = allServicesEnabled && enabledSkills.size === 0 && enabledConnectors.size === 0
-        ? []
-        : uniqueCapabilities;
       const patch: Record<string, unknown> = {
         name: name.trim(),
         emoji: emoji.trim() || '🤖',
@@ -237,7 +225,13 @@ export function AgentEditDrawer({ agent, open, onClose, onSaved }: AgentEditDraw
         mode,
         workMode,
         effort,
-        allowedServices,
+        memoryEnabled,
+        allowedServices: allServicesEnabled ? [] : Array.from(enabledServices),
+        enabledSkills: Array.from(enabledSkills),
+        connectorGrants: Array.from(enabledConnectors).map((connectorId) => ({
+          connectorId,
+          permissions: ['read', 'write', 'send'],
+        })),
       };
       if (effectiveModel) patch.model = effectiveModel;
       else patch.model = null;
@@ -268,9 +262,7 @@ export function AgentEditDrawer({ agent, open, onClose, onSaved }: AgentEditDraw
   };
 
   const handleMemoryToggle = (enabled: boolean) => {
-    if (workMode === 'loam' || workMode === 'chat') {
-      setWorkMode(enabled ? 'loam' : 'chat');
-    }
+    setMemoryEnabled(enabled);
   };
 
   if (!open || !agent) return null;
@@ -347,7 +339,7 @@ export function AgentEditDrawer({ agent, open, onClose, onSaved }: AgentEditDraw
                 onChange={(e) => setMode(e.target.value)}
                 className="rounded-control border border-border-main bg-bg-main px-3 py-2 text-sm text-text-primary outline-none focus:border-border-dark"
               >
-                {LOAM_MODES.map((m) => (
+                {modeOptions.map((m) => (
                   <option key={m.id} value={m.id}>{m.labelAr}</option>
                 ))}
               </select>
@@ -394,7 +386,6 @@ export function AgentEditDrawer({ agent, open, onClose, onSaved }: AgentEditDraw
               <input
                 type="checkbox"
                 checked={memoryEnabled}
-                disabled={workMode !== 'loam' && workMode !== 'chat'}
                 onChange={(e) => handleMemoryToggle(e.target.checked)}
                 className="mt-0.5 size-4 shrink-0 accent-text-primary disabled:opacity-50"
               />

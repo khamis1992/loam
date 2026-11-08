@@ -6,7 +6,7 @@ import path from "node:path";
 import { createTask } from "../server/db.js";
 import { ensureTaskWorkspace, isManagedTaskWorkspace } from "../server/taskWorkspace.js";
 import { deleteAppProjectRow, getAppProject, insertAppProject, listAppProjects, newAppProjectId, updateAppProjectRow } from "./store.js";
-import type { AppProject, AppProjectSettings, AppRunFlavor, TemplateFeatureId } from "./types.js";
+import type { AppProject, AppProjectSettings, AppRunFlavor, BuildKind, TemplateFeatureId } from "./types.js";
 
 export const DEFAULT_PROJECT_SETTINGS: AppProjectSettings = {
   defaultTier: "auto",
@@ -18,6 +18,7 @@ export const DEFAULT_PROJECT_SETTINGS: AppProjectSettings = {
 export interface CreateAppProjectInput {
   title: string;                 // trimmed, 1..80 chars
   description?: string;          // <= 400 chars
+  kind?: BuildKind;
   features?: TemplateFeatureId[];
   defaultFlavor?: AppRunFlavor;  // default "quick"
   /** Loam base workspace; the project lives in a task workspace under it */
@@ -34,10 +35,11 @@ export function createAppProject(input: CreateAppProjectInput): AppProject {
   fs.mkdirSync(path.join(workspaceDir, "app"), { recursive: true });
   const project: AppProject = {
     id: newAppProjectId(),
+    kind: input.kind ?? "web-app",
     taskId: task.id,
     title,
     description,
-    templateId: "web-app",
+    templateId: input.kind ?? "web-app",
     features: input.features ?? [],
     workspaceDir,
     appDir: "app",

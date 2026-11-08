@@ -50,20 +50,30 @@ export function submitForReview(rec: ReviewRecord, actor: string, at: string): R
   return move(rec, "in_review", actor, at);
 }
 
+function assertApprovable(rec: ReviewRecord, report: VerificationReport, expectedSha256: string): void {
+  if (report.verdict === "fail") throw new ReviewError("cannot approve a failing document");
+  if (report.coverage.status !== "complete") throw new ReviewError(`cannot approve with corpus coverage ${report.coverage.status}; resolve every required source first`);
+  if (report.documentSha256 !== expectedSha256 || rec.verifiedSha256 !== expectedSha256) throw new ReviewError("document changed since verification; verify again");
+  if (report.corpusSnapshotId !== rec.verifiedCorpusSnapshotId) throw new ReviewError("corpus changed since verification; verify again");
+  if (report.counts.failed > 0 || report.counts.unverifiedMarkers > 0) throw new ReviewError("document still contains failed citations or unverified markers");
+}
+
 export function approve(
   rec: ReviewRecord, report: VerificationReport, reviewer: Reviewer, at: string,
 ): ReviewRecord {
   if (rec.state !== "in_review") throw new ReviewError(`cannot approve from state ${rec.state}`);
   const identity = reviewerIdentity(reviewer);
-  if (report.verdict === "fail") throw new ReviewError("cannot approve a failing document");
-  if (report.coverage.status !== "complete") throw new ReviewError(`cannot approve with corpus coverage ${report.coverage.status}; resolve every required source first`);
-  if (report.documentSha256 !== rec.verifiedSha256) throw new ReviewError("document changed since verification; verify again");
-  if (report.corpusSnapshotId !== rec.verifiedCorpusSnapshotId) throw new ReviewError("corpus changed since verification; verify again");
-  if (report.counts.unverifiedMarkers > 0) throw new ReviewError("document still contains unverified markers");
+  assertApprovable(rec, report, report.documentSha256);
   return decide(move(rec, "approved", `${identity.name} (${identity.licenseNo})`, at, {
     approvedSha256: report.documentSha256, approvedCorpusSnapshotId: report.corpusSnapshotId,
     reviewer: identity, decidedAt: at,
   }), "approve", rec.documentVersion?.id ?? rec.documentName, identity, at);
+}
+
+export function assignReview(rec: ReviewRecord, reviewer: Reviewer, at: string): ReviewRecord {
+  if (rec.state === "approved") throw new ReviewError("an approved review cannot be reassigned; create a new version first");
+  const identity = reviewerIdentity(reviewer);
+  return decide({ ...rec, assignedReviewer: identity }, "assign", rec.documentVersion?.id ?? rec.documentName, identity, at);
 }
 
 export function reject(rec: ReviewRecord, actor: string, note: string, at: string): ReviewRecord {
@@ -109,11 +119,11 @@ export function canExportArtifact(rec: ReviewRecord, artifactSha256: string): bo
   return rec.state === "approved" && (rec.approvedArtifactSha256 ?? rec.approvedSha256) === artifactSha256;
 }
 
-export function approveArtifact(rec: ReviewRecord, artifact: ApprovalArtifact, reviewer: Reviewer, at: string): ReviewRecord {
+export function approveArtifact(rec: ReviewRecord, artifact: ApprovalArtifact, report: VerificationReport, reviewer: Reviewer, at: string): ReviewRecord {
   if (rec.state !== "in_review") throw new ReviewError(`cannot approve from state ${rec.state}`);
   const identity = reviewerIdentity(reviewer);
-  if (rec.verifiedSha256 !== artifact.contentSha256) throw new ReviewError("artifact content changed since verification");
-  if (rec.verifiedCorpusSnapshotId !== artifact.corpusSnapshotId) throw new ReviewError("corpus changed since verification");
+  assertApprovable(rec, report, artifact.contentSha256);
+  if (artifact.corpusSnapshotId !== rec.verifiedCorpusSnapshotId) throw new ReviewError("corpus changed since verification");
   if (artifact.dataBase64 && crypto.createHash("sha256").update(Buffer.from(artifact.dataBase64, "base64")).digest("hex") !== artifact.artifactSha256) throw new ReviewError("artifact hash mismatch");
   return decide(move(rec, "approved", `${identity.name} (${identity.licenseNo})`, at, {
     approvedSha256: artifact.contentSha256, approvedCorpusSnapshotId: artifact.corpusSnapshotId,

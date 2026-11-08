@@ -77,6 +77,11 @@ export const PACK_MANIFESTS: Readonly<Record<PackId, ServicePackManifest>> = {
     wraps: ["file_write", "file_edit", "preview_serve"], ownedTools: [], wrappedTools: ["file_write", "file_edit", "preview_serve"],
     hostTools: ["game_present"], gate: { tool: "game_present", timeoutMs: 30_000 }, legacyRoutes: "keep", update: "hot",
   }),
+  "loam-desktop": define({
+    schema: "loam.service-pack/v1", id: "loam-desktop", version: "1.0.0", modes: ["desktop", "build"], skills: skill("loam-desktop"),
+    wraps: ["app_task_create", "app_verify"], ownedTools: ["desktop_init", "desktop_attach", "desktop_verify"], wrappedTools: [],
+    hostTools: ["desktop_present", "desktop_package", "desktop_reveal", "desktop_launch", "desktop_stop"], gate: { tool: "desktop_present", timeoutMs: 120_000 }, legacyRoutes: "keep", update: "hot",
+  }),
 };
 
 export const PACK_BASE_TOOLS = [

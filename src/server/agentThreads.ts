@@ -97,6 +97,10 @@ export function touchMessage(agentId: string, at?: string): void {
   db.prepare("UPDATE agent_threads SET last_message_at = ? WHERE agent_id = ?").run(touchedAt, agentId);
 }
 
+export function removeThread(agentId: string): boolean {
+  return Number(database().prepare("DELETE FROM agent_threads WHERE agent_id = ?").run(agentId).changes) > 0;
+}
+
 export function listThreads(): AgentThreadInfo[] {
   const db = database();
   const rows = db.prepare(`SELECT ${SELECT_COLUMNS} FROM agent_threads ORDER BY updated_at DESC, agent_id ASC`).all() as

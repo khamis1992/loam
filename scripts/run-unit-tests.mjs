@@ -5,7 +5,9 @@ const files = globSync("src/**/__tests__/*.test.ts")
   .filter((file) => !file.replaceAll("\\", "/").endsWith("src/tools/__tests__/search.test.ts"))
   .sort();
 if (files.length === 0) throw new Error("No unit tests found");
-const child = spawn(process.execPath, ["--import", "tsx", "--test", ...files], {
+const requestedConcurrency = Number(process.env.LOAM_TEST_CONCURRENCY ?? 4);
+const concurrency = Number.isInteger(requestedConcurrency) && requestedConcurrency > 0 ? requestedConcurrency : 4;
+const child = spawn(process.execPath, ["--import", "tsx", "--test", `--test-concurrency=${concurrency}`, ...files], {
   stdio: "inherit",
   windowsHide: true,
 });

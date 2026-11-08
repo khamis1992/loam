@@ -14,4 +14,4 @@ const a=listAgents()[0];assert.ok(a);const original=a.name;
 assert.throws(()=>updateAgent(a.id,{name:'must not mutate',mode:'unknown'}),/Unknown Loam mode/);
 assert.equal(a.name,original);
 assert.equal(updateAgent(a.id,{mode:'write'})?.mode,'write');
-console.log('Loam agents: seven modes accepted; unknown create/update rejected without partial mutation.');
+console.log(`Loam agents: ${LOAM_MODES.length} modes accepted; unknown create/update rejected without partial mutation.`);

@@ -9,6 +9,8 @@ import { StaticKeyProvider } from '../../../src/legal/crypto';
 import { fillAvids } from '../../../src/legal/__tests__/helpers';
 import type { LegalModelPort } from '../../../src/legal/model/types';
 
+test.describe.configure({ mode: 'serial' });
+
 let srv: MockServer;
 let dataDir: string;
 let modelDelegate: LegalModelPort;
@@ -66,13 +68,18 @@ test('matter, evidence, document analysis, redline and exact approved download',
   test.setTimeout(60_000);
   await proxyLegalApi(page);
   await page.goto('/legal', { waitUntil: 'networkidle' });
+  await expect(page.getByRole('link', { name: 'Back', exact: true })).toHaveAttribute('href', '/');
   await page.getByPlaceholder('Matter title').fill('مسألة E2E اصطناعية');
   await page.getByLabel('Applicable law date').fill('2092-01-01');
-  await page.locator('select').selectOption('contract_review');
+  await page.getByLabel(/New matter kind|نوع المسألة الجديدة/).selectOption('contract_review');
   const createResponse = page.waitForResponse((response) => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/legal/matters', { timeout: 5000 });
   await page.getByRole('button', { name: 'New matter' }).click();
   const created = await createResponse.catch(async (error: unknown) => { console.log('E2E body', await page.locator('body').innerText()); throw error; });
   expect(created.status()).toBe(201);
+  await page.getByRole('link', { name: /مسألة E2E اصطناعية/ }).click();
+  await expect(page).toHaveURL(/\/legal\/matter\?id=mt-/);
+  await page.getByRole('link', { name: 'Back to Legal Qatar', exact: true }).click();
+  await expect(page).toHaveURL(/\/legal$/);
   await page.getByRole('link', { name: /مسألة E2E اصطناعية/ }).click();
   await expect(page).toHaveURL(/\/legal\/matter\?id=mt-/);
 
@@ -136,9 +143,11 @@ test('defense, legal response and persisted evidence after reopening a matter', 
   await page.goto('/legal', { waitUntil: 'networkidle' });
   await page.getByPlaceholder('Matter title').fill('دعوى E2E اصطناعية');
   await page.getByLabel('Applicable law date').fill('2092-01-01');
-  await page.locator('select').selectOption('defense_memo');
+  await page.getByLabel(/New matter kind|نوع المسألة الجديدة/).selectOption('defense_memo');
   await page.getByRole('button', { name: 'New matter' }).click();
   await page.getByRole('link', { name: /دعوى E2E اصطناعية/ }).click();
+  await expect(page).toHaveURL(/\/legal\/matter\?id=mt-/);
+  await expect(page.getByRole('heading', { name: 'دعوى E2E اصطناعية', exact: true })).toBeVisible();
   const uploadResponse = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().includes('/documents'));
   await page.locator('input[type=file]').first().setInputFiles({
     name: 'defense-evidence.txt', mimeType: 'text/plain', buffer: Buffer.from('ثبت بالمستندات أن التعويض الاتفاقي محل نزاع بتاريخ 2091/12/01.', 'utf8'),
@@ -196,7 +205,7 @@ test('a running model call can be cancelled and explicitly resumed', async ({ pa
     await page.goto('/legal', { waitUntil: 'networkidle' });
     await page.getByPlaceholder('Matter title').fill('إلغاء E2E');
     await page.getByLabel('Applicable law date').fill('2092-01-01');
-    await page.locator('select').selectOption('defense_memo');
+    await page.getByLabel(/New matter kind|نوع المسألة الجديدة/).selectOption('defense_memo');
     await page.getByRole('button', { name: 'New matter' }).click();
     await page.getByRole('link', { name: /إلغاء E2E/ }).click();
     await page.getByRole('button', { name: 'Build defense' }).click();
@@ -227,7 +236,7 @@ test('legal home supports Arabic, English, light and dark without horizontal ove
       await expect(page.locator('html')).toHaveClass(new RegExp(`(?:^|\\s)${theme}(?:\\s|$)`));
       await expect(page.locator('main')).toHaveCSS('direction', locale === 'ar' ? 'rtl' : 'ltr');
       await expect(page.getByRole('button', { name: locale === 'ar' ? 'مسألة جديدة' : 'New matter' })).toBeVisible();
-      const contrast = await page.locator('select').evaluate((element) => {
+      const contrast = await page.getByLabel(/New matter kind|نوع المسألة الجديدة/).evaluate((element) => {
         const channels = (value: string) => (value.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
         const luminance = (rgb: number[]) => {
           const values = rgb.map((channel) => { const normalized = channel / 255; return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4; });

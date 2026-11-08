@@ -18,6 +18,7 @@ files:
   - evals/**/*
   - addons/**/*
   - scripts/**/*
+  - src/templates/electron-app/**/*
   # Neo N22: the bilingual user guide served by /api/docs and the in-app help
   # page. It is authored Markdown read from disk, so it must ship in the asar.
   - docs/neo/**/*

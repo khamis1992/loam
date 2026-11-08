@@ -126,5 +126,74 @@ export function buildAutomationPrompt(schedule: Schedule, payload?: unknown, git
     const override = rec ? str(rec.prompt) || str(rec.message) : "";
     if (override) return override;
   }
-  return base;
+  return automationPayloadToPrompt(trigger, payload) ?? base;
+}
+
+export function automationEventMatches(trigger: AutomationTrigger, allowed: string[] | undefined, eventKind: string): boolean {
+  if (trigger === "webhook" || trigger === "cron") return true;
+  return githubEventMatches(allowed, eventKind) || allowed?.includes("*") === true;
+}
+
+export function automationEventKind(trigger: AutomationTrigger, payload: unknown, githubEvent?: string): string {
+  if (trigger === "github") return githubEvent ?? "unknown";
+  const body = asRecord(payload) ?? {};
+  if (trigger === "slack") return str(asRecord(body.event)?.type) || str(body.type) || "message";
+  if (trigger === "microsoftTeams") return str(body.type) || "message";
+  if (trigger === "linear") return str(body.action) || str(body.type) || "issue";
+  if (trigger === "sentry") return str(body.action) || "event";
+  if (trigger === "pagerduty") return str(body.event) || "incident";
+  if (trigger === "email") return "email.received";
+  return "webhook";
+}
+
+export function automationPayloadToPrompt(trigger: AutomationTrigger, payload: unknown): string | undefined {
+  const body = asRecord(payload) ?? {};
+  if (trigger === "slack") {
+    const event = asRecord(body.event) ?? body;
+    const text = str(event.text) || str(body.text);
+    const channel = str(event.channel) || str(body.channel) || "unknown";
+    return `[Slack] ${automationEventKind(trigger, payload)} in ${channel}: ${text || "event received"}`;
+  }
+  if (trigger === "microsoftTeams") {
+    const text = str(body.text) || str(asRecord(body.message)?.text) || str(body.summary);
+    const from = str(asRecord(body.from)?.name) || str(asRecord(body.sender)?.name) || "Microsoft Teams";
+    return `[Microsoft Teams] ${from}: ${text || "event received"}`;
+  }
+  if (trigger === "linear") {
+    const data = asRecord(body.data) ?? body;
+    const title = str(data.title) || str(data.identifier) || "Linear event";
+    const description = str(data.description) || str(data.url);
+    return `[Linear] ${title}${description ? `\n\n${description}` : ""}`;
+  }
+  if (trigger === "sentry") {
+    const event = asRecord(body.event) ?? body;
+    const title = str(event.title) || str(event.message) || "Sentry event";
+    const level = str(event.level);
+    const url = str(event.url) || str(body.url);
+    return `[Sentry] ${level ? `${level}: ` : ""}${title}${url ? `\n\n${url}` : ""}`;
+  }
+  if (trigger === "pagerduty") {
+    const data = asRecord(body.data) ?? body;
+    const title = str(data.title) || str(data.summary) || "PagerDuty incident";
+    const status = str(data.status);
+    const url = str(data.html_url);
+    return `[PagerDuty] ${status ? `${status}: ` : ""}${title}${url ? `\n\n${url}` : ""}`;
+  }
+  if (trigger === "email") {
+    const from = str(body.from) || str(body.sender) || "unknown sender";
+    const subject = str(body.subject) || "(no subject)";
+    const text = str(body.text) || str(body.body);
+    return `[Email] ${from} — ${subject}${text ? `\n\n${text}` : ""}`;
+  }
+  return undefined;
+}
+
+export function verifySlackRequest(rawBody: Buffer, timestamp: string | undefined, signature: string | undefined, secret: string | undefined): boolean {
+  if (!timestamp || !signature || !secret || !/^\d+$/.test(timestamp)) return false;
+  const ageSeconds = Math.abs(Math.floor(Date.now() / 1000) - Number(timestamp));
+  if (ageSeconds > 300) return false;
+  const expected = crypto.createHmac("sha256", secret).update(`v0:${timestamp}:${rawBody.toString("utf8")}`).digest("hex");
+  const supplied = Buffer.from(signature.replace(/^v0=/, ""), "utf8");
+  const computed = Buffer.from(expected, "utf8");
+  return supplied.length === computed.length && crypto.timingSafeEqual(supplied, computed);
 }

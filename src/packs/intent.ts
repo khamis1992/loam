@@ -23,6 +23,7 @@ const GOAL_PACK: Readonly<Record<string, PackId>> = {
   schedule: "loam-schedule",
   "mobile-app": "loam-mobile",
   "game-development": "loam-game",
+  "desktop-app": "loam-desktop",
 };
 
 export function packIdForGoal(goal: unknown): PackId | undefined {
@@ -33,6 +34,7 @@ export function packIdForOutputType(outputType: unknown): PackId | undefined {
   if (outputType === "slides") return "loam-slides";
   if (outputType === "video") return "loam-video";
   if (outputType === "website") return "loam-build";
+  if (outputType === "desktop") return "loam-desktop";
   if (outputType === "image") return "loam-image";
   return undefined;
 }

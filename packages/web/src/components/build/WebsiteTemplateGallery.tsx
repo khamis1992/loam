@@ -14,6 +14,7 @@ interface WebsiteTemplate {
 }
 
 const CATEGORIES = ['All', 'Landing Page', 'SaaS', 'E-commerce', 'Productivity', 'Portfolio', 'Education'];
+const FEATURED_IDS = ['merch-store', 'online-booking', 'christmas-sale'];
 
 const TEMPLATES: WebsiteTemplate[] = [
   {
@@ -56,7 +57,10 @@ const TEMPLATES: WebsiteTemplate[] = [
 export function WebsiteTemplateGallery({ onSelect }: { onSelect: (prompt: string) => void }) {
   const [category, setCategory] = useState('All');
   const filtered = category === 'All'
-    ? [TEMPLATES[0], TEMPLATES[3], TEMPLATES[1]]
+    ? FEATURED_IDS.flatMap((id) => {
+        const found = TEMPLATES.find((template) => template.id === id);
+        return found ? [found] : [];
+      })
     : TEMPLATES.filter((template) => template.categories.includes(category));
 
   return (

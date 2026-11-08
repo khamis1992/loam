@@ -43,6 +43,7 @@ test("coverage rejects stale and unverified required sources", () => {
   const unverified = new LegalCorpus(":memory:");
   const pack = JSON.parse(fs.readFileSync(path.join(FIXTURE_DIR, "corpus", "01-civil-test.json"), "utf8")) as LegalPack;
   unverified.importPack(pack);
+  unverified.db.prepare("UPDATE legislations SET source_json=json_remove(source_json,'$.secondVerifiedBy')").run();
   unverified.setCoverageManifest([{ legKey: "law/2090/1", titleAr: "القانون المدني الاختباري", requiredFor: ["research"] }]);
   assert.equal(unverified.coverage({ asOf: "2026-10-26" }).issues[0]?.reason, "unverified");
   unverified.close();

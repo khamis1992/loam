@@ -91,6 +91,19 @@ export async function startProtocolAdapter(deps: ProtocolAdapterDeps): Promise<P
         if (req.method === "GET" && p === "/login") {
           const nonce = url.searchParams.get("nonce") ?? "";
           const type = url.searchParams.get("type") ?? "signIn";
+          const from = url.searchParams.get("from") ?? "desktop";
+          if (from === "web") {
+            const loamPort = Number(process.env.LOAM_PORT || process.env.MANUS_LOCAL_PORT || 3939);
+            const origin = req.headers.origin ?? "";
+            const trusted = origin === `http://127.0.0.1:${loamPort}` || origin === `http://localhost:${loamPort}`;
+            if (!trusted) {
+              sendJson(res, 403, { code: "forbidden", message: "local Loam web origin required" });
+              return;
+            }
+            sendJson(res, 200, { token: issueLoginToken(nonce) });
+            log.info(`protocol web login type=${type} nonce=${nonce}`);
+            return;
+          }
           const loginToken = issueLoginToken(nonce);
           const scheme = process.env.DEEP_LINK_SCHEME ?? "agentstudio";
           const location = `${scheme}://auth/callback?token=${loginToken}&nonce=${encodeURIComponent(nonce)}`;

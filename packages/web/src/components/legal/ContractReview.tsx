@@ -16,6 +16,7 @@ async function fileBase64(file: File): Promise<string> {
 export function ContractReview({ matterId }: { matterId: string }) {
   const [contractId, setContractId] = useState('');
   const [report, setReport] = useState<ContractReviewReport | null>(null);
+  const [severity, setSeverity] = useState<'all' | 'high' | 'medium' | 'low' | 'info'>('all');
   const [position, setPosition] = useState<ClientPosition>('buyer');
   const [tolerance, setTolerance] = useState<RiskTolerance>('balanced');
   const [edits, setEdits] = useState<Record<string, string>>({});
@@ -61,9 +62,9 @@ export function ContractReview({ matterId }: { matterId: string }) {
       {report && (
         <>
           <section>
-            <h3 className="mb-2 font-semibold">{t('Findings and negotiation')}</h3>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold">{t('Findings and negotiation')}</h3><label className="flex items-center gap-2 text-xs">{t('Severity')}<select value={severity} onChange={(event) => setSeverity(event.target.value as typeof severity)} className="rounded border px-2 py-1"><option value="all">{t('All severities')}</option><option value="high">{t('high')}</option><option value="medium">{t('medium')}</option><option value="low">{t('low')}</option><option value="info">{t('info')}</option></select></label></div>
             <ul className="space-y-2">
-              {report.findings.map((finding) => <li key={finding.id} className="rounded-md border p-3"><strong>{finding.titleAr}</strong><p>{finding.explanationAr}</p>{finding.suggestionAr && <p className="text-teal-700 dark:text-teal-300">{finding.suggestionAr}</p>}</li>)}
+              {report.findings.filter((finding) => severity === 'all' || finding.severity === severity).map((finding) => <li key={finding.id} className="rounded-md border p-3"><div className="flex flex-wrap items-center gap-2"><strong>{finding.titleAr}</strong><span className="rounded border px-2 py-0.5 text-xs">{t(finding.severity)}</span></div><p>{finding.explanationAr}</p>{finding.suggestionAr && <p className="text-teal-700 dark:text-teal-300">{finding.suggestionAr}</p>}{finding.unresolvedAuthorityQueries.length > 0 && <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">{t('Requires lawyer confirmation and authority review')}</p>}</li>)}
             </ul>
           </section>
           <section>
