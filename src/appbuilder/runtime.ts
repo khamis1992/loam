@@ -139,7 +139,7 @@ let cachedOllama: OllamaClient | undefined;
 /** The registry the engine runs tools on: the server's registry plus the app_* tools. */
 export function appBuilderRegistry(base?: ToolRegistry): ToolRegistry {
   const registry = base ?? globalWithRegistry.__loamRegistry;
-  if (registry) return registry.withTools(createAppBuilderTools() as Tool[]);
+  if (registry) return registry.withBound(createAppBuilderTools() as Tool[]);
   // Standalone (tests/scripts before the server boots): a registry with just the app_* tools.
   const fresh = new ToolRegistry();
   fresh.registerAll(createAppBuilderTools() as Tool[]);
