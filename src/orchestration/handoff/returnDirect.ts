@@ -1,6 +1,6 @@
 /**
- * C10: direct return from delegates. When a delegate's report already is the
- * answer, the parent skips the extra model call that only re-words it.
+ * C10: direct return from delegates and explicit terminal tools. When a tool's
+ * report already is the answer, the parent skips the extra model call that only re-words it.
  * Idea from VoltAgent's subagent "bail" (core/src/agent/subagent/index.ts:472-513);
  * own design: only a single-call batch qualifies, and Loam's verifier still
  * runs on the returned text (it never skips verification).
@@ -9,7 +9,7 @@
  * "[Subagent "<name>" finished in N step(s), M tool call(s)]\n\n<text>"
  * to the parent model, which then spends one more call to answer.
  */
-export const RETURN_DIRECT_TOOLS: ReadonlySet<string> = new Set(["delegate_task", "delegate_subagent"]);
+export const RETURN_DIRECT_TOOLS: ReadonlySet<string> = new Set(["delegate_task", "delegate_subagent", "app_verify"]);
 
 export interface BatchResult {
   tool: string;

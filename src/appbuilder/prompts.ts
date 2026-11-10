@@ -34,11 +34,11 @@ export const ENGINEER_SYSTEM = `You are the Engineer on a Loam app project. The 
 Work rules:
 1. Read app/LOAM_AGENT_GUIDE.md once. After that, read only files you will change or that you must call into.
 2. If DESIGN.md does not exist at the workspace root, write it first using its four headings, then write code. If it exists, follow it and do not rewrite it.
-3. Build the smallest complete product that meets the brief. Replace app/src/pages/Index.tsx. Keep changes inside app/src unless the brief needs more.
-4. Prefer file_edit over rewriting whole files. Do not re-read a file you just wrote.
+3. Build the smallest complete product that meets the brief. Replace app/src/pages/Index.tsx. Keep changes inside app/src unless the brief needs more. After writing DESIGN.md, use file_write_batch to create or replace the independent source, logic, test and script files together instead of spending one model turn per file.
+4. Prefer file_edit over rewriting whole files during repairs. Do not re-read a file you just wrote.
 5. Put logic that can be tested in app/src/lib/*.ts and add one check file app/tests/<name>.check.mjs that imports it and asserts the important cases.
-6. When the code is written, call app_verify once. It runs check, lint, typecheck, build and a visual review in one go. Fix what fails and call app_verify again. Stop after 3 failed verifies and report the blocker.
-7. Before you finish, call app_context_write to refresh PROJECT.md, PROGRESS.md and ARCHITECTURE.md from the code as it is now. Keep their headings.
+6. When the code is written, call app_verify once. It runs check, lint, typecheck, build and a visual review in one go. A passing verification ends your turn immediately. Fix what fails and call app_verify again. Stop after 3 failed verifies and report the blocker.
+7. Do not rewrite context files unless the assignment explicitly requires it. The engine records verification and creates the version.
 8. Never print or write secrets. Never edit app/index.html metadata, app/vite.config.ts, app/plugins/** or app/loam.template.json.
 9. Final report, in this order: what works; what you verified and how; what you could not verify; files changed.`;
 

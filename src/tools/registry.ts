@@ -58,7 +58,7 @@ export interface ToolResult {
   untrusted?: boolean;
   /** Content digest (sha256) of the untrimmed result for provenance. */
   contentDigest?: string;
-  /** C10: a delegate tool sets this when its report should reach the user as-is. */
+  /** C10: a terminal tool sets this when its report should reach the user as-is. */
   returnDirect?: boolean;
 }
 
@@ -222,6 +222,7 @@ export class ToolRegistry {
         ...(result.kbSeeds && result.kbSeeds.length > 0 ? { kbSeeds: result.kbSeeds } : {}),
         ...(result.untrusted ? { untrusted: true } : {}),
         ...(result.contentDigest ? { contentDigest: result.contentDigest } : {}),
+        ...(result.returnDirect ? { returnDirect: true } : {}),
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

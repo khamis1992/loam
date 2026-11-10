@@ -23,6 +23,7 @@ function config(): Config {
     },
     vision: { enabled: true, maxImagesPerStep: 2 },
     agent: { maxSteps: 4, temperature: 0, requestTimeoutMs: 1000 },
+    orchestration: { returnDirect: { enabled: true } },
     compression: { enabled: false },
   } as Config;
 }
@@ -81,4 +82,63 @@ test("AppBuilder role turns delegate final verification to the project gate", as
 
   assert.equal(result.text, "Implemented and tested.");
   assert.equal(modelCalls.length, 1, "the project-level verifier owns final verification, not another model call per role");
+});
+
+test("AppBuilder roles retain single-file and batch write choices", async () => {
+  const offered: string[][] = [];
+  const ollama = new OllamaClient("http://127.0.0.1:11434");
+  ollama.chat = async (options) => {
+    offered.push((options.tools ?? []).map((tool) => tool.function.name));
+    return { content: "done", toolCalls: [], model: "glm-5.4-flash", usage: { promptTokens: 1, completionTokens: 1, durationMs: 1 } };
+  };
+  const registry = new ToolRegistry();
+  for (const name of ["file_read", "file_write", "file_write_batch", "app_verify"]) {
+    registry.register({ name, description: "", parameters: {}, async run() { return { ok: true, content: "ok" }; } });
+  }
+  const runRoleTurn = createRunAgentRoleRunner({ cfg: config, ollama: () => ollama, baseTools: () => registry });
+  const tools = ["file_read", "file_write", "file_write_batch", "app_verify"];
+  const input = { runId: "run_batch", role: "engineer" as const, step: "implement" as const, system: "build", prompt: "build", tools, maxToolCalls: 0 };
+  await runRoleTurn({ ...input, project: project() });
+  await runRoleTurn({ ...input, project: { ...project(), activeVersion: 1 } });
+
+  assert.deepEqual(offered[0], ["file_read", "file_write", "file_write_batch", "app_verify"]);
+  assert.deepEqual(offered[1], ["file_read", "file_write", "file_write_batch", "app_verify"]);
+});
+
+test("AppBuilder tools execute inside the attached project workspace", async () => {
+  const workspaces: string[] = [];
+  const registry = new ToolRegistry();
+  registry.register({ name: "file_read", description: "", parameters: {}, async run(_args, ctx) {
+    workspaces.push(ctx.workspace);
+    return { ok: true, content: "guide" };
+  } });
+  let calls = 0;
+  const ollama = new OllamaClient("http://127.0.0.1:11434");
+  ollama.chat = async () => {
+    calls += 1;
+    return calls === 1
+      ? { content: "", toolCalls: [{ function: { name: "file_read", arguments: { path: "app/LOAM_AGENT_GUIDE.md" } } }], model: "glm-5.4-flash", usage: { promptTokens: 1, completionTokens: 1, durationMs: 1 } }
+      : { content: "done", toolCalls: [], model: "glm-5.4-flash", usage: { promptTokens: 1, completionTokens: 1, durationMs: 1 } };
+  };
+  const runRoleTurn = createRunAgentRoleRunner({ cfg: config, ollama: () => ollama, baseTools: () => registry });
+  const attached = project();
+  await runRoleTurn({ project: attached, runId: "run_workspace", role: "engineer", step: "implement", system: "build", prompt: "build", tools: ["file_read"], maxToolCalls: 1 });
+  assert.deepEqual(workspaces, [attached.workspaceDir]);
+});
+
+test("a passing app verification returns directly without another model turn", async () => {
+  const registry = new ToolRegistry();
+  registry.register({ name: "app_verify", description: "", parameters: {}, async run() {
+    return { ok: true, content: "app_verify PASSED", returnDirect: true };
+  } });
+  let calls = 0;
+  const ollama = new OllamaClient("http://127.0.0.1:11434");
+  ollama.chat = async () => {
+    calls += 1;
+    return { content: "", toolCalls: [{ function: { name: "app_verify", arguments: {} } }], model: "glm-5.4-flash", usage: { promptTokens: 1, completionTokens: 1, durationMs: 1 } };
+  };
+  const runRoleTurn = createRunAgentRoleRunner({ cfg: config, ollama: () => ollama, baseTools: () => registry });
+  const result = await runRoleTurn({ project: project(), runId: "run_verified", role: "engineer", step: "implement", system: "build", prompt: "build", tools: ["app_verify"], maxToolCalls: 1 });
+  assert.equal(calls, 1);
+  assert.equal(result.text, "app_verify PASSED");
 });

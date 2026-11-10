@@ -545,6 +545,10 @@ export class AppRunEngine {
         tier: report.tier, pass: report.pass, error: report.error,
       });
     }
+    if (!report.pass) {
+      const failed = report.steps.find((step) => !step.ok);
+      throw new Error(`app verification failed${failed ? ` at ${failed.id}` : ""}: ${failed?.outputTail || report.error || "verification did not pass"}`);
+    }
 
     updateRun(runId, { status: "versioning" });
     this.setStatus(project.id, "versioning");
@@ -648,7 +652,7 @@ export function createRunAgentRoleRunner(opts: {
     const base = opts.baseTools();
     const sub = base.cloneFiltered({ allow: [...input.tools] });
     applyRoleScopeGate(sub, () => input.role);
-    const runCfg: Config = { ...cfg, workspace: input.workspaceDir ?? cfg.workspace };
+    const runCfg: Config = { ...cfg, workspace: input.workspaceDir ?? input.project.workspaceDir };
     const events: import("../agent/events.js").AgentEvent[] = [];
     const emit: Emit = (e) => { events.push(e); opts.emit?.(e); };
     const result = await runAgent({
@@ -703,10 +707,58 @@ export function createModelVersionNamer(runner: RoleTurnRunner): VersionNamer {
   };
 }
 
+const APP_AGENT_GUIDE = `# Loam App Builder guide
+
+- Write DESIGN.md at the workspace root before application code.
+- Replace src/pages/Index.tsx with the product home page. Do not inspect the template component gallery unless the implementation imports a component from it.
+- Use file_write_batch for independent source, logic, test and script files. Use file_edit for focused repairs after reading the target.
+- Put testable logic in src/lib and checks in tests/*.check.mjs using node:test.
+- package.json provides check, lint, typecheck and build. Run them through app_verify instead of shell commands.
+- Keep edits inside app/src, app/tests and the required root metadata. Never edit vite.config.ts or app/plugins.
+`;
+
+const LINK_DEPS_SCRIPT = `import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const target = path.join(appDir, "node_modules");
+if (fs.existsSync(path.join(target, ".bin"))) process.exit(0);
+if (fs.existsSync(target)) throw new Error("node_modules exists without .bin");
+const depsDir = process.env.LOAM_DEPS_DIR;
+if (!depsDir || !fs.existsSync(path.join(depsDir, "node_modules", ".bin"))) throw new Error("shared dependencies are not ready");
+fs.symlinkSync(path.join(depsDir, "node_modules"), target, process.platform === "win32" ? "junction" : "dir");
+`;
+
+export function scaffoldFiles(project: Pick<AppProject, "templateId" | "features">): ReturnType<typeof loadTemplate>["files"] {
+  const files = loadTemplate(project.templateId, project.features).files.map((file) => {
+    if (file.path === "src/main.tsx" && project.templateId === "web-app") {
+      return { ...file, content: `import { StrictMode } from "react";\nimport { createRoot } from "react-dom/client";\nimport Index from "./pages/Index";\nimport "./index.css";\n\nconst container = document.getElementById("root");\nif (!container) throw new Error("Root element #root not found");\ncreateRoot(container).render(<StrictMode><Index /></StrictMode>);\n` };
+    }
+    if (file.path !== "package.json") return file;
+    const manifest = JSON.parse(file.content) as { scripts?: Record<string, string> };
+    manifest.scripts = {
+      check: "node --test tests/*.check.mjs",
+      lint: "tsc --noEmit",
+      typecheck: "tsc --noEmit",
+      ...manifest.scripts,
+    };
+    return { ...file, content: `${JSON.stringify(manifest, null, 2)}\n` };
+  });
+  const add = (relative: string, content: string): void => {
+    if (!files.some((file) => file.path === relative)) files.push({ path: relative, content });
+  };
+  add("scripts/link-deps.mjs", LINK_DEPS_SCRIPT);
+  if (project.templateId === "web-app") {
+    add("LOAM_AGENT_GUIDE.md", APP_AGENT_GUIDE);
+    add("src/pages/Index.tsx", `export default function Index() {\n  return <main>LOAM_PLACEHOLDER_PAGE</main>;\n}\n`);
+  }
+  return files;
+}
+
 /** The default scaffold (§4.3): template files into an empty app/, shared deps, junction, lockfile. */
 export async function scaffoldProject(project: AppProject, onLine: (line: string) => void = () => undefined): Promise<void> {
   const appDir = path.join(project.workspaceDir, project.appDir);
-  for (const file of loadTemplate(project.templateId, project.features).files) {
+  for (const file of scaffoldFiles(project)) {
     const target = path.join(appDir, file.path);
     if (fs.existsSync(target)) continue;
     fs.mkdirSync(path.dirname(target), { recursive: true });

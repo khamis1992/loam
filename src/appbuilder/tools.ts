@@ -465,7 +465,7 @@ export function createAppBuilderTools(deps: AppBuilderToolDeps = {}): Tool[] {
           pass: report.pass,
           error: report.error,
         });
-        return { ok: report.pass, content: formatVerifyReportForModel(report) };
+        return { ok: report.pass, content: formatVerifyReportForModel(report), ...(report.pass ? { returnDirect: true } : {}) };
       },
     },
     {

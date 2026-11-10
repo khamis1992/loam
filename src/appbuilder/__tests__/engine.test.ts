@@ -206,6 +206,27 @@ test("engine quick: a focused todo request skips the engineer and versions the v
   assert.deepEqual(usage, []);
 });
 
+test("engine quick: failed verification never creates a version or reports done", async () => {
+  const project = createAppProject({ title: "failed-build-gate", baseWorkspace: tmp });
+  const runner = scriptedRunner(() => "The implementation is ready.");
+  const engine = new AppRunEngine(depsFor(runner, {
+    verify: {
+      async run() {
+        return { ...GREEN_REPORT, projectId: project.id, pass: false, steps: [{ ...GREEN_REPORT.steps[0]!, ok: false, outputTail: "placeholder remains" }] };
+      },
+      endRun() {},
+    },
+  }));
+  const started = engine.startRun(project, { prompt: "Build a coffee landing page", flavor: "quick" });
+  type(!("error" in started));
+  const runId = (started as { runId: string }).runId;
+  await waitFor("run failed", () => getRun(runId)?.status === "failed");
+  assert.equal(getAppProject(project.id)!.status, "failed");
+  assert.equal(getAppProject(project.id)!.activeVersion, null);
+  const versions = database().prepare("SELECT number FROM app_versions WHERE project_id = ?").all(project.id);
+  assert.deepEqual(versions, []);
+});
+
 // ---------------------------------------------------------------- Goal happy path with both pauses
 
 test("engine goal: questions pause → resume → plan pause → approve → assignments → verify → snapshot", async () => {

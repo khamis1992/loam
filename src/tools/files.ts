@@ -368,6 +368,84 @@ export const fileTools: Tool[] = [
     },
   },
   {
+    name: "file_write_batch",
+    description:
+      "Create or overwrite several independent text files in one tool call, reducing model round trips for a new application or document set. Pass up to 24 files with full contents. Every existing file must have been read first; duplicate paths and traversal are refused, and all guards pass before any file is written. If a filesystem write fails, earlier writes in the batch are rolled back. Prefer this for initial project scaffolding and related new files. Use file_edit or file_multi_edit for targeted changes to existing code, and keep independent calls in separate turns when later content depends on an earlier result.",
+    parameters: {
+      type: "object",
+      properties: {
+        files: {
+          type: "array",
+          minItems: 1,
+          maxItems: 24,
+          items: {
+            type: "object",
+            properties: {
+              path: { type: "string", description: "Target file path inside the workspace." },
+              content: { type: "string", description: "Full file content." },
+            },
+            required: ["path", "content"],
+          },
+        },
+      },
+      required: ["files"],
+    },
+    async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+      const raw = args.files;
+      if (!Array.isArray(raw) || raw.length < 1 || raw.length > 24) return { ok: false, content: "files must contain between 1 and 24 entries." };
+      const files: Array<{ path: string; absolute: string; content: string }> = [];
+      const seen = new Set<string>();
+      let totalBytes = 0;
+      for (const value of raw) {
+        if (!value || typeof value !== "object" || Array.isArray(value)) return { ok: false, content: "every files entry must be an object with path and content." };
+        const record = value as Record<string, unknown>;
+        if (typeof record.path !== "string" || !record.path.trim() || typeof record.content !== "string") return { ok: false, content: "every files entry needs a non-empty path and string content." };
+        let absolute = "";
+        try { absolute = resolveWrite(ctx.workspace, record.path); } catch (error) { return { ok: false, content: error instanceof Error ? error.message : String(error) }; }
+        const key = process.platform === "win32" ? absolute.toLowerCase() : absolute;
+        if (seen.has(key)) return { ok: false, content: `duplicate path in batch: ${record.path}` };
+        seen.add(key);
+        totalBytes += Buffer.byteLength(record.content, "utf8");
+        if (totalBytes > 400_000) return { ok: false, content: "file_write_batch content exceeds the 400 KB total budget." };
+        files.push({ path: record.path, absolute, content: record.content });
+      }
+      return withLocks(files.map((file) => file.absolute), async () => {
+        for (const file of files) {
+          const guard = guardExistingEdit(ctx, file.absolute);
+          if (guard) return { ...guard, content: `No files were written. ${guard.content}` };
+        }
+        const previous = files.map((file) => fs.existsSync(file.absolute) && fs.statSync(file.absolute).isFile() ? fs.readFileSync(file.absolute, "utf8") : null);
+        let written = 0;
+        try {
+          for (const file of files) {
+            fs.mkdirSync(path.dirname(file.absolute), { recursive: true });
+            fs.writeFileSync(file.absolute, file.content, "utf8");
+            written += 1;
+            ctx.readState?.recordWrite(file.absolute);
+          }
+        } catch (error) {
+          for (let index = written - 1; index >= 0; index -= 1) {
+            const file = files[index]!;
+            const content = previous[index];
+            try {
+              if (content == null) {
+                fs.rmSync(file.absolute, { force: true });
+                ctx.readState?.forget(file.absolute);
+              } else {
+                fs.writeFileSync(file.absolute, content, "utf8");
+                ctx.readState?.recordWrite(file.absolute, content);
+              }
+            } catch { /* preserve the original write failure */ }
+          }
+          return { ok: false, content: `file_write_batch rolled back after: ${error instanceof Error ? error.message : String(error)}` };
+        }
+        const results: string[] = [];
+        for (const file of files) results.push(await withDiagnostics(`wrote ${fs.statSync(file.absolute).size} bytes to ${file.absolute}`, file.absolute, ctx));
+        return { ok: true, content: `wrote ${files.length} files in one call\n${results.join("\n")}` };
+      });
+    },
+  },
+  {
     name: "file_edit",
     description:
       "Replace exact text inside a workspace file with a targeted edit. Pass the exact old_string to find and the new_string to write in its place; find/replace are accepted as aliases. The match must be unique unless you pass replace_all, which replaces every occurrence, or count, which must equal the number of occurrences. Include enough surrounding context (a full line or more) so the find text matches exactly once, and remember the match is literal, not a regular expression. To change several spots at once, pass `edits` (an ordered array of {old_string, new_string, replace_all?}); the batch is all-or-nothing and reports every failure, so nothing is written unless every edit matches. A missing match never fuzzy-applies: the error says whether the text was found after trimming whitespace or with different indentation, and the indentation hint names the 1-based line, otherwise it is a plain not-found. Read the file first: an unread or stale file is refused, and a successful edit refreshes the read snapshot. An old_string equal to new_string is reported as a no-op and writes nothing. On success the result includes a line-numbered snippet of the file around the change. When NOT to use: use file_multi_edit for several changes to the same file (it is atomic and reports a diff); use file_write to create a file or fully rewrite one you have read; use file_search to find text; never build a file through repeated shell echo/Set-Content, which bypasses read tracking and can corrupt line endings.",

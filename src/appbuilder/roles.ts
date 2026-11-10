@@ -20,7 +20,7 @@ export interface AppRoleSpec {
 }
 
 const READ = ["file_read", "file_list", "file_search", "grep", "glob", "code_symbols", "code_outline", "semantic_search"] as const;
-const WRITE = ["file_write", "file_edit", "file_multi_edit", "find_and_edit", "file_mkdir", "file_move", "file_delete"] as const;
+const WRITE = ["file_write", "file_write_batch", "file_edit", "file_multi_edit", "find_and_edit", "file_mkdir", "file_move", "file_delete"] as const;
 
 export const APP_ROLES: Record<AppRoleId, AppRoleSpec> = {
   lead: {
@@ -98,7 +98,7 @@ export interface RoleGateRegistry {
 }
 
 /** Tools whose file targets are checked against the active role's writeScope. */
-const GATED_WRITE_TOOLS = new Set(["file_write", "file_edit", "file_multi_edit", "find_and_edit", "file_move", "file_delete"]);
+const GATED_WRITE_TOOLS = new Set(["file_write", "file_write_batch", "file_edit", "file_multi_edit", "find_and_edit", "file_move", "file_delete"]);
 
 /** §4.3.9: package installs/adds must go through app_add_dependency while an App project is attached. */
 const NPM_INSTALL_BLOCK_RE = /\b(npm|pnpm|yarn)\s+(i|install|add)\b/;
@@ -114,6 +114,9 @@ function targetsForTool(name: string, args: Record<string, unknown>): string[] {
   const str = (key: string): string => (typeof args[key] === "string" ? args[key] as string : "");
   if (name === "file_move") return [str("from"), str("to")].filter(Boolean);
   if (name === "find_and_edit") return [str("dir") || "."];
+  if (name === "file_write_batch" && Array.isArray(args.files)) {
+    return args.files.flatMap((file) => file && typeof file === "object" && typeof (file as Record<string, unknown>).path === "string" ? [(file as Record<string, unknown>).path as string] : []);
+  }
   return [str("path")].filter(Boolean);
 }
 

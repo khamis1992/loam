@@ -191,3 +191,51 @@ describe("cross-session touch hooks (jcode J8)", () => {
     assert.deepEqual(events, ["remove:sample.txt", "write:moved.txt"]);
   });
 });
+
+describe("file_write_batch", () => {
+  it("writes independent files and records their new snapshots", async () => {
+    const res = await run("file_write_batch", { files: [
+      { path: "src/main.ts", content: "export const main = true;\n" },
+      { path: "src/lib/logic.ts", content: "export const answer = 42;\n" },
+      { path: "tests/logic.check.mjs", content: "import assert from 'node:assert';\n" },
+    ] });
+    assert.equal(res.ok, true, res.content);
+    assert.equal(fs.readFileSync(target("src/main.ts"), "utf8"), "export const main = true;\n");
+    assert.equal(fs.readFileSync(target("src/lib/logic.ts"), "utf8"), "export const answer = 42;\n");
+    assert.equal(readState.hasRead(target("tests/logic.check.mjs")), true);
+  });
+
+  it("refuses an unread existing file without writing any batch member", async () => {
+    fs.writeFileSync(target(), "keep me\n", "utf8");
+    const res = await run("file_write_batch", { files: [
+      { path: "new.txt", content: "must not exist" },
+      { path: "sample.txt", content: "must not replace" },
+    ] });
+    assert.equal(res.ok, false);
+    assert.match(res.content, /NOT_READ/);
+    assert.equal(fs.existsSync(target("new.txt")), false);
+    assert.equal(fs.readFileSync(target(), "utf8"), "keep me\n");
+  });
+
+  it("rejects duplicate and escaping paths before writing", async () => {
+    const duplicate = await run("file_write_batch", { files: [{ path: "same.txt", content: "a" }, { path: "./same.txt", content: "b" }] });
+    assert.equal(duplicate.ok, false);
+    assert.match(duplicate.content, /duplicate path/);
+    const escaping = await run("file_write_batch", { files: [{ path: "../outside.txt", content: "no" }] });
+    assert.equal(escaping.ok, false);
+    assert.equal(fs.existsSync(target("same.txt")), false);
+  });
+
+  it("rolls back earlier writes when a later filesystem write fails", async () => {
+    fs.writeFileSync(target("parent-file"), "keep", "utf8");
+    const bareCtx: ToolContext = { cfg: { policy: { allowOutsideWorkspaceRead: false } } as Config, workspace: tmpDir, emit: (() => {}) as Emit };
+    const res = await findTool("file_write_batch").run({ files: [
+      { path: "new.txt", content: "roll me back" },
+      { path: "parent-file/child.txt", content: "cannot create a directory over a file" },
+    ] }, bareCtx);
+    assert.equal(res.ok, false);
+    assert.match(res.content, /rolled back/);
+    assert.equal(fs.existsSync(target("new.txt")), false, res.content);
+    assert.equal(fs.readFileSync(target("parent-file"), "utf8"), "keep");
+  });
+});

@@ -1172,7 +1172,7 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
       }
     }
 
-    // C10: a single-call step whose delegate flagged return_direct already
+    // C10: a single-call step whose terminal tool flagged return_direct already
     // holds the answer; skip the rewording model call. Final verification
     // still runs below before the run may report completion.
     const direct = directReturnText(stepToolOutcomes, opts.cfg.orchestration?.returnDirect.enabled === true);

@@ -146,6 +146,7 @@ test("app_verify: runs the bound verify runner, stores the report, writes the PR
   });
   const r = await tool("app_verify").run({}, ctxFor(project));
   assert.equal(r.ok, true, r.content);
+  assert.equal(r.returnDirect, true, "a passing project gate ends the role without another narration turn");
   assert.ok(r.content.startsWith("app_verify PASSED"));
   assert.equal(seen.length, 1);
   assert.equal((seen[0] as { tier: VerifyReport["tier"] }).tier, "standard", "goal run defaults to standard");
@@ -223,6 +224,7 @@ function gatedRegistry(): MiniRegistry {
   const reg = new MiniRegistry();
   reg.register({ name: "shell_run", description: "", parameters: {}, async run(args) { return { ok: true, content: `ran ${String(args.command)}` }; } });
   reg.register({ name: "file_write", description: "", parameters: {}, async run(args) { return { ok: true, content: `wrote ${String(args.path)}` }; } });
+  reg.register({ name: "file_write_batch", description: "", parameters: {}, async run(args) { return { ok: true, content: `wrote ${JSON.stringify(args.files)}` }; } });
   roles.applyRoleScopeGate(reg, () => "engineer");
   return reg;
 }
@@ -249,6 +251,9 @@ test("role scope gate: npm install/add and npm run verify scripts are blocked wi
   const refused = await reg.get("file_write")!.run({ path: "outside/x.ts" }, ctx);
   assert.equal(refused.ok, false);
   assert.equal(refused.content, "Role Engineer may not write outside/x.ts. Hand this to the Engineer.");
+  const batch = await reg.get("file_write_batch")!.run({ files: [{ path: "app/src/ok.ts", content: "ok" }, { path: "outside/no.ts", content: "no" }] }, ctx);
+  assert.equal(batch.ok, false);
+  assert.equal(batch.content, "Role Engineer may not write outside/no.ts. Hand this to the Engineer.");
 });
 
 // ---------- app_add_dependency (§4.3.9) ----------
