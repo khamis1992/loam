@@ -19,6 +19,12 @@ files:
   - addons/**/*
   - scripts/**/*
   - src/templates/electron-app/**/*
+  - templates/web-app/**/*
+  # The packaged main process loads these directly; they are not inside dist/server.cjs.
+  - src/buildMenu/widget/quitPlan.cjs
+  - src/buildMenu/reveal.cjs
+  - src/buildMenu/staticPreview.cjs
+  - src/buildMenu/notebooks/python/image-pin.json
   # Neo N22: the bilingual user guide served by /api/docs and the in-app help
   # page. It is authored Markdown read from disk, so it must ship in the asar.
   - docs/neo/**/*
