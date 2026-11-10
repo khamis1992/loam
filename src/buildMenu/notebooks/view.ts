@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { rootAsset } from '../../config.js';
 import { storedBrief, visibleBriefHtml } from '../planProvenance.js';
 import { localCsvText } from './csv.js';
 
@@ -25,7 +25,7 @@ export type NotebookOutputView =
   | { kind: 'inert'; mime: string; text: string };
 
 const ESCAPE: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
-const PIN_FILE = fileURLToPath(new URL('./python/image-pin.json', import.meta.url));
+const PIN_FILE = rootAsset('src', 'buildMenu', 'notebooks', 'python', 'image-pin.json');
 const PIN_STATUS = /^[a-z][a-z0-9-]{0,31}$/;
 const PIN_DIGEST = /^[a-f0-9]{64}$/;
 

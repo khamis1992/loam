@@ -1,8 +1,9 @@
 import { createRequire } from 'node:module';
 import path from 'node:path';
+import { rootAsset } from '../../config.js';
 
-const require = createRequire(import.meta.url);
-const plan = require('./quitPlan.cjs') as {
+const require = createRequire(rootAsset('package.json'));
+const plan = require(rootAsset('src', 'buildMenu', 'widget', 'quitPlan.cjs')) as {
   rememberWidget(dataDir: string, record: { pid: number; nonce: string; workspace: string; identity: string }): void;
   forgetWidget(dataDir: string, pid: number): void;
   writeWidgetNonce(workspace: string, nonce: string): void;

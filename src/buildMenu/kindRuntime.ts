@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { rootAsset } from '../config.js';
 import type { BuildJobContext, BuildKind, BuildProfile, DriverPorts, ExportKind, PreviewLease } from '../../packages/shared/src/buildMenu.js';
 import { writeBytesArtifact, writeSourceArtifact, readProjectBytes } from './artifacts.js';
 import { exportDebugApk } from './mobile/apk.js';
@@ -38,7 +38,7 @@ import { currentWebsiteDevStarter, currentWebsiteHostRunner, runWebsiteHost, sta
 import { assertFrozenWebsiteTemplate } from './websites/templateLock.js';
 import { previewReadyMs } from './deadlines.js';
 
-const previewScript = path.join(path.dirname(fileURLToPath(import.meta.url)), 'staticPreview.cjs');
+const previewScript = rootAsset('src', 'buildMenu', 'staticPreview.cjs');
 
 export interface KindDeps {
   leases: ProcessLeaseRegistry;

@@ -1,11 +1,11 @@
 import fs from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { rootAsset } from '../../config.js';
 import type { MobileCollection } from '../../../ui/mobile-data.js';
 import type { Block, MobileProject } from '../../mobile/store.js';
 import { visibleBriefHtml } from '../planProvenance.js';
 import { mobileNotice } from './notice.js';
 
-const RECORD_RULES = fs.readFileSync(fileURLToPath(new URL('../../../ui/mobile-data.js', import.meta.url)), 'utf8').replace(/^export /gm, '');
+const RECORD_RULES = fs.readFileSync(rootAsset('ui', 'mobile-data.js'), 'utf8').replace(/^export /gm, '');
 
 const ESCAPE: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
 

@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { rootAsset } from '../../config.js';
 import { BuildMenuError } from '../grants.js';
 import { findElectron } from '../toolchain.js';
 
-const TEMPLATE_ROOT = fileURLToPath(new URL('../../templates/electron-app/', import.meta.url));
+const TEMPLATE_ROOT = rootAsset('src', 'templates', 'electron-app');
 
 export const FROZEN_ELECTRON_FILES = [
   'electron/main.cjs',

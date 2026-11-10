@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { rootAsset } from '../../config.js';
 import { BuildMenuError } from '../grants.js';
 import { leaseEnv } from '../processLease.js';
 import { installsPackage } from './installGuard.js';
@@ -11,7 +11,7 @@ import { KERNEL_TIMEOUT_MS, MAX_KERNEL_LINE, parseKernelStdout, type StoredOutpu
 
 const DIGEST = /@sha256:[a-f0-9]{64}$/;
 const MAX_STDOUT = 1_000_000;
-const PIN_FILE = fileURLToPath(new URL('./python/image-pin.json', import.meta.url));
+const PIN_FILE = rootAsset('src', 'buildMenu', 'notebooks', 'python', 'image-pin.json');
 let pinOverride: string | null | undefined;
 
 function decodePercent(value: string): string {

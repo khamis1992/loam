@@ -2,8 +2,8 @@ import type http from 'node:http';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
+import { rootAsset } from '../../config.js';
 import { createAppProject, getAppProject } from '../../appbuilder/projects.js';
 import { ensureAppBuilderSchema } from '../../appbuilder/store.js';
 import { createDesktopProject } from '../../packs/desktop/project.js';
@@ -158,9 +158,9 @@ function templatePin(workspace: string, kind: BuildSelection['kind']): { revisio
     if (fileInside(workspace, file) && regularFile(file)) return digestFile(file);
   }
   const template = kind === 'desktop' || kind === 'widget'
-    ? fileURLToPath(new URL('../../../src/templates/electron-app/package.json', import.meta.url))
+    ? rootAsset('src', 'templates', 'electron-app', 'package.json')
     : kind === 'website'
-      ? fileURLToPath(new URL('../../../templates/web-app/package.json', import.meta.url))
+      ? rootAsset('templates', 'web-app', 'package.json')
       : null;
   if (template && regularFile(template)) return digestFile(template);
   return digestBytes(Buffer.alloc(0));

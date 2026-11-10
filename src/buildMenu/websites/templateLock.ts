@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { rootAsset } from '../../config.js';
 import { BuildMenuError } from '../grants.js';
 
-const TEMPLATE_ROOT = fileURLToPath(new URL('../../../templates/web-app/', import.meta.url));
+const TEMPLATE_ROOT = rootAsset('templates', 'web-app');
 
 export const FROZEN_WEBSITE_FILES = ['package.json', 'vite.config.ts'] as const;
 
