@@ -38,13 +38,13 @@ export function NewWebsiteDialog({ open, initialTitle, initialPrompt = '', onClo
       const project = created ?? (await createAppProject(
         initialTitle?.trim() || description.split(/\r?\n/)[0]!.slice(0, 80),
         description,
-        'goal',
+        'quick',
       )).project;
       if (!created) {
         setCreated(project);
         onCreated(project);
       }
-      await startRun(project.id, description, 'goal');
+      await startRun(project.id, description, 'quick');
       onClose();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));

@@ -13,7 +13,7 @@ function project(id: string, title: string): AppProjectDto {
     features: [],
     workspaceDir: '/tmp/workspace',
     appDir: '/tmp/workspace/app',
-    defaultFlavor: 'goal',
+    defaultFlavor: 'quick',
     status: 'idle',
     activeVersion: null,
     settings: {},
@@ -94,12 +94,12 @@ describe('WebsitesPage Manus Studio experience', () => {
     await waitFor(() => expect(api.createAppProject).toHaveBeenCalledWith(
       'A portfolio website with selected projects and a contact form.',
       'A portfolio website with selected projects and a contact form.',
-      'goal',
+      'quick',
     ));
     await waitFor(() => expect(api.startRun).toHaveBeenCalledWith(
       'app_created',
       'A portfolio website with selected projects and a contact form.',
-      'goal',
+      'quick',
     ));
     expect(await screen.findByRole('complementary', { name: 'Workspace app_created' })).toBeTruthy();
   });

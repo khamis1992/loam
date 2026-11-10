@@ -38,6 +38,7 @@ import {
 } from "./tools.js";
 import { writeVerificationSummary } from "./contextFiles.js";
 import { loadTemplate } from "./templates.js";
+import { buildSimpleCrudApp, isSimpleCrudRequest } from "./simpleCrud.js";
 import { copyLockfileIntoProject, ensureDepsFolder } from "./depsCache.js";
 import { VersionService, zeroUsage } from "./versions.js";
 import type {
@@ -370,11 +371,19 @@ export class AppRunEngine {
 
   private async runQuick(ctx: { project: AppProject; runId: string; signal?: AbortSignal }, prompt: string): Promise<void> {
     const { project, runId } = ctx;
-    // §4.12.2: pick the model BEFORE any work; a local-only config aborts now.
-    this.deps.pickModel(project, "engineer", "implement");
     setActiveAppBuild({ project, runId, verify: this.deps.verify });
     this.setStatus(project.id, "building");
 
+    if (project.activeVersion === null && project.templateId === "web-app" && project.features.length === 0 && isSimpleCrudRequest(prompt)) {
+      buildSimpleCrudApp(project);
+      await this.verifyAndVersion(ctx, prompt);
+      finishRun(runId, "done");
+      this.setStatus(project.id, "idle");
+      return;
+    }
+
+    // §4.12.2: pick the model BEFORE any model-driven work; a local-only config aborts now.
+    this.deps.pickModel(project, "engineer", "implement");
     const designDocExists = fs.existsSync(path.join(project.workspaceDir, "DESIGN.md"));
     const engineerPrompt = [
       "The user's request:",
@@ -539,9 +548,15 @@ export class AppRunEngine {
 
     updateRun(runId, { status: "versioning" });
     this.setStatus(project.id, "versioning");
-    // §4.6.7 + §4.7.3: app_version_note wins; otherwise one fast title call.
-    const note = takeVersionNote(runId)
-      ?? await this.deps.nameVersion({ project, prompt, engineerReport: "", versionNumber: (project.activeVersion ?? 0) + 1 });
+    // §4.6.7 + §4.7.3: app_version_note wins; quick runs derive it locally, while
+    // goal runs can use one fast title call.
+    const versionNumber = (project.activeVersion ?? 0) + 1;
+    const note = takeVersionNote(runId) ?? (flavor === "quick"
+      ? {
+          title: prompt.trim().split(/\s+/).slice(0, 6).join(" ").slice(0, 60) || `Version ${versionNumber}`,
+          summary: `Version ${versionNumber} of this app.`,
+        }
+      : await this.deps.nameVersion({ project, prompt, engineerReport: "", versionNumber }));
     const usage = versionUsageSummary(appUsage(project.id, runId).rows);
     let version: AppVersion | null = null;
     try {
@@ -644,6 +659,7 @@ export function createRunAgentRoleRunner(opts: {
       prompt: input.prompt,
       systemOverride: input.system,
       model: picked.model,
+      suppressFinal: true,
       maxSteps: Math.max(4, Math.ceil((input.maxToolCalls ?? APP_ROLES[input.role].maxToolCalls) / 2)),
       ...(input.signal ? { signal: input.signal } : {}),
       taskId: input.project.taskId,

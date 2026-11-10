@@ -145,8 +145,14 @@ function chatEventTypes(projectId: string): string[] {
 test("engine quick: engineer turn → verify → snapshot v1 → done, events + usage", async () => {
   const project = createAppProject({ title: "quick-run", baseWorkspace: tmp });
   const runner = scriptedRunner((input) => `Engineer report: built the page, verified with app_verify, all green. Files changed: app/src/pages/Index.tsx`);
-  const engine = new AppRunEngine(depsFor(runner));
-  const started = engine.startRun(project, { prompt: "ابنِ صفحة قائمة مهام", flavor: "quick" });
+  let namingCalls = 0;
+  const engine = new AppRunEngine(depsFor(runner, {
+    nameVersion: async () => {
+      namingCalls += 1;
+      return { title: "First build", summary: "The app builds and passes its checks." };
+    },
+  }));
+  const started = engine.startRun(project, { prompt: "ابنِ صفحة هبوط لمنتج تقني", flavor: "quick" });
   type(!("error" in started), "run starts");
   const runId = (started as { runId: string }).runId;
   await waitFor("run done", () => getRun(runId)?.status === "done");
@@ -155,7 +161,8 @@ test("engine quick: engineer turn → verify → snapshot v1 → done, events + 
   assert.deepEqual(runner.calls.map((c) => `${c.role}:${c.step}`), ["engineer:implement"]);
   // version 1 created by the real git store
   const rows = (database().prepare("SELECT number, title, source FROM app_versions WHERE project_id = ?").all(project.id) as Array<{ number: number; title: string; source: string }>).map((r) => ({ number: r.number, title: r.title, source: r.source }));
-  assert.deepEqual(rows, [{ number: 1, title: "First build", source: "build" }]);
+  assert.deepEqual(rows, [{ number: 1, title: "ابنِ صفحة هبوط لمنتج تقني", source: "build" }]);
+  assert.equal(namingCalls, 0, "quick versions do not spend another model call on a title");
   assert.equal(getAppProject(project.id)!.activeVersion, 1);
   assert.equal(getAppProject(project.id)!.status, "idle");
   // §4.14 metering row for the engineer turn
@@ -166,6 +173,37 @@ test("engine quick: engineer turn → verify → snapshot v1 → done, events + 
   assert.ok(types.includes("appVerifyReport"), "appVerifyReport emitted");
   assert.ok(types.includes("appVersion"), "appVersion emitted");
   assert.ok(types.includes("appProjectStatus"), "appProjectStatus emitted");
+});
+
+test("engine quick: a focused todo request skips the engineer and versions the verified app", async () => {
+  const project = createAppProject({ title: "deterministic-todo", baseWorkspace: tmp });
+  const runner = scriptedRunner(() => "This model turn must not run.");
+  let modelSelections = 0;
+  let namingCalls = 0;
+  const engine = new AppRunEngine(depsFor(runner, {
+    pickModel: () => {
+      modelSelections += 1;
+      return { model: "stub-cloud", tier: "max" };
+    },
+    nameVersion: async () => {
+      namingCalls += 1;
+      return { title: "Model title", summary: "This naming call must not run." };
+    },
+  }));
+  const prompt = "Build a simple Todo List web app with add, complete, and delete tasks.";
+  const started = engine.startRun(project, { prompt, flavor: "quick" });
+  type(!("error" in started), "run starts");
+  const runId = (started as { runId: string }).runId;
+  await waitFor("deterministic run done", () => getRun(runId)?.status === "done");
+  assert.equal(runner.calls.length, 0);
+  assert.equal(modelSelections, 0);
+  assert.equal(namingCalls, 0);
+  assert.equal(getAppProject(project.id)!.activeVersion, 1);
+  assert.ok(fs.readFileSync(path.join(project.workspaceDir, "app", "src", "pages", "Index.tsx"), "utf8").includes("Tidy"));
+  const report = database().prepare("SELECT pass FROM app_verify_reports WHERE run_id = ?").get(runId) as { pass: number };
+  assert.equal(report.pass, 1);
+  const usage = database().prepare("SELECT role FROM app_usage WHERE run_id = ?").all(runId);
+  assert.deepEqual(usage, []);
 });
 
 // ---------------------------------------------------------------- Goal happy path with both pauses
