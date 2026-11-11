@@ -24,6 +24,7 @@ export function isWorkspaceToolName(tool: string): boolean {
   const name = (tool ?? '').toLowerCase();
   return (
     name.startsWith('office_') ||
+    name.startsWith('deck_') ||
     name.startsWith('video') ||
     name.startsWith('docx') ||
     name.startsWith('xlsx') ||
@@ -328,6 +329,10 @@ function candidatePath(event: ToolUsedEvent): string | null {
   } catch {
     // Plain-text tool summaries use the extension matcher below.
   }
+  // Tool summaries are capped (summarize()), so a JSON result can be truncated
+  // mid-string and fail JSON.parse. A quoted-key match still recovers the path.
+  const jsonPath = text.match(/"(?:path|file|filePath|outputPath|output|savePath|dest)"\s*:\s*"([^"]+)"/i);
+  if (jsonPath) return jsonPath[1];
   const match = text.match(OFFICE_PATH_RE);
   return match ? match[0] : null;
 }
@@ -400,7 +405,7 @@ export function decideWorkspaceOpen(event: ToolUsedEvent): WorkspaceOpenTarget |
     // that name the panel would open Slides and the other editor never attaches.
     if (isCraftToolName(event.tool)) {
       target.kind = 'craft';
-      const named = craftAppNamedByEvent(event);
+      const named = craftAppNamedByEvent(event) ?? craftAppForTool(event.tool);
       if (named) target.craftApp = named;
     }
     return target;

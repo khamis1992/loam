@@ -199,6 +199,9 @@ export function craftAppForTool(tool: string): CraftApp | null {
   // extension (`decideWorkspaceOpen` keeps its own tool naming). A file-less call
   // has no app to open yet and returns null.
   if (name === 'office_craft' || name.startsWith('office_craft_')) return null;
+  // The Loam Slides service pack (deck_*) authors presentations, so a file-less
+  // call still belongs to the Slides editor.
+  if (name.startsWith('deck_')) return 'slides';
   if (name === 'loam_design' || name === 'office_design') return 'design';
   return null;
 }
@@ -206,5 +209,5 @@ export function craftAppForTool(tool: string): CraftApp | null {
 /** True when the tool name belongs to the Craft/office family. */
 export function isCraftToolName(tool: string): boolean {
   const name = (tool ?? '').toLowerCase();
-  return name === 'office_craft' || name.startsWith('office_craft_') || name === 'office_edit' || name === 'loam_design';
+  return name === 'office_craft' || name.startsWith('office_craft_') || name === 'office_edit' || name === 'loam_design' || name.startsWith('deck_');
 }

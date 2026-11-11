@@ -278,6 +278,33 @@ describe('craft tool routing', () => {
     expect(decideWorkspaceOpen(ev)).toBeNull();
   });
 
+  it('opens Loam Slides for the deck service pack without a file', () => {
+    const ev = toolEvent({ tool: 'deck_init', argumentsDetail: { title: 'متحف الفن الإسلامي', slides: [] } });
+    expect(decideWorkspaceOpen(ev)).toEqual({ path: null, kind: 'craft', craftApp: 'slides' });
+  });
+
+  it('opens the exported deck file on the Slides editor', () => {
+    const ev = toolEvent({
+      tool: 'deck_export',
+      description: JSON.stringify({ path: 'out/deck.pptx', mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', bytes: 10 }),
+    });
+    expect(decideWorkspaceOpen(ev)).toEqual({ path: 'out/deck.pptx', kind: 'craft', craftApp: 'slides' });
+  });
+
+  it('opens the deck file named by deck_present target', () => {
+    const ev = toolEvent({
+      tool: 'deck_present',
+      description: JSON.stringify({ target: { kind: 'craft', craftApp: 'slides', path: 'out/deck.pptx' } }),
+    });
+    expect(decideWorkspaceOpen(ev)).toEqual({ path: 'out/deck.pptx', kind: 'craft', craftApp: 'slides' });
+  });
+
+  it('recognizes deck tool names as workspace tools', () => {
+    expect(isWorkspaceToolName('deck_init')).toBe(true);
+    expect(isWorkspaceToolName('deck_present')).toBe(true);
+    expect(isWorkspaceToolName('deck_author')).toBe(true);
+  });
+
   it('latestWorkspaceDecision prefers the newest craft edit message', () => {
     const older = toolEvent({ tool: 'office_craft', argumentsDetail: { path: 'a.docx' }, timestamp: 1 });
     const newer = userMessageEvent({
