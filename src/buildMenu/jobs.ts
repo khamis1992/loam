@@ -478,7 +478,7 @@ export function startJob(
         return;
       }
       settle(job, 'ready');
-      if (job.action !== 'preview') settle(job, 'complete');
+      if (job.action !== 'preview' || job.kind === 'automation') settle(job, 'complete');
     }).catch((error: unknown) => {
       job.code = error instanceof BuildMenuError ? error.message : 'tool_failed';
       job.message = error instanceof Error ? error.message : String(error);

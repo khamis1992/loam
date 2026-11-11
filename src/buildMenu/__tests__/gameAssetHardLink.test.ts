@@ -99,18 +99,18 @@ test('lstat EPERM is not swallowed before write', () => {
     assert.equal(fs.lstatSync(target).nlink, 1);
     const realLstatSync = fs.lstatSync;
     const resolved = path.resolve(target);
-    fs.lstatSync = ((file: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+    Object.defineProperty(fs, 'lstatSync', { value: ((file: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
       if (path.resolve(String(file)) === resolved) {
         const error = new Error('operation not permitted') as NodeJS.ErrnoException;
         error.code = 'EPERM';
         throw error;
       }
       return realLstatSync(file, options);
-    }) as typeof fs.lstatSync;
+    }) as typeof fs.lstatSync });
     try {
       assert.throws(() => writeListedGameAssets(game, []), isEperm);
     } finally {
-      fs.lstatSync = realLstatSync;
+      Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
     }
     assert.equal(realLstatSync(target).nlink, 1);
     assert.equal(realLstatSync(target).isSymbolicLink(), false);

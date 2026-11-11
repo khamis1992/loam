@@ -2,11 +2,31 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Loader2, Monitor, Play, Pause, Power, Trash2, Plus, X, AlertCircle, Download } from 'lucide-react';
+import {
+  AlertCircle,
+  Download,
+  ListTodo,
+  Loader2,
+  Monitor,
+  MonitorOff,
+  MoreHorizontal,
+  Play,
+  Plus,
+  Settings2,
+  Smartphone,
+  X,
+} from 'lucide-react';
 import clsx from 'clsx';
 import { t } from '@/i18n/t';
 import { Dialog } from '@/components/ui/Dialog';
 import { CompanionCreateDialog } from '@/components/computer/CompanionCreateDialog';
+import { ComputerDetailsDialog } from '@/components/computer/ComputerDetailsDialog';
+import { ComputerTasksDialog } from '@/components/computer/ComputerTasksDialog';
+import { CompanionDeviceViewer } from '@/components/computer/CompanionDeviceViewer';
+import { CompanionCardPreview } from '@/components/computer/CompanionCardPreview';
+import { ComputerMetrics } from '@/components/computer/ComputerMetrics';
+import { ConnectComputerDialog } from '@/components/computer/ConnectComputerDialog';
+import { PhoneControlDialog } from '@/components/computer/PhoneControlDialog';
 import {
   actOnCompanionDevice,
   createCompanionDevice,
@@ -25,11 +45,11 @@ type Device = CompanionDevice;
 type AgentOption = CompanionOption;
 type Providers = CompanionProviders;
 
-function stateBadge(state: string): string {
-  if (state === 'running') return 'bg-fill-tsp text-func-success';
-  if (state === 'error') return 'bg-fill-tsp text-func-error';
-  if (state === 'provisioning') return 'bg-fill-tsp text-func-warning';
-  return 'bg-fill-tsp text-text-tertiary';
+function stateDot(state: string): string {
+  if (state === 'running') return 'bg-func-success';
+  if (state === 'error') return 'bg-func-error';
+  if (state === 'provisioning') return 'bg-func-warning';
+  return 'bg-white/60';
 }
 
 export default function ComputersPage() {
@@ -42,7 +62,12 @@ export default function ComputersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [settingsId, setSettingsId] = useState<string | null>(null);
+  const [tasksId, setTasksId] = useState<string | null>(null);
+  const [viewerId, setViewerId] = useState<string | null>(null);
+  const [menuId, setMenuId] = useState<string | null>(null);
+  const [connectOpen, setConnectOpen] = useState(false);
+  const [phoneOpen, setPhoneOpen] = useState(false);
 
   const [pairOpen, setPairOpen] = useState(false);
   const [pairAgent, setPairAgent] = useState('');
@@ -90,11 +115,27 @@ export default function ComputersPage() {
     void loadAgents();
   }, [refresh, loadAgents]);
 
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refresh();
+    }, 30_000);
+    const onFocus = () => void refresh();
+    window.addEventListener('focus', onFocus);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [refresh]);
+
   const agentName = useMemo(() => {
     const map = new Map<string, string>();
     for (const a of agents) map.set(a.id, a.name);
     return (id: string) => map.get(id) ?? id;
   }, [agents]);
+
+  const settingsDevice = devices.find((device) => device.id === settingsId) ?? null;
+  const tasksDevice = devices.find((device) => device.id === tasksId) ?? null;
+  const viewerDevice = devices.find((device) => device.id === viewerId) ?? null;
 
   const act = async (id: string, action: DeviceAction) => {
     setBusyId(id);
@@ -112,7 +153,10 @@ export default function ComputersPage() {
     setBusyId(id);
     try {
       await deleteCompanionDevice(id);
-      setConfirmDelete(null);
+      setSettingsId(null);
+      setTasksId(null);
+      setViewerId(null);
+      setMenuId(null);
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -152,111 +196,199 @@ export default function ComputersPage() {
   };
 
   const needsGolden = providers?.wsl === true && !goldenReady;
+  const openPair = () => {
+    setPairError(null);
+    setPairOpen(true);
+  };
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden bg-bg-main">
-      <div className="flex h-row items-center gap-3 border-b border-border-main px-4">
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-bg-main">
+      <header className="mx-auto flex h-[60px] w-full max-w-[960px] shrink-0 items-center justify-between px-6">
+        <h1 className="text-[18px] font-semibold tracking-[-0.01em] text-text-primary">{t('Computers')}</h1>
         <button
           type="button"
-          onClick={() => router.push('/app')}
-          className="rounded-control p-1.5 text-text-secondary hover:bg-fill-hover"
+          onClick={openPair}
+          className="flex items-center gap-1.5 rounded-[6px] border border-border-main bg-bg-menu px-3 py-1.5 text-[13px] font-medium text-text-primary shadow-sm transition-colors hover:bg-fill-hover"
         >
-          <ArrowLeft className="size-4" />
+          <Plus className="size-3.5" /> {t('Create cloud computer')}
         </button>
-        <h1 className="text-title-lg text-text-primary">{t('Computers')}</h1>
-        <button
-          type="button"
-          onClick={() => setNewCompanionOpen(true)}
-          className="ms-auto flex items-center gap-1 rounded-control bg-fill-hover px-3 py-1.5 text-sm font-medium text-text-primary"
-        >
-          <Plus className="size-4" /> {t('New companion')}
-        </button>
-        <button
-          type="button"
-          onClick={() => { setPairError(null); setPairOpen(true); }}
-          className="flex items-center gap-1 rounded-control bg-fill-hover px-3 py-1.5 text-sm font-medium text-text-primary"
-        >
-          <Plus className="size-4" /> {t('New computer')}
-        </button>
+      </header>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+        <div className="mx-auto w-full max-w-[960px]">
+          {loading ? (
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2" aria-label={t('Loading')}>
+              {[0, 1].map((item) => (
+                <div key={item} className="animate-pulse overflow-hidden rounded-[10px] border border-border-main bg-bg-menu">
+                  <div className="aspect-[16/9] bg-fill-tsp" />
+                  <div className="flex h-12 items-center gap-4 px-4">
+                    <span className="h-4 flex-1 rounded bg-fill-tsp" />
+                    <span className="h-4 flex-1 rounded bg-fill-tsp" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <>
+              {error && (
+                <div className="mb-4 flex items-center gap-3 rounded-card border border-func-error/20 bg-func-error/5 px-4 py-3 text-sm text-func-error" role="alert">
+                  <AlertCircle className="size-4 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium">{t('Failed to load computers')}</p>
+                    <p className="mt-0.5 text-xs">{error}</p>
+                  </div>
+                  <button type="button" onClick={() => void refresh()} className="shrink-0 rounded-control border border-border-main px-3 py-1.5 text-xs text-text-primary hover:bg-fill-hover">
+                    {t('Retry')}
+                  </button>
+                </div>
+              )}
+              <ul className="grid grid-cols-1 items-start gap-5 md:grid-cols-2">
+                {devices.map((d) => (
+                  <li key={d.id} className="relative rounded-[10px] bg-bg-menu shadow-[0_0_0_1px_var(--border-main)]">
+                    <div className="relative aspect-[16/9] overflow-hidden rounded-t-[9px] bg-[radial-gradient(circle_at_50%_45%,rgba(107,48,73,0.55),transparent_42%),linear-gradient(135deg,#120b12_0%,#241018_55%,#100b0b_100%)] text-white">
+                      <CompanionCardPreview deviceId={d.id} state={d.state} />
+                      <div className="absolute inset-x-0 top-0 z-10 flex items-center gap-2 p-4 text-[13px]">
+                        <Monitor className="size-4 shrink-0 text-white/70" />
+                        <p className="min-w-0 flex-1 truncate font-medium text-white/85">{d.name || d.id}</p>
+                        <span className="flex shrink-0 items-center gap-1.5 text-xs text-white/70">
+                          <span className={clsx('size-1.5 rounded-full', stateDot(d.state))} />
+                          {d.state}
+                        </span>
+                        <span className="h-4 w-px bg-white/15" />
+                        <button
+                          type="button"
+                          aria-label={t('More')}
+                          onClick={() => setMenuId(menuId === d.id ? null : d.id)}
+                          className="rounded-[4px] p-0.5 text-white/65 transition-colors hover:bg-white/10 hover:text-white"
+                        >
+                          <MoreHorizontal className="size-4" />
+                        </button>
+                      </div>
+                      {menuId === d.id && (
+                        <div className="absolute end-3 top-12 z-20 w-64 rounded-card border border-border-main bg-bg-menu p-1.5 text-text-primary shadow-layer">
+                          <button type="button" onClick={() => { setTasksId(d.id); setMenuId(null); }} className="flex w-full items-center gap-2 rounded-control px-3 py-2 text-start text-xs hover:bg-fill-hover">
+                            <Plus className="size-3.5" /> {t('New task')}
+                          </button>
+                          <p className="border-t border-border-main px-3 py-2 text-[11px] text-text-tertiary">{d.provider} / {d.template} / {agentName(d.agentId)}</p>
+                          <ComputerMetrics deviceId={d.id} />
+                        </div>
+                      )}
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        {busyId === d.id ? (
+                          <span className="flex size-12 items-center justify-center rounded-full bg-white/20 text-white/75 backdrop-blur-sm"><Loader2 className="size-6 animate-spin" /></span>
+                        ) : d.state === 'running' ? (
+                          <button type="button" onClick={() => setViewerId(d.id)} className="flex items-center gap-2 rounded-[8px] bg-black/45 px-3 py-2 text-sm font-medium text-white opacity-90 backdrop-blur-sm transition-colors hover:bg-black/60">
+                            <Monitor className="size-4" /> {t('Connect')}
+                          </button>
+                        ) : d.state === 'stopped' || d.state === 'error' || d.state === 'suspended' ? (
+                          <button type="button" onClick={() => void act(d.id, d.state === 'suspended' ? 'resume' : 'start')} className="flex items-center gap-2 rounded-[8px] bg-white/20 px-3 py-2 text-sm font-medium text-white/85 backdrop-blur-sm hover:bg-white/25">
+                            <Play className="size-4" /> {d.state === 'suspended' ? t('Resume') : t('Start')}
+                          </button>
+                        ) : (
+                          <span className="flex size-12 items-center justify-center rounded-full bg-white/20 text-white/75 backdrop-blur-sm"><MonitorOff className="size-6" /></span>
+                        )}
+                      </div>
+                      {d.lastError && (
+                        <p className="absolute inset-x-0 bottom-12 truncate px-4 text-center text-[10px] text-red-200" title={d.lastError}>
+                          {d.lastError}
+                        </p>
+                      )}
+                      <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-3 p-4 text-[13px]">
+                        <span className="font-medium text-white/90">{d.environment}</span>
+                        <span className="truncate text-xs text-white/55" title={`${d.provider} / ${d.template}`}>
+                          {agentName(d.agentId)}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex h-12 items-center divide-x divide-border-main">
+                      <ActionButton label={t('Settings')} onClick={() => setSettingsId(d.id)} icon={<Settings2 className="size-4" />} />
+                      <ActionButton label={t('Tasks')} onClick={() => setTasksId(d.id)} icon={<ListTodo className="size-4" />} />
+                    </div>
+                  </li>
+                ))}
+                <li onClick={openPair} className="flex min-h-[280px] cursor-pointer items-center justify-center rounded-[10px] border border-dashed border-black/10 bg-fill-tsp transition-colors hover:bg-fill-hover md:min-h-[312px] dark:border-white/15">
+                  <div className="flex flex-col items-center gap-4 p-6 text-center">
+                    <Monitor className="size-5 text-text-tertiary" />
+                    <p className="text-[13px] text-text-secondary">{t('Create cloud computer')}</p>
+                    <button
+                      type="button"
+                      onClick={openPair}
+                      className="flex items-center gap-2 rounded-[6px] bg-[#1a1a19] px-3.5 py-2 text-[13px] font-medium text-white transition-colors hover:bg-black dark:bg-white/90 dark:text-black dark:hover:bg-white"
+                    >
+                      <Monitor className="size-4" /> {t('Create cloud computer')}
+                    </button>
+                  </div>
+                </li>
+              </ul>
+            </>
+          )}
+        </div>
       </div>
-      <div className="flex-1 overflow-y-auto p-4">
-        {loading ? (
-          <div className="flex h-full items-center justify-center text-text-secondary">
-            <Loader2 className="mr-2 size-5 animate-spin" /> {t('Loading')}
-          </div>
-        ) : error && devices.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-2 py-12 text-func-error">
-            <AlertCircle className="size-6" />
-            <p className="text-sm">{t('Failed to load computers')}</p>
-            <p className="max-w-[320px] text-center text-xs">{error}</p>
-          </div>
-        ) : devices.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-3 py-12 text-text-tertiary">
-            <Monitor className="size-8" />
-            <p className="text-sm">{t('No computers connected.')}</p>
+
+      <div className="shrink-0 px-6 pb-4">
+        <div className="mx-auto flex w-full max-w-[960px] flex-wrap items-center justify-between gap-3 rounded-card border border-border-main bg-bg-menu px-4 py-3.5 shadow-sm">
+          <p className="text-[13px] font-medium text-text-primary">{t('Connect your devices')}</p>
+          <div className="ms-auto flex flex-wrap justify-end gap-2">
             <button
               type="button"
-              onClick={() => { setPairError(null); setPairOpen(true); }}
-              className="flex items-center gap-1 rounded-control bg-fill-hover px-3 py-1.5 text-sm font-medium text-text-primary"
+              onClick={() => setConnectOpen(true)}
+              className="flex items-center gap-2 rounded-[6px] border border-border-main bg-bg-menu px-3 py-1.5 text-[13px] text-text-primary transition-colors hover:bg-fill-hover"
             >
-              <Plus className="size-4" /> {t('Pair a new computer')}
+              <Monitor className="size-3.5" /> {t('Connect new computer')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setPhoneOpen(true)}
+              className="flex items-center gap-2 rounded-[6px] border border-border-main bg-bg-menu px-3 py-1.5 text-[13px] text-text-primary transition-colors hover:bg-fill-hover"
+            >
+              <Smartphone className="size-3.5" /> {t('Control from your phone')}
             </button>
           </div>
-        ) : (
-          <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {error && <li className="col-span-full text-xs text-func-error">{error}</li>}
-            {devices.map((d) => (
-              <li key={d.id} className="rounded-card border border-border-main bg-bg-menu p-3">
-                <div className="mb-1.5 flex items-center gap-2">
-                  <Monitor className="size-4 shrink-0 text-text-tertiary" />
-                  <p className="min-w-0 flex-1 truncate text-sm font-medium text-text-primary">{d.name || d.id}</p>
-                  <span className={clsx('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium', stateBadge(d.state))}>
-                    {d.state}
-                  </span>
-                </div>
-                <p className="mb-2 text-xs text-text-tertiary">
-                  {d.provider} / {d.environment} / {d.template} - {t('Companion')}: {agentName(d.agentId)}
-                </p>
-                {d.lastError && <p className="mb-2 text-[11px] text-func-error">{d.lastError}</p>}
-                <div className="flex items-center gap-1">
-                  {d.state === 'running' && (
-                    <>
-                      <ActionButton label={t('Suspend')} disabled={busyId === d.id} onClick={() => void act(d.id, 'suspend')} icon={<Pause className="size-3.5" />} />
-                      <ActionButton label={t('Stop')} disabled={busyId === d.id} onClick={() => void act(d.id, 'stop')} icon={<Power className="size-3.5" />} />
-                    </>
-                  )}
-                  {(d.state === 'stopped' || d.state === 'error') && (
-                    <ActionButton label={t('Start')} disabled={busyId === d.id} onClick={() => void act(d.id, 'start')} icon={<Play className="size-3.5" />} />
-                  )}
-                  {d.state === 'suspended' && (
-                    <ActionButton label={t('Resume')} disabled={busyId === d.id} onClick={() => void act(d.id, 'resume')} icon={<Play className="size-3.5" />} />
-                  )}
-                  <span className="flex-1" />
-                  {confirmDelete === d.id ? (
-                    <button
-                      type="button"
-                      disabled={busyId === d.id}
-                      onClick={() => void removeDevice(d.id)}
-                      className="rounded-control px-1.5 py-1 text-[11px] font-medium text-func-error hover:bg-fill-hover"
-                    >
-                      {t('Confirm delete')}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      aria-label={t('Delete')}
-                      onClick={() => setConfirmDelete(d.id)}
-                      className="rounded-control p-1 text-text-tertiary hover:bg-fill-hover hover:text-func-error"
-                    >
-                      <Trash2 className="size-3.5" />
-                    </button>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+        </div>
       </div>
+
+      <ConnectComputerDialog
+        open={connectOpen}
+        onClose={() => setConnectOpen(false)}
+        onOpenDevices={() => {
+          setConnectOpen(false);
+          router.push('/app/devices');
+        }}
+        onNewCompanion={() => {
+          setConnectOpen(false);
+          setNewCompanionOpen(true);
+        }}
+      />
+      <PhoneControlDialog open={phoneOpen} onClose={() => setPhoneOpen(false)} />
+
+      {settingsDevice && (
+        <ComputerDetailsDialog
+          device={settingsDevice}
+          open={Boolean(settingsId)}
+          onClose={() => setSettingsId(null)}
+          onAction={act}
+          onDelete={removeDevice}
+          busy={busyId === settingsDevice.id}
+        />
+      )}
+      {tasksDevice && (
+        <ComputerTasksDialog
+          device={tasksDevice}
+          open={Boolean(tasksId)}
+          onClose={() => setTasksId(null)}
+          onOpenTask={(taskId) => {
+            setTasksId(null);
+            router.push(`/app/${taskId}`);
+          }}
+        />
+      )}
+      {viewerDevice && (
+        <CompanionDeviceViewer
+          device={viewerDevice}
+          open={Boolean(viewerId)}
+          onClose={() => setViewerId(null)}
+        />
+      )}
 
       <Dialog open={pairOpen} onClose={() => setPairOpen(false)} title={t('Pair a new computer')}>
         <div className="flex flex-col gap-3">
@@ -362,7 +494,7 @@ function ActionButton({ label, icon, onClick, disabled }: { label: string; icon:
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="flex items-center gap-1 rounded-control px-2 py-1 text-[11px] font-medium text-text-secondary hover:bg-fill-hover disabled:opacity-50"
+      className="flex h-full flex-1 items-center justify-center gap-2 px-3 text-[13px] font-medium text-text-primary transition-colors hover:bg-fill-hover disabled:opacity-50"
     >
       {icon} {label}
     </button>

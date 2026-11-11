@@ -134,12 +134,12 @@ function refuseLstat(file: string, code: 'EPERM' | 'EACCES', run: () => void): v
   const realLstatSync = fs.lstatSync;
   const realReadFileSync = fs.readFileSync;
   let reads = 0;
-  fs.lstatSync = ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+  Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
     if (!samePath(String(target), file)) return realLstatSync(target, options);
     const error = new Error('operation not permitted') as NodeJS.ErrnoException;
     error.code = code;
     throw error;
-  }) as typeof fs.lstatSync;
+  }) as typeof fs.lstatSync });
   fs.readFileSync = ((target: fs.PathOrFileDescriptor, options?: Parameters<typeof fs.readFileSync>[1]) => {
     if (typeof target !== 'number' && samePath(String(target), file)) reads += 1;
     return realReadFileSync(target, options);
@@ -148,7 +148,7 @@ function refuseLstat(file: string, code: 'EPERM' | 'EACCES', run: () => void): v
     assert.throws(run, isCode(code));
     assert.equal(reads, 0);
   } finally {
-    fs.lstatSync = realLstatSync;
+    Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
     fs.readFileSync = realReadFileSync;
   }
 }

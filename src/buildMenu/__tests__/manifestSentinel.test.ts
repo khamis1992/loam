@@ -42,7 +42,7 @@ test('rejected saves leave the outside sentinel bytes unchanged', async () => {
   const rejected: Array<{ label: string; manifest: BuildManifest }> = [
     {
       label: 'bad kind',
-      manifest: { ...base, selection: { kind: 'shell' } } as BuildManifest,
+      manifest: { ...base, selection: { kind: 'shell' } } as unknown as BuildManifest,
     },
     ...['latest', 'LATEST', 'Latest', 'LaTeSt'].map((revision) => ({
       label: `revision ${revision}`,
@@ -54,7 +54,7 @@ test('rejected saves leave the outside sentinel bytes unchanged', async () => {
     },
     {
       label: 'publish true',
-      manifest: { ...base, consent: { autostart: false, publish: true } } as BuildManifest,
+      manifest: { ...base, consent: { autostart: false, publish: true } } as unknown as BuildManifest,
     },
   ];
 

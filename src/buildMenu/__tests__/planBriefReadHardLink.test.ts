@@ -102,7 +102,7 @@ function blockBriefRead(brief: string, run: () => void): void {
 function refuseLstat(brief: string, code: 'EPERM' | 'EACCES', run: () => void): void {
   const realLstatSync = fs.lstatSync;
   let calls = 0;
-  fs.lstatSync = ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+  Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
     if (samePath(target, brief)) {
       calls += 1;
       const error = new Error(code === 'EPERM' ? 'operation not permitted' : 'permission denied') as NodeJS.ErrnoException;
@@ -110,12 +110,12 @@ function refuseLstat(brief: string, code: 'EPERM' | 'EACCES', run: () => void): 
       throw error;
     }
     return realLstatSync(target, options);
-  }) as typeof fs.lstatSync;
+  }) as typeof fs.lstatSync });
   try {
     assert.throws(run, (error: unknown) => isCode(error, code));
     assert.equal(calls > 0, true);
   } finally {
-    fs.lstatSync = realLstatSync;
+    Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
   }
 }
 

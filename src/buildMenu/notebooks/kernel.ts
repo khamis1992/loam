@@ -202,7 +202,8 @@ export async function runKernelCell(input: {
   sessions.set(key, session);
   let child: ChildProcess;
   try {
-    await assertImagePresent(command.executable, image, input.inspectImpl ?? (input.spawnImpl ? imagePresent : engine));
+    const inspect = input.inspectImpl ?? (input.spawnImpl ? (imagePresent as unknown as typeof spawn) : engine);
+    await assertImagePresent(command.executable, image, inspect);
     child = engine(command.executable, command.args, {
       cwd: input.workspace,
       env: leaseEnv(),
@@ -308,7 +309,7 @@ function requestedImage(explicit: string | undefined): string {
   return requested;
 }
 
-function imagePresent(_executable: string, args: readonly string[]): ChildProcess {
+function imagePresent(_executable: string, args: readonly string[], _options?: Parameters<typeof spawn>[1]): ChildProcess {
   if (args.some((arg) => blockedReference(arg))) throw new BuildMenuError('missing_requirement', 400);
   const child = new EventEmitter() as ChildProcess;
   process.nextTick(() => child.emit('exit', 0));

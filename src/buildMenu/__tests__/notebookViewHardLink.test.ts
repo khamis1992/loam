@@ -139,14 +139,14 @@ test('lstat EPERM on the preview is not swallowed before write', () => {
     assert.equal(fs.lstatSync(page).nlink, 1);
     const real = fs.lstatSync;
     const resolved = path.resolve(page);
-    fs.lstatSync = ((target: fs.PathLike, options?: fs.StatOptions) => {
+    Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: fs.StatOptions) => {
       if (samePath(path.resolve(String(target)), resolved)) {
         const error = new Error('operation not permitted') as NodeJS.ErrnoException;
         error.code = 'EPERM';
         throw error;
       }
       return options === undefined ? real(target) : real(target, options);
-    }) as typeof fs.lstatSync;
+    }) as typeof fs.lstatSync });
     try {
       assert.throws(() => writeNotebookPreview(root), isEperm);
       assert.equal(real(page).isSymbolicLink(), false);
@@ -154,7 +154,7 @@ test('lstat EPERM on the preview is not swallowed before write', () => {
       assert.deepEqual(fs.readFileSync(page), previous);
       assertPinUntouched(pinBefore);
     } finally {
-      fs.lstatSync = real;
+      Object.defineProperty(fs, 'lstatSync', { value: real });
     }
   });
 });

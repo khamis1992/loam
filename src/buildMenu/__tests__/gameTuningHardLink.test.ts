@@ -96,13 +96,13 @@ test('writeLocalTuning lets EPERM from lstat escape', () => {
       error.code = 'EPERM';
       throw error;
     }) as typeof fs.lstatSync;
-    fs.lstatSync = patched;
+    Object.defineProperty(fs, 'lstatSync', { value: patched });
     try {
       assert.throws(() => writeLocalTuning(gameDir, NEXT), isEperm);
       assert.equal(realLstatSync(file).nlink, 1);
       assert.equal(fs.readFileSync(file, 'utf8'), VALID);
     } finally {
-      fs.lstatSync = realLstatSync;
+      Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
     }
   });
 });

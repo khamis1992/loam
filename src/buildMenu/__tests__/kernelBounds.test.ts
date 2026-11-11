@@ -44,7 +44,7 @@ test('an unfinished kernel line is refused before it is parsed', { timeout: 5_00
     assert.equal(killed, 1);
     assert.deepEqual(stops, [['stop', 'loamk0123456789abcdef']]);
     const saved = readNotebook(root);
-    assert.equal(saved.cells[0]?.outputs[0]?.ename, 'interrupted');
+    assert.equal(saved.cells[0]?.outputs?.[0]?.ename, 'interrupted');
     assert.equal(JSON.stringify(saved).includes('x'.repeat(80)), false);
     assert.deepEqual(saved.cells[0]?.source, [source]);
   } finally {

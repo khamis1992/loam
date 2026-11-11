@@ -216,14 +216,14 @@ test('lstat EPERM is not swallowed before either read', () => {
     assert.equal(fs.lstatSync(manifestFile).nlink, 1);
     const realLstatSync = fs.lstatSync;
     const manifestResolved = path.resolve(manifestFile);
-    fs.lstatSync = ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+    Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
       if (path.resolve(String(target)) === manifestResolved) {
         const error = new Error('operation not permitted') as NodeJS.ErrnoException;
         error.code = 'EPERM';
         throw error;
       }
       return realLstatSync(target, options);
-    }) as typeof fs.lstatSync;
+    }) as typeof fs.lstatSync });
     try {
       let returned: string | undefined;
       assert.throws(() => {
@@ -231,7 +231,7 @@ test('lstat EPERM is not swallowed before either read', () => {
       }, isEperm);
       assert.equal(returned, undefined);
     } finally {
-      fs.lstatSync = realLstatSync;
+      Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
     }
     assert.equal(fs.existsSync(path.join(workspace, '.loam', 'build-menu', 'approved-extension.json')), false);
     assert.equal(realLstatSync(manifestFile).nlink, 1);
@@ -242,14 +242,14 @@ test('lstat EPERM is not swallowed before either read', () => {
     fs.writeFileSync(note, previous);
     assert.equal(realLstatSync(note).nlink, 1);
     const noteResolved = path.resolve(note);
-    fs.lstatSync = ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+    Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
       if (path.resolve(String(target)) === noteResolved) {
         const error = new Error('operation not permitted') as NodeJS.ErrnoException;
         error.code = 'EPERM';
         throw error;
       }
       return realLstatSync(target, options);
-    }) as typeof fs.lstatSync;
+    }) as typeof fs.lstatSync });
     try {
       let returned: string | null | undefined;
       assert.throws(() => {
@@ -257,7 +257,7 @@ test('lstat EPERM is not swallowed before either read', () => {
       }, isEperm);
       assert.equal(returned, undefined);
     } finally {
-      fs.lstatSync = realLstatSync;
+      Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
     }
     assert.equal(realLstatSync(note).nlink, 1);
     assert.equal(realLstatSync(note).isSymbolicLink(), false);

@@ -126,3 +126,96 @@ export function listCompanions(): Promise<CompanionOption[]> {
 export function createCompanion(draft: CompanionDraft): Promise<{ agent: { id: string; name: string } }> {
   return request('/api/agents', { method: 'POST', body: JSON.stringify(draft) });
 }
+
+export interface CompanionJournalEntry {
+  at: string;
+  kind: 'agent' | 'user' | 'system';
+  event: string;
+  ok: boolean;
+  detail?: string;
+}
+
+export interface CompanionDeviceDetails {
+  device: CompanionDevice;
+  journal: CompanionJournalEntry[];
+  readiness: { ready: boolean; detail: string };
+}
+
+export interface CompanionDeviceStats {
+  memoryTotalMB?: number;
+  memoryFreeMB?: number;
+  cpuUtilization?: number;
+  disk?: string;
+  diskUsedGB?: number;
+  diskTotalGB?: number;
+  diskUsedPercent?: number;
+  raw: string;
+}
+
+export interface CompanionTask {
+  id: string;
+  title: string;
+  status: string;
+  updatedAt?: string;
+  createdAt?: string;
+}
+
+export function getCompanionDevice(id: string): Promise<CompanionDeviceDetails> {
+  return request(`/api/companion-devices/${encodeURIComponent(id)}`, {}, false);
+}
+
+export function getCompanionDeviceStats(id: string): Promise<{ stats: CompanionDeviceStats; costNote: string }> {
+  return request(`/api/companion-devices/${encodeURIComponent(id)}/stats`, {}, false);
+}
+
+export function ensureCompanionGui(id: string): Promise<{ ok: boolean; started: boolean; detail: string }> {
+  return request(`/api/companion-devices/${encodeURIComponent(id)}/gui-ensure`, { method: 'POST' });
+}
+
+export async function captureCompanionScreen(id: string): Promise<Blob> {
+  return fetch(`${getApiBase()}/api/companion-devices/${encodeURIComponent(id)}/screen`, {
+    headers: await getApiHeaders(),
+  }).then(async (res) => {
+    if (!res.ok) throw new Error(await errorMessage(res));
+    return res.blob();
+  });
+}
+
+export function sendCompanionInput(id: string, input: { type: string; x?: number; y?: number; text?: string; key?: string }): Promise<{ ok: boolean }> {
+  return request(`/api/companion-devices/${encodeURIComponent(id)}/input`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export function snapshotCompanionDevice(id: string, label = ''): Promise<unknown> {
+  return request(`/api/companion-devices/${encodeURIComponent(id)}/snapshot`, {
+    method: 'POST',
+    body: JSON.stringify({ label }),
+  });
+}
+
+export function setCompanionControl(id: string, take: boolean): Promise<unknown> {
+  return request(`/api/companion-devices/${encodeURIComponent(id)}/control`, {
+    method: 'POST',
+    body: JSON.stringify({ take }),
+  });
+}
+
+export function listCompanionTasks(agentId: string): Promise<CompanionTask[]> {
+  return request<{ tasks?: CompanionTask[] }>(`/api/tasks?agentId=${encodeURIComponent(agentId)}`, {}, false)
+    .then((data) => data.tasks ?? []);
+}
+
+export async function startCompanionTask(agentId: string, prompt: string): Promise<CompanionTask> {
+  const title = prompt.trim().slice(0, 80) || 'New task';
+  const draft = await request<{ task: CompanionTask }>('/api/tasks/draft', {
+    method: 'POST',
+    body: JSON.stringify({ title, mode: 'code', agentId }),
+  });
+  void request<unknown>('/api/chat', {
+    method: 'POST',
+    body: JSON.stringify({ taskId: draft.task.id, prompt, agentId, workMode: 'own_device', mode: 'code' }),
+  }).catch(() => undefined);
+  return draft.task;
+}

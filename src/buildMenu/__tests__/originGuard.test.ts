@@ -32,7 +32,7 @@ test('a lookalike loopback origin is refused and the menu stays off', async () =
     const token = { 'x-loam-local-token': 'token-token' };
     assert.equal(await status({ origin: 'http://127.0.0.1.evil.example', ...token }), 403);
     assert.equal(await status({ origin: 'http://localhost.evil.example', ...token }), 403);
-    assert.equal(await status({ origin: ['http://127.0.0.1', 'https://evil.example'], ...token }), 403);
+    assert.equal(await status({ origin: 'http://127.0.0.1, https://evil.example', ...token }), 403);
     assert.equal(await status({ origin: 'http://127.0.0.1:3000', ...token }), 404);
     assert.equal(await status({ origin: 'http://localhost:3000', ...token }), 404);
     assert.equal(await status({ origin: 'http://[::1]:3000', ...token }), 404);

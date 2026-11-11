@@ -127,8 +127,10 @@ test('an automation preview stays in the project and does not create a host sche
 test('desktop, safari, and notebook jobs refuse outputs the machine cannot build', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'loam-run-'));
   const desktop = context(root, { kind: 'desktop' }, { action: 'generate' });
-  const notebook = context(root, { kind: 'notebook' }, { action: 'generate' });
-  const safari = context(root, { kind: 'safari-extension' }, { action: 'generate' });
+  const notebookRoot = path.join(root, 'notebook');
+  const notebook = context(notebookRoot, { kind: 'notebook' }, { action: 'generate' });
+  const safariRoot = path.join(root, 'safari');
+  const safari = context(safariRoot, { kind: 'safari-extension' }, { action: 'generate' });
   try {
     await runBuildJob(desktop);
     const packed = await runBuildJob(context(root, { kind: 'desktop' }, { action: 'package', format: 'source-zip' }));
@@ -159,13 +161,13 @@ test('desktop, safari, and notebook jobs refuse outputs the machine cannot build
     assert.equal(collectExe(widgetRoot).length, 0);
     await runBuildJob(notebook);
     await assert.rejects(
-      runBuildJob(context(root, { kind: 'notebook' }, { action: 'kernel-execute', cellId: 'cell-1' })),
+      runBuildJob(context(notebookRoot, { kind: 'notebook' }, { action: 'kernel-execute', cellId: 'cell-1' })),
       /missing_requirement/,
     );
     await runBuildJob(safari);
     const expected = process.platform === 'darwin' ? /missing_requirement/ : /unsupported_platform/;
     await assert.rejects(
-      runBuildJob(context(root, { kind: 'safari-extension' }, { action: 'package', format: 'xcode-source' })),
+      runBuildJob(context(safariRoot, { kind: 'safari-extension' }, { action: 'package', format: 'xcode-source' })),
       expected,
     );
   } finally {

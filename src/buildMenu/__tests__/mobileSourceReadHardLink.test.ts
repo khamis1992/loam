@@ -128,7 +128,7 @@ function epermOnSecondStat(file: string): { hits: () => number; restore: () => v
   const resolved = path.resolve(file);
   const real = fs.lstatSync;
   let hits = 0;
-  fs.lstatSync = ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+  Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
     if (path.resolve(String(target)) === resolved) {
       hits += 1;
       if (hits > 1) {
@@ -138,8 +138,8 @@ function epermOnSecondStat(file: string): { hits: () => number; restore: () => v
       }
     }
     return real(target, options);
-  }) as typeof fs.lstatSync;
-  return { hits: () => hits, restore: () => { fs.lstatSync = real; } };
+  }) as typeof fs.lstatSync });
+  return { hits: () => hits, restore: () => { Object.defineProperty(fs, 'lstatSync', { value: real }); } };
 }
 
 async function expectRefusal(run: () => Promise<unknown>, secret: string): Promise<void> {

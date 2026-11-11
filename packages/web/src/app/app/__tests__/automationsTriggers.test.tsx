@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 
 const { API } = vi.hoisted(() => ({ API: 'http://localhost:8787' }));
 
@@ -40,10 +40,11 @@ describe('AutomationsPage event triggers', () => {
     ));
 
     render(<AutomationsPage />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Manage' }));
 
-    expect(await screen.findByText('Deploy finished')).toBeTruthy();
-    expect(screen.getByText('Review PR')).toBeTruthy();
-    expect(screen.getByText('Nightly digest')).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Deploy finished' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Review PR' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Nightly digest' })).toBeTruthy();
     // Trigger labels are shown alongside the schedule cadence.
     expect(screen.getAllByText(/Webhook/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/GitHub/).length).toBeGreaterThan(0);

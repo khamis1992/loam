@@ -66,7 +66,7 @@ test('EPERM from the final target stat is rethrown and the bytes stay', () => {
   const resolvedTarget = path.resolve(target);
   const temp = `${target}.tmp`;
   let allowedFinalStat = false;
-  fs.lstatSync = ((file: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+  Object.defineProperty(fs, 'lstatSync', { value: ((file: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
     if (path.resolve(String(file)) !== resolvedTarget) return realLstatSync(file, options);
     const tempReady = fs.existsSync(temp) && realLstatSync(temp).size === incoming.length;
     if (tempReady) {
@@ -78,7 +78,7 @@ test('EPERM from the final target stat is rethrown and the bytes stay', () => {
       allowedFinalStat = true;
     }
     return realLstatSync(file, options);
-  }) as typeof fs.lstatSync;
+  }) as typeof fs.lstatSync });
   try {
     assert.throws(
       () => writeAtomicFile(target, incoming),
@@ -89,7 +89,7 @@ test('EPERM from the final target stat is rethrown and the bytes stay', () => {
     assert.equal(realLstatSync(target).nlink, 1);
     assert.equal(fs.existsSync(temp), false);
   } finally {
-    fs.lstatSync = realLstatSync;
+    Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
     fs.rmSync(root, { recursive: true, force: true });
   }
 });

@@ -50,7 +50,7 @@ test('sort refuses a destination hard link before copy and leaves the outside by
     fs.mkdirSync(sorted);
     const targets = photos.map((photo) => path.join(sorted, `${photo.sha256.slice(0, 10)}-${photo.name}`));
     for (const target of targets) fs.linkSync(fixture.secret, target);
-    const linked = fs.lstatSync(targets[0]);
+    const linked = fs.lstatSync(targets[0]!);
     const outside = fs.lstatSync(fixture.secret);
     assert.equal(linked.isSymbolicLink(), false);
     assert.equal(linked.isFile(), true);

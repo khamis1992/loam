@@ -110,7 +110,7 @@ test('a hard-linked manifest is not parsed and the outside bytes stay', async ()
   let reads = 0;
   fs.readFileSync = ((target: fs.PathOrFileDescriptor, options?: { encoding?: BufferEncoding | null; flag?: string }) => {
     if (typeof target !== 'number' && path.resolve(String(target)) === path.resolve(file)) reads += 1;
-    return realReadFileSync(target, options as BufferEncoding);
+    return realReadFileSync(target, options as { encoding?: BufferEncoding | null; flag?: string });
   }) as typeof fs.readFileSync;
   try {
     assertLinked(file, outsideFile);
@@ -219,7 +219,7 @@ test('lstat EPERM is not swallowed before a manifest is parsed', () => {
   assertPlain(file);
   const realLstatSync = fs.lstatSync;
   let hits = 0;
-  fs.lstatSync = ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+  Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
     if (path.resolve(String(target)) === path.resolve(file)) {
       hits += 1;
       if (hits > 1) {
@@ -229,12 +229,12 @@ test('lstat EPERM is not swallowed before a manifest is parsed', () => {
       }
     }
     return realLstatSync(target, options);
-  }) as typeof fs.lstatSync;
+  }) as typeof fs.lstatSync });
   try {
     assert.throws(() => readManifest(workspace), isEperm);
     assert.equal(hits > 1, true);
   } finally {
-    fs.lstatSync = realLstatSync;
+    Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
   }
   assert.deepEqual(realLstatSync(file).nlink, 1);
   assert.deepEqual(fs.readFileSync(file), previous);
@@ -260,14 +260,14 @@ test('lstat EPERM is not swallowed before a backup copy and the outside bytes st
       copies += 1;
       return realCopy(source, destination, mode);
     }) as typeof fs.copyFileSync;
-    fs.lstatSync = ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+    Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
       if (path.resolve(String(target)) === path.resolve(backup)) {
         const error = new Error('operation not permitted') as NodeJS.ErrnoException;
         error.code = 'EPERM';
         throw error;
       }
       return realLstatSync(target, options);
-    }) as typeof fs.lstatSync;
+    }) as typeof fs.lstatSync });
     await assert.rejects(saveManifest(workspace, stored(2), 1), isEperm);
     assert.equal(copies, 0);
     assert.deepEqual(realLstatSync(outsideFile).nlink > 1, true);
@@ -275,7 +275,7 @@ test('lstat EPERM is not swallowed before a backup copy and the outside bytes st
     assert.deepEqual(fs.readFileSync(backup), outsideBytes);
     assert.deepEqual(fs.readFileSync(file), before);
   } finally {
-    fs.lstatSync = realLstatSync;
+    Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
     fs.copyFileSync = realCopy;
     removePair(root, outside);
   }

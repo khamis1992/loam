@@ -273,19 +273,19 @@ test('lstat EPERM on the registry, nonce, and manifest reads is not swallowed', 
     const manifestBytes = fs.readFileSync(manifest);
     const realLstatSync = fs.lstatSync;
     for (const target of [registry, nonce, manifest]) {
-      fs.lstatSync = ((file: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+      Object.defineProperty(fs, 'lstatSync', { value: ((file: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
         if (samePath(String(file), target)) {
           const error = new Error('operation not permitted') as NodeJS.ErrnoException;
           error.code = 'EPERM';
           throw error;
         }
         return realLstatSync(file, options);
-      }) as typeof fs.lstatSync;
+      }) as typeof fs.lstatSync });
       try {
         assert.throws(() => planWidgetQuit(dataDir, () => IDENTITY), isEperm);
         assert.equal(fs.existsSync(`${registry}.${process.pid}.tmp`), false);
       } finally {
-        fs.lstatSync = realLstatSync;
+        Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
       }
     }
     assert.deepEqual(fs.readFileSync(registry), registryBytes);

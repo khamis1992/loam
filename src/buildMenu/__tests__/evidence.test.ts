@@ -72,7 +72,7 @@ test('evidence refuses a screenshot or file path that contains a remote scheme',
     assert.equal(fs.existsSync(evidenceRoot), false);
     writeJobEvidence(root, 'job_scheme', { phase: 'completed', screenshot: 'shots/local.png', summary: 'kept' });
     const before = fs.readFileSync(target);
-    for (const record of [
+    const records: Array<Record<string, string>> = [
       { screenshot: 'http://evil.example/a.png' },
       { screenshot: 'https://evil.example/shot.png' },
       { file: 'javascript:alert(1)' },
@@ -88,7 +88,8 @@ test('evidence refuses a screenshot or file path that contains a remote scheme',
       { path: 'File:///C:/Windows/win.ini' },
       { file: 'BLOB:abc' },
       { screenshot: 'JavaScript%3Aalert(1)' },
-    ]) {
+    ];
+    for (const record of records) {
       assert.throws(
         () => writeJobEvidence(root, 'job_scheme', { phase: 'completed', ...record }),
         (error: unknown) => error instanceof BuildMenuError && error.message === 'unsafe_path' && error.status === 400,

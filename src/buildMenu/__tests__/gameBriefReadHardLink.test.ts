@@ -74,13 +74,13 @@ test('readGameBrief lets EPERM from lstat escape', () => {
       error.code = 'EPERM';
       throw error;
     }) as typeof fs.lstatSync;
-    fs.lstatSync = patched;
+    Object.defineProperty(fs, 'lstatSync', { value: patched });
     try {
       assert.throws(() => readGameBrief(workspace), isEperm);
       assert.equal(realLstatSync(file).nlink, 1);
       assert.equal(fs.readFileSync(file, 'utf8'), BRIEF);
     } finally {
-      fs.lstatSync = realLstatSync;
+      Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
     }
   });
 });

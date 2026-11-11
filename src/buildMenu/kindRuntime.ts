@@ -71,7 +71,7 @@ export function createKindPorts(profile: BuildProfile, deps: KindDeps): DriverPo
         case 'safari-extension':
           return serveFile(ctx, profile.kind, deps.leases, httpJobs, devStops);
         case 'chrome-extension':
-          return previewChrome(ctx, deps, httpJobs, nativeJobs);
+          return previewChrome(ctx, deps, httpJobs, nativeJobs, devStops);
         default: {
           const unknown: never = profile.kind;
           throw new BuildMenuError(`missing_requirement:${unknown}`, 400);
@@ -137,8 +137,8 @@ function dryRun(ctx: BuildJobContext): PreviewLease {
   return { kind: 'none' };
 }
 
-async function previewChrome(ctx: BuildJobContext, deps: KindDeps, httpJobs: Map<string, string>, nativeJobs: Map<string, NativeLease>): Promise<PreviewLease> {
-  const lease = await serveFile(ctx, 'chrome-extension', deps.leases, httpJobs);
+async function previewChrome(ctx: BuildJobContext, deps: KindDeps, httpJobs: Map<string, string>, nativeJobs: Map<string, NativeLease>, devStops: Map<string, () => Promise<void>>): Promise<PreviewLease> {
+  const lease = await serveFile(ctx, 'chrome-extension', deps.leases, httpJobs, devStops);
   writeUnpackedInstructions(ctx.workspace, ctx.jobId, false);
   if (deps.chromeExecutable === null) return lease;
   const executable = deps.chromeExecutable ?? findChrome();

@@ -238,19 +238,19 @@ test('lstat EPERM is not swallowed and the destination bytes stay', () => {
     fs.writeFileSync(registry, previousRegistry);
     assert.equal(fs.lstatSync(registry).nlink, 1);
     const realLstatSync = fs.lstatSync;
-    fs.lstatSync = ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+    Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
       if (samePath(String(target), registry)) {
         const error = new Error('operation not permitted') as NodeJS.ErrnoException;
         error.code = 'EPERM';
         throw error;
       }
       return realLstatSync(target, options);
-    }) as typeof fs.lstatSync;
+    }) as typeof fs.lstatSync });
     try {
       assert.throws(() => rememberWidget(dataDir, record(workspace, IDENTITY)), isEperm);
       assert.equal(fs.existsSync(`${registry}.${process.pid}.tmp`), false);
     } finally {
-      fs.lstatSync = realLstatSync;
+      Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
     }
     assert.deepEqual(fs.readFileSync(registry), previousRegistry);
     assert.equal(fs.lstatSync(registry).nlink, 1);
@@ -261,18 +261,18 @@ test('lstat EPERM is not swallowed and the destination bytes stay', () => {
     fs.mkdirSync(path.dirname(nonce), { recursive: true });
     fs.writeFileSync(nonce, previousNonce);
     assert.equal(fs.lstatSync(nonce).nlink, 1);
-    fs.lstatSync = ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+    Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
       if (samePath(String(target), nonce)) {
         const error = new Error('operation not permitted') as NodeJS.ErrnoException;
         error.code = 'EPERM';
         throw error;
       }
       return realLstatSync(target, options);
-    }) as typeof fs.lstatSync;
+    }) as typeof fs.lstatSync });
     try {
       assert.throws(() => writeWidgetNonce(workspace, NEXT_NONCE), isEperm);
     } finally {
-      fs.lstatSync = realLstatSync;
+      Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
     }
     assert.deepEqual(fs.readFileSync(nonce), previousNonce);
     assert.equal(realLstatSync(nonce).nlink, 1);

@@ -64,7 +64,7 @@ export const PACK_MANIFESTS: Readonly<Record<PackId, ServicePackManifest>> = {
   }),
   "loam-schedule": define({
     schema: "loam.service-pack/v1", id: "loam-schedule", version: "1.0.0", modes: ["automate"], skills: skill("loam-schedule"),
-    wraps: ["schedule_create", "schedule_update"], ownedTools: [], wrappedTools: ["schedule_create", "schedule_list", "schedule_update", "schedule_delete", "schedule_self_reminder"],
+    wraps: ["schedule_create", "schedule_update"], ownedTools: [], wrappedTools: ["schedule_create", "schedule_list", "schedule_update", "schedule_delete", "schedule_self_reminder", "task_create", "task_list", "task_get", "task_cancel"],
     hostTools: ["schedule_present"], gate: { tool: "schedule_present", timeoutMs: 30_000 }, legacyRoutes: "keep", update: "hot",
   }),
   "loam-mobile": define({

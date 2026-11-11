@@ -22,6 +22,7 @@ const { chromium } = require('playwright') as {
 
 interface PreviewPage {
   goto(url: string): Promise<void>;
+  reload(): Promise<void>;
   close(): Promise<void>;
   on(event: 'request' | 'dialog', handler: (value: { url(): string }) => void): void;
   locator(selector: string): {

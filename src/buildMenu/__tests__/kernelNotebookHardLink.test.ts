@@ -296,17 +296,17 @@ test('lstat EPERM is not swallowed before write', async () => {
 async function refuseEperm(file: string, run: () => Promise<unknown>): Promise<void> {
   const real = fs.lstatSync;
   const resolved = path.resolve(file);
-  fs.lstatSync = ((target: fs.PathLike, options?: fs.StatOptions) => {
+  Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: fs.StatOptions) => {
     if (samePath(path.resolve(String(target)), resolved)) {
       const error = new Error('operation not permitted') as NodeJS.ErrnoException;
       error.code = 'EPERM';
       throw error;
     }
     return options === undefined ? real(target) : real(target, options);
-  }) as typeof fs.lstatSync;
+  }) as typeof fs.lstatSync });
   try {
     await assert.rejects(run, isEperm);
   } finally {
-    fs.lstatSync = real;
+    Object.defineProperty(fs, 'lstatSync', { value: real });
   }
 }

@@ -109,36 +109,39 @@ describe('ProjectsPage create/edit/delete dialogs', () => {
   });
 });
 
-describe('AutomationsPage create/edit/delete dialogs', () => {
-  it('opens the create dialog from the header', async () => {
+describe('AutomationsPage create/edit/delete workflows', () => {
+  it('opens the trigger dialog from Create and keeps its prompt', async () => {
     stubFetch(() => json({ schedules: [] }));
     render(<AutomationsPage />);
-    expect(await screen.findByText('Automations')).toBeTruthy();
+    await screen.findByText('No automation updates yet.');
 
-    fireEvent.click(screen.getByRole('button', { name: /New automation/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Trigger' }));
+    fireEvent.change(screen.getByTestId('automation-brief'), { target: { value: 'Nightly sync' } });
+    fireEvent.click(screen.getByTestId('automation-kind-triggered'));
     const dialog = screen.getByRole('dialog', { name: 'New automation' });
-    expect(dialog).toBeTruthy();
-    expect(within(dialog).getByPlaceholderText('What should Loam do?')).toBeTruthy();
+    expect(within(dialog).getByPlaceholderText('What should Loam do?')).toHaveProperty('value', 'Nightly sync');
   });
 
-  it('creates an automation through POST /api/schedules', async () => {
+  it('creates a daily automation through POST /api/schedules', async () => {
     const fetchMock = stubFetch((url, init) => {
       if (url === apiUrl('/schedules') && init?.method === 'POST') {
-        return json({ schedule: { id: 's1', prompt: 'Nightly sync', intervalSeconds: 3600, enabled: true } });
+        return json({ schedule: { id: 's1', prompt: 'Nightly sync', cron: '0 10 * * *', enabled: true } });
       }
-      return json({ schedules: [{ id: 's1', prompt: 'Nightly sync', intervalSeconds: 3600, enabled: true }] });
+      return json({ schedules: [{ id: 's1', prompt: 'Nightly sync', cron: '0 10 * * *', enabled: true }] });
     });
     render(<AutomationsPage />);
-    await screen.findByText('Nightly sync');
+    await screen.findByText('No automation updates yet.');
 
-    fireEvent.click(screen.getByRole('button', { name: /New automation/ }));
-    fireEvent.change(screen.getByPlaceholderText('What should Loam do?'), { target: { value: 'Nightly sync' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Schedule' }));
+    fireEvent.change(screen.getByPlaceholderText('Describe what Loam should do, e.g. summarize the latest AI news and send me the highlights'), { target: { value: 'Nightly sync' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
         apiUrl('/schedules'),
-        expect.objectContaining({ method: 'POST', body: JSON.stringify({ prompt: 'Nightly sync', intervalSeconds: 3600 }) }),
+        expect.objectContaining({ method: 'POST', body: JSON.stringify({ prompt: 'Nightly sync', cron: '0 10 * * *' }) }),
       ),
     );
   });
@@ -151,9 +154,11 @@ describe('AutomationsPage create/edit/delete dialogs', () => {
       return json({ schedules: [{ id: 's1', prompt: 'Nightly sync', intervalSeconds: 3600, enabled: true }] });
     });
     render(<AutomationsPage />);
-    await screen.findByText('Nightly sync');
-
+    await screen.findByText('No automation updates yet.');
+    fireEvent.click(screen.getByRole('tab', { name: 'Manage' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Automation actions' }));
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+
     const dialog = screen.getByRole('dialog', { name: 'Edit automation' });
     const prompt = within(dialog).getByPlaceholderText('What should Loam do?') as HTMLTextAreaElement;
     expect(prompt.value).toBe('Nightly sync');
@@ -168,7 +173,7 @@ describe('AutomationsPage create/edit/delete dialogs', () => {
     );
   });
 
-  it('toggles an automation through PATCH /api/schedules/:id', async () => {
+  it('pauses an automation through PATCH /api/schedules/:id', async () => {
     const fetchMock = stubFetch((url, init) => {
       if (url === apiUrl('/schedules/s1') && init?.method === 'PATCH') {
         return json({ schedule: { id: 's1', prompt: 'Nightly sync', intervalSeconds: 3600, enabled: false } });
@@ -176,9 +181,10 @@ describe('AutomationsPage create/edit/delete dialogs', () => {
       return json({ schedules: [{ id: 's1', prompt: 'Nightly sync', intervalSeconds: 3600, enabled: true }] });
     });
     render(<AutomationsPage />);
-    await screen.findByText('Nightly sync');
-
-    fireEvent.click(screen.getByRole('switch', { name: 'Disable' }));
+    await screen.findByText('No automation updates yet.');
+    fireEvent.click(screen.getByRole('tab', { name: 'Manage' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Automation actions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
@@ -196,8 +202,9 @@ describe('AutomationsPage create/edit/delete dialogs', () => {
       return json({ schedules: [{ id: 's1', prompt: 'Nightly sync', intervalSeconds: 3600, enabled: true }] });
     });
     render(<AutomationsPage />);
-    await screen.findByText('Nightly sync');
-
+    await screen.findByText('No automation updates yet.');
+    fireEvent.click(screen.getByRole('tab', { name: 'Manage' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Automation actions' }));
     fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
 
     await waitFor(() =>
@@ -205,14 +212,16 @@ describe('AutomationsPage create/edit/delete dialogs', () => {
     );
   });
 
-  it('opens a scheduled automation from the new hero card with its prompt', async () => {
+  it('opens the schedule form from the creation cards with its prompt', async () => {
     stubFetch(() => json({ schedules: [] }));
     render(<AutomationsPage />);
+    await screen.findByText('No automation updates yet.');
 
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Trigger' }));
     fireEvent.change(screen.getByTestId('automation-brief'), { target: { value: 'Daily sales report' } });
     fireEvent.click(screen.getByTestId('automation-kind-schedule'));
-    const dialog = screen.getByRole('dialog', { name: 'New automation' });
-    expect(within(dialog).getByPlaceholderText('What should Loam do?')).toHaveProperty('value', 'Daily sales report');
+    expect(screen.getByPlaceholderText('Describe what Loam should do, e.g. summarize the latest AI news and send me the highlights')).toHaveProperty('value', 'Daily sales report');
   });
 
   it('deletes an automation through DELETE /api/schedules/:id after confirming', async () => {
@@ -221,8 +230,9 @@ describe('AutomationsPage create/edit/delete dialogs', () => {
       return json({ schedules: [{ id: 's1', prompt: 'Nightly sync', intervalSeconds: 3600, enabled: true }] });
     });
     render(<AutomationsPage />);
-    await screen.findByText('Nightly sync');
-
+    await screen.findByText('No automation updates yet.');
+    fireEvent.click(screen.getByRole('tab', { name: 'Manage' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Automation actions' }));
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
     fireEvent.click(screen.getByRole('button', { name: 'Confirm delete' }));
 

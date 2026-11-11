@@ -482,7 +482,7 @@ test('materialize throws unsafe_path when a scaffold file path is a directory an
   }
 });
 
-test('creating a game keeps the brief for the scene and leaves it out of the page', async () => {
+test('creating a game keeps the app brief for its scene and shows the local plan brief', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'loam-game-brief-'));
   const previousData = process.env.LOAM_DATA_DIR;
   const previousWorkspace = process.env.LOAM_WORKSPACE;
@@ -509,7 +509,7 @@ test('creating a game keeps the brief for the scene and leaves it out of the pag
     materialize({ selection: { kind: 'game' }, workspace: project.workspaceDir, title: 'لعبة' });
     const html = fs.readFileSync(path.join(project.workspaceDir, 'app', 'index.html'), 'utf8');
     assert.match(html, /const GOAL=420/);
-    assert.equal(html.includes('HOSTILE'), false);
+    assert.match(html, /id="brief">ابنِ هدف قريب HOSTILE<\/p>/);
   } finally {
     configureBuildMenu(false);
     resetGrants();

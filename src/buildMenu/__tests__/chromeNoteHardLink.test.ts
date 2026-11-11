@@ -97,14 +97,14 @@ test('lstat EPERM is not swallowed before the note write', () => {
   fs.writeFileSync(file, previous);
   const realLstatSync = fs.lstatSync;
   const resolved = path.resolve(file);
-  fs.lstatSync = ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+  Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
     if (path.resolve(String(target)) === resolved) {
       const error = new Error('operation not permitted') as NodeJS.ErrnoException;
       error.code = 'EPERM';
       throw error;
     }
     return realLstatSync(target, options);
-  }) as typeof fs.lstatSync;
+  }) as typeof fs.lstatSync });
   try {
     assert.equal(realLstatSync(file).nlink, 1);
     assert.throws(() => writeUnpackedInstructions(root, 'job_chrome_note', false), isEperm);
@@ -115,7 +115,7 @@ test('lstat EPERM is not swallowed before the note write', () => {
     assert.deepEqual(fs.readFileSync(file), previous);
     assertManual();
   } finally {
-    fs.lstatSync = realLstatSync;
+    Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
     fs.rmSync(root, { recursive: true, force: true });
   }
 });

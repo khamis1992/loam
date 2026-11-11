@@ -88,7 +88,9 @@ function upload(service: MobileLocalServices, bytes: Buffer): string {
     data: bytes.toString('base64'),
   });
   assert.ok(result && typeof result === 'object' && 'file' in result);
-  const id = result.file.id;
+  const file = result.file;
+  assert.ok(file);
+  const id = file.id;
   assert.equal(typeof id, 'string');
   assert.match(id, /^[-\w]{36}$/);
   return id;
@@ -150,7 +152,7 @@ function watch(file: string, run: () => void): Counts {
 function gateLstat(file: string, failAt: number, code: 'EPERM' | 'EACCES'): { restore: () => void; seen: () => number } {
   const real = fs.lstatSync;
   let seen = 0;
-  fs.lstatSync = ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+  Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
     if (samePath(String(target), file)) {
       seen += 1;
       if (seen >= failAt) {
@@ -160,10 +162,10 @@ function gateLstat(file: string, failAt: number, code: 'EPERM' | 'EACCES'): { re
       }
     }
     return real(target, options);
-  }) as typeof fs.lstatSync;
+  }) as typeof fs.lstatSync });
   return {
     restore: () => {
-      fs.lstatSync = real;
+      Object.defineProperty(fs, 'lstatSync', { value: real });
     },
     seen: () => seen,
   };

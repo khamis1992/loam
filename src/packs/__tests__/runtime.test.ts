@@ -51,6 +51,9 @@ describe("service pack runtime", () => {
     assert.deepEqual(video.names().sort(), ["finish"].sort());
     const office = toolsForPack(registry, "loam-office", ["design_brief", "office_craft", "video_studio", "finish"]);
     assert.deepEqual(office.names().sort(), ["design_brief", "finish", "office_craft"].sort());
+    for (const name of ["task_create", "schedule_create", "browser_open"]) registry.register({ name, description: name, parameters: {}, run: async () => ({ ok: true, content: name }) });
+    const schedule = toolsForPack(registry, "loam-schedule", ["task_create", "schedule_create", "browser_open", "finish"]);
+    assert.deepEqual(schedule.names().sort(), ["browser_open", "finish", "schedule_create", "task_create"].sort());
   });
 
   it("rejects direct manifest writes even through shell commands", async () => {

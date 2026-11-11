@@ -134,16 +134,16 @@ test('listed asset reads let EPERM and EACCES escape', () => {
       assert.equal(fs.lstatSync(file).nlink, 1);
       const resolved = path.resolve(file);
       const realLstatSync = fs.lstatSync;
-      fs.lstatSync = ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+      Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
         if (path.resolve(String(target)) !== resolved) return realLstatSync(target, options);
         const error = new Error('operation not permitted') as NodeJS.ErrnoException;
         error.code = code;
         throw error;
-      }) as typeof fs.lstatSync;
+      }) as typeof fs.lstatSync });
       try {
         assert.throws(() => writeListedGameAssets(game, [listed(LOCAL)]), isCode(code));
       } finally {
-        fs.lstatSync = realLstatSync;
+        Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
       }
       assert.equal(realLstatSync(file).nlink, 1);
       assert.deepEqual(fs.readFileSync(file), LOCAL);
@@ -156,19 +156,19 @@ test('listed asset reads let EPERM and EACCES escape', () => {
       const resolved = path.resolve(file);
       const realLstatSync = fs.lstatSync;
       let seen = 0;
-      fs.lstatSync = ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+      Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
         if (path.resolve(String(target)) !== resolved) return realLstatSync(target, options);
         seen += 1;
         if (seen === 1) return realLstatSync(target, options);
         const error = new Error('operation not permitted') as NodeJS.ErrnoException;
         error.code = code;
         throw error;
-      }) as typeof fs.lstatSync;
+      }) as typeof fs.lstatSync });
       try {
         assert.throws(() => writeListedGameAssets(game, [listed(LOCAL)]), isCode(code));
         assert.equal(seen, 2);
       } finally {
-        fs.lstatSync = realLstatSync;
+        Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
       }
       assert.equal(realLstatSync(file).nlink, 1);
       assert.deepEqual(fs.readFileSync(file), LOCAL);

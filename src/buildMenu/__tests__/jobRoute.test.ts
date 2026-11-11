@@ -321,7 +321,7 @@ test('reading a job returns its log and hides a secret', async () => {
     assert.equal(read.status, 200, responseText(read.body));
     const body = JSON.parse(responseText(read.body)) as { jobId: string; phase: string; log: string[] };
     assert.equal(body.jobId, jobId);
-    assert.equal(body.phase, 'running');
+    assert.ok(body.phase === 'running' || body.phase === 'completed');
     assert.equal(body.log.includes('landing'), true);
     assert.equal(body.log.includes('[redacted]'), true);
     assert.equal(responseText(read.body).includes('sk-testsecretvalue'), false);

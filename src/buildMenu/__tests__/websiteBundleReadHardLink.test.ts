@@ -140,16 +140,16 @@ test('preview lstat EPERM is not swallowed and the local bytes stay', () => {
     const preview = writePreview(workspace, LOCAL);
     assertPlain(preview);
     const realLstatSync = fs.lstatSync;
-    fs.lstatSync = ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+    Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
       if (path.resolve(String(target)) !== path.resolve(preview)) return realLstatSync(target, options);
       const error = new Error('operation not permitted') as NodeJS.ErrnoException;
       error.code = 'EPERM';
       throw error;
-    }) as typeof fs.lstatSync;
+    }) as typeof fs.lstatSync });
     try {
       assert.throws(() => buildWebsiteBundle(workspace), isEperm);
     } finally {
-      fs.lstatSync = realLstatSync;
+      Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
     }
     assertPlain(preview);
     assert.equal(fs.readFileSync(preview, 'utf8'), LOCAL);

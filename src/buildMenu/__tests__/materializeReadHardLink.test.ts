@@ -80,18 +80,18 @@ function unchanged(file: string, outsideFile: string, bytes: string): void {
 function epermAfter(file: string, skip: number, run: () => void): void {
   const real = fs.lstatSync;
   let seen = 0;
-  fs.lstatSync = ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+  Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
     if (path.resolve(String(target)) !== path.resolve(file)) return real(target, options);
     seen += 1;
     if (seen <= skip) return real(target, options);
     const error = new Error('operation not permitted') as NodeJS.ErrnoException;
     error.code = 'EPERM';
     throw error;
-  }) as typeof fs.lstatSync;
+  }) as typeof fs.lstatSync });
   try {
     assert.throws(run, isEperm);
   } finally {
-    fs.lstatSync = real;
+    Object.defineProperty(fs, 'lstatSync', { value: real });
   }
 }
 

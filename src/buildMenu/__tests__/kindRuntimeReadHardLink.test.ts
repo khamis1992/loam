@@ -377,14 +377,14 @@ test('lstat EPERM is not swallowed before the report, spec, or manifest read', a
     materialize({ selection: { kind: 'automation' }, workspace: reportRoot, title: 'روتين' });
     fs.writeFileSync(reportFile, reportBytes);
     const resolved = path.resolve(reportFile);
-    fs.lstatSync = ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+    Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
       if (path.resolve(String(target)) === resolved) {
         const error = new Error('operation not permitted') as NodeJS.ErrnoException;
         error.code = 'EPERM';
         throw error;
       }
       return realLstatSync(target, options);
-    }) as typeof fs.lstatSync;
+    }) as typeof fs.lstatSync });
     const watch = watchRead(reportFile);
     let lease: unknown;
     try {
@@ -404,7 +404,7 @@ test('lstat EPERM is not swallowed before the report, spec, or manifest read', a
     assert.deepEqual(fs.readFileSync(reportFile), reportBytes);
     assert.deepEqual(exeFiles(reportRoot), []);
   } finally {
-    fs.lstatSync = realLstatSync;
+    Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
     fs.rmSync(reportRoot, { recursive: true, force: true });
   }
 
@@ -416,14 +416,14 @@ test('lstat EPERM is not swallowed before the report, spec, or manifest read', a
     materialize({ selection: { kind: 'automation' }, workspace: specRoot, title: 'روتين' });
     const specBytes = fs.readFileSync(specFile);
     const resolved = path.resolve(specFile);
-    fs.lstatSync = ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+    Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
       if (path.resolve(String(target)) === resolved) {
         const error = new Error('operation not permitted') as NodeJS.ErrnoException;
         error.code = 'EPERM';
         throw error;
       }
       return realLstatSync(target, options);
-    }) as typeof fs.lstatSync;
+    }) as typeof fs.lstatSync });
     const watch = watchRead(specFile);
     let lease: unknown;
     try {
@@ -441,7 +441,7 @@ test('lstat EPERM is not swallowed before the report, spec, or manifest read', a
     assert.deepEqual(fs.readFileSync(specFile), specBytes);
     assert.deepEqual(exeFiles(specRoot), []);
   } finally {
-    fs.lstatSync = realLstatSync;
+    Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
     fs.rmSync(specRoot, { recursive: true, force: true });
   }
 
@@ -454,14 +454,14 @@ test('lstat EPERM is not swallowed before the report, spec, or manifest read', a
     const manifestBytes = fs.readFileSync(manifestFile);
     const before = artifactNames(manifestRoot);
     const resolved = path.resolve(manifestFile);
-    fs.lstatSync = ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+    Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
       if (path.resolve(String(target)) === resolved) {
         const error = new Error('operation not permitted') as NodeJS.ErrnoException;
         error.code = 'EPERM';
         throw error;
       }
       return realLstatSync(target, options);
-    }) as typeof fs.lstatSync;
+    }) as typeof fs.lstatSync });
     const watch = watchRead(manifestFile);
     let artifact: unknown;
     try {
@@ -481,7 +481,7 @@ test('lstat EPERM is not swallowed before the report, spec, or manifest read', a
     assert.deepEqual(fs.readFileSync(manifestFile), manifestBytes);
     assert.deepEqual(exeFiles(manifestRoot), []);
   } finally {
-    fs.lstatSync = realLstatSync;
+    Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
     fs.rmSync(manifestRoot, { recursive: true, force: true });
   }
 });

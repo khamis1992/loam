@@ -28,7 +28,7 @@ test('each arabic prompt template is local and does not claim a model wrote it',
   for (const profile of profiles) {
     const prompt = arabicPromptTemplate(profile.kind);
     assert.equal(typeof prompt, 'string', profile.kind);
-    assert.equal(prompt instanceof Promise, false, profile.kind);
+    assert.equal(prompt.constructor !== Promise, true, profile.kind);
     assert.match(prompt, /[\u0600-\u06FF]/, profile.kind);
     assert.match(prompt, /قالب تعليمات محلي/, profile.kind);
     assert.equal(prompt.includes('https://'), false, profile.kind);

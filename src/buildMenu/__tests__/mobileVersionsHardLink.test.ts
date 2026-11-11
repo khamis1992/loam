@@ -111,7 +111,7 @@ test('lstat EPERM is not swallowed and the outside bytes stay', () => {
     const realLstatSync = fs.lstatSync;
     const resolved = path.resolve(file);
     let seen = 0;
-    fs.lstatSync = ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+    Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
       if (path.resolve(String(target)) === resolved) {
         seen += 1;
         if (seen > 1) {
@@ -121,12 +121,12 @@ test('lstat EPERM is not swallowed and the outside bytes stay', () => {
         }
       }
       return realLstatSync(target, options);
-    }) as typeof fs.lstatSync;
+    }) as typeof fs.lstatSync });
     try {
       assert.throws(() => atomicJson(root, versionsName, { saved: 2 }), isEperm);
       assert.equal(seen > 1, true);
     } finally {
-      fs.lstatSync = realLstatSync;
+      Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
     }
     assert.equal(realLstatSync(file).nlink, 1);
     assert.equal(realLstatSync(file).isSymbolicLink(), false);

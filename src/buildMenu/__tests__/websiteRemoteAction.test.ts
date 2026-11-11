@@ -144,7 +144,7 @@ function savedRecover(html: string, key: string): string {
     getElementById: (id: string) => node(id),
     querySelectorAll: () => [],
     querySelector: (selector: string) => {
-      if (selector === 'form') return { set onsubmit(_value: unknown) { return undefined; } };
+      if (selector === 'form') return { set onsubmit(_value: unknown) { } };
       return { value: '' };
     },
   };

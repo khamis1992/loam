@@ -24,6 +24,7 @@ const { chromium } = require('playwright') as {
 interface GamePage {
   goto(url: string): Promise<unknown>;
   reload(): Promise<void>;
+  close(): Promise<void>;
   keyboard: { down(key: string): Promise<void>; up(key: string): Promise<void>; press(key: string): Promise<void> };
   locator(selector: string, options?: { hasText: string }): { click(): Promise<void>; waitFor(options: { timeout: number }): Promise<void>; textContent(): Promise<string | null>; fill(value: string): Promise<void>; inputValue(): Promise<string> };
   evaluate<T>(expression: string | (() => T)): Promise<T>;

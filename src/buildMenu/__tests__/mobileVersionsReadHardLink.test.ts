@@ -146,7 +146,7 @@ function laterLstat(file: string, code: 'EPERM' | 'EACCES', run: () => void): vo
   const realReadFileSync = fs.readFileSync;
   let seen = 0;
   let reads = 0;
-  fs.lstatSync = ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+  Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
     if (samePath(String(target), file)) {
       seen += 1;
       if (seen > 1) {
@@ -156,7 +156,7 @@ function laterLstat(file: string, code: 'EPERM' | 'EACCES', run: () => void): vo
       }
     }
     return realLstatSync(target, options);
-  }) as typeof fs.lstatSync;
+  }) as typeof fs.lstatSync });
   fs.readFileSync = ((target: fs.PathOrFileDescriptor, options?: Parameters<typeof fs.readFileSync>[1]) => {
     if (typeof target !== 'number' && samePath(String(target), file)) reads += 1;
     return realReadFileSync(target, options);
@@ -166,7 +166,7 @@ function laterLstat(file: string, code: 'EPERM' | 'EACCES', run: () => void): vo
     assert.equal(seen > 1, true);
     assert.equal(reads, 0);
   } finally {
-    fs.lstatSync = realLstatSync;
+    Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
     fs.readFileSync = realReadFileSync;
   }
 }

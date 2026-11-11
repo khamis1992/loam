@@ -96,7 +96,7 @@ test('lstat EPERM is not swallowed before write', () => {
       }
       return realLstatSync(target, options);
     }) as typeof fs.lstatSync;
-    fs.lstatSync = patched;
+    Object.defineProperty(fs, 'lstatSync', { value: patched });
     try {
       assert.throws(() => store.write('notes.md', 'تغيير'), isEperm);
       assert.equal(calls > 1, true);
@@ -104,7 +104,7 @@ test('lstat EPERM is not swallowed before write', () => {
       assert.deepEqual(fs.readFileSync(file), previous);
       assert.deepEqual(fs.readdirSync(root), ['notes.md']);
     } finally {
-      fs.lstatSync = realLstatSync;
+      Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
     }
   });
 });

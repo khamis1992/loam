@@ -68,14 +68,14 @@ test('lstat EPERM is not swallowed', () => {
     error.code = 'EPERM';
     throw error;
   }) as typeof fs.lstatSync;
-  fs.lstatSync = patched;
+  Object.defineProperty(fs, 'lstatSync', { value: patched });
   try {
     assert.throws(
       () => allowNavigation(pathToFileURL(page).href, root),
       (error: unknown) => Boolean(error && typeof error === 'object' && (error as NodeJS.ErrnoException).code === 'EPERM'),
     );
   } finally {
-    fs.lstatSync = realLstatSync;
+    Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
     fs.rmSync(root, { recursive: true, force: true });
   }
 });

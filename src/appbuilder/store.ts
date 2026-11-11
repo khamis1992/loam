@@ -2,7 +2,7 @@
 // ensureAppBuilderSchema(), and row mappers for app_projects. Later waves extend
 // the mappers to every table as their features land.
 import { randomBytes } from "node:crypto";
-import { database } from "../server/sqliteStore.js";
+import { database, onDatabaseReset } from "../server/sqliteStore.js";
 import type {
   AppProject, AppProjectSettings, AppRunFlavor, AppTaskAssignment, AppVersion, AssignmentStatus,
   PlanDocument, PlanDraft, PlanDraftStatus, QuestionAnswer, QuestionsCard, RaceBranch, RaceRun,
@@ -198,6 +198,7 @@ const APP_TABLES = [
 ];
 
 let schemaReady = false;
+onDatabaseReset(() => { schemaReady = false; });
 
 /** Idempotent: CREATE … IF NOT EXISTS for the 13 app_ tables; stamps appbuilder.schema=1.
  *  Guarded ALTERs migrate tables created by earlier revisions (§4.13 race wiring,

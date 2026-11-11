@@ -153,12 +153,12 @@ test('readJson lets EPERM and EACCES from lstat escape', () => {
         error.code = code;
         throw error;
       }) as typeof fs.lstatSync;
-      fs.lstatSync = patched;
+      Object.defineProperty(fs, 'lstatSync', { value: patched });
       try {
         assert.throws(() => readJson(file, FALLBACK), isCode(code));
         assert.equal(realLstatSync(file).nlink, 1);
       } finally {
-        fs.lstatSync = realLstatSync;
+        Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
       }
       assert.equal(fs.readFileSync(file, 'utf8'), JSON.stringify(STORED));
     });

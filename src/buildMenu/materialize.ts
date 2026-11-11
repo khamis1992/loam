@@ -464,7 +464,7 @@ function remoteMarkup(html: string): boolean {
   if (/[\s/.](?:formaction|href|action)\s*=\s*['"]?\s*(?:\/\/|data:|file:|blob:|(?:mailto|tel|sms|intent|market)\s*:)/i.test(markup)) return true;
   if (containsHandset(markup)) return true;
   const outside = markup.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
-  return /\son[a-z]+\s*=/i.test(outside);
+  return (outside.match(/<[^>]*>/g) ?? []).some((tag) => /\son[a-z]+\s*=/i.test(tag));
 }
 
 function remoteScriptSource(source: string): boolean {

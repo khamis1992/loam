@@ -72,16 +72,16 @@ function absentWebsite(workspace: string): void {
 
 function refuseLstat(file: string, code: 'EPERM' | 'EACCES', run: () => void): void {
   const real = fs.lstatSync;
-  fs.lstatSync = ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+  Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
     if (path.resolve(String(target)) !== path.resolve(file)) return real(target, options);
     const error = new Error('marker stat refused') as NodeJS.ErrnoException;
     error.code = code;
     throw error;
-  }) as typeof fs.lstatSync;
+  }) as typeof fs.lstatSync });
   try {
     assert.throws(run, isCode(code));
   } finally {
-    fs.lstatSync = real;
+    Object.defineProperty(fs, 'lstatSync', { value: real });
   }
 }
 

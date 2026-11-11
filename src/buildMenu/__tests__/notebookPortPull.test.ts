@@ -60,8 +60,8 @@ function blockSpawns(): { calls: string[][]; restore: () => void } {
   proto.spawn = function (this: ChildProcess, options: SpawnOptions): unknown {
     calls.push([options?.file ?? '', ...(options?.args ?? [])]);
     this.stdout = new EventEmitter() as ChildProcess['stdout'];
-    this.stderr = Object.assign(new EventEmitter(), { resume() { return undefined; } }) as ChildProcess['stderr'];
-    this.stdin = { write() { return true; }, end() { return this; } } as ChildProcess['stdin'];
+    this.stderr = Object.assign(new EventEmitter(), { resume() { return undefined; } }) as unknown as ChildProcess['stderr'];
+    this.stdin = { write() { return true; }, end() { return this; } } as unknown as ChildProcess['stdin'];
     process.nextTick(() => this.emit('exit', 1, null));
     return undefined;
   };
@@ -116,10 +116,7 @@ test('executeCell does not pull, accept latest, or start a container while the i
         assert.equal(fs.readFileSync(file).equals(before), true, image ?? 'unset');
       }
     }
-    assert.deepEqual(watch.calls, []);
-    assert.equal(watch.calls.some((args) => args.some((arg) => arg.toLowerCase().includes('pull'))), false);
-    assert.equal(watch.calls.some((args) => args.some((arg) => arg.toLowerCase().includes('latest'))), false);
-    assert.equal(watch.calls.some((args) => args.includes('run')), false);
+    assert.equal(watch.calls.length, 0);
     assert.equal(fs.existsSync(path.join(root, 'app', 'data')), false);
     assert.equal(fs.existsSync(path.join(root, 'app', 'output')), false);
     assert.equal(fs.existsSync(path.join(root, '.loam', 'build-menu', 'kernel-lease.json')), false);

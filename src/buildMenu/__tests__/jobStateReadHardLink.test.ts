@@ -347,7 +347,7 @@ test('EPERM from the active record lstat escapes before parse', () => {
     assert.equal(fs.lstatSync(state).nlink, 1);
     const realLstatSync = fs.lstatSync;
     let seen = 0;
-    fs.lstatSync = ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+    Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
       if (samePath(String(target), state)) {
         seen += 1;
         if (seen > 1) {
@@ -357,12 +357,12 @@ test('EPERM from the active record lstat escapes before parse', () => {
         }
       }
       return realLstatSync(target, options);
-    }) as typeof fs.lstatSync;
+    }) as typeof fs.lstatSync });
     try {
       assert.throws(() => recoverActiveJob(workspace), isEperm);
       assert.equal(seen > 1, true);
     } finally {
-      fs.lstatSync = realLstatSync;
+      Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
     }
     assert.deepEqual(fs.readFileSync(state), previous);
     assert.equal(JSON.parse(fs.readFileSync(state, 'utf8')).phase, 'running');
@@ -406,18 +406,18 @@ test('EPERM from a pointer lstat escapes', () => {
     const body = `${JSON.stringify({ workspace: path.resolve(workspace) })}\n`;
     fs.writeFileSync(pointer, body);
     const realLstatSync = fs.lstatSync;
-    fs.lstatSync = ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+    Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
       if (samePath(String(target), pointer)) {
         const error = new Error('operation not permitted') as NodeJS.ErrnoException;
         error.code = 'EPERM';
         throw error;
       }
       return realLstatSync(target, options);
-    }) as typeof fs.lstatSync;
+    }) as typeof fs.lstatSync });
     try {
       assert.throws(() => recoverRememberedJobs(registry), isEperm);
     } finally {
-      fs.lstatSync = realLstatSync;
+      Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
     }
     assert.equal(fs.readFileSync(pointer, 'utf8'), body);
     assert.deepEqual(fs.readFileSync(state), running);

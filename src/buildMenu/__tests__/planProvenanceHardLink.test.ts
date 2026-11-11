@@ -137,7 +137,7 @@ test('an existing brief or plan with nlink greater than 1 is refused before writ
 test('a new brief and plan still write and the static Arabic prompt is not model output', () => {
   const prompt = arabicPromptTemplate('website');
   assert.equal(typeof prompt, 'string');
-  assert.equal(prompt instanceof Promise, false);
+  assert.equal(prompt.constructor !== Promise, true);
   assert.match(prompt, /قالب تعليمات محلي ثابت/);
   assert.equal(MODEL_CLAIM.test(prompt), false);
   withPair('loam-46-plan-new-', (workspace) => {
@@ -176,7 +176,7 @@ test('a new brief and plan still write and the static Arabic prompt is not model
 function refuseLstat(name: 'brief.txt' | 'plan.json', run: () => void): void {
   const realLstatSync = fs.lstatSync;
   let calls = 0;
-  fs.lstatSync = ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+  Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
     if (destinationName(target) === name) {
       calls += 1;
       const error = new Error('operation not permitted') as NodeJS.ErrnoException;
@@ -184,12 +184,12 @@ function refuseLstat(name: 'brief.txt' | 'plan.json', run: () => void): void {
       throw error;
     }
     return realLstatSync(target, options);
-  }) as typeof fs.lstatSync;
+  }) as typeof fs.lstatSync });
   try {
     assert.throws(run, isEperm);
     assert.equal(calls > 0, true);
   } finally {
-    fs.lstatSync = realLstatSync;
+    Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
   }
 }
 

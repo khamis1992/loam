@@ -186,7 +186,7 @@ test('recoverActiveJob lets EPERM from lstat escape', () => {
     fs.mkdirSync(path.dirname(state), { recursive: true });
     fs.writeFileSync(state, previous);
     assert.equal(realLstatSync(state).nlink, 1);
-    fs.lstatSync = ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+    Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
       if (samePath(String(target), state)) {
         seen += 1;
         if (seen > 1) {
@@ -196,13 +196,13 @@ test('recoverActiveJob lets EPERM from lstat escape', () => {
         }
       }
       return realLstatSync(target, options);
-    }) as typeof fs.lstatSync;
+    }) as typeof fs.lstatSync });
     assert.throws(() => recoverActiveJob(workspace), isEperm);
     assert.equal(seen > 1, true);
     assert.deepEqual(fs.readFileSync(state), previous);
     assert.equal(realLstatSync(state).nlink, 1);
   } finally {
-    fs.lstatSync = realLstatSync;
+    Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
     configureJobRecovery(null);
     resetJobs();
     fs.rmSync(root, { recursive: true, force: true });

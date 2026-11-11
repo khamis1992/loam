@@ -242,7 +242,7 @@ test('openRememberedRoutines lets EPERM from lstat escape', () => {
       error.code = 'EPERM';
       throw error;
     }) as typeof fs.lstatSync;
-    fs.lstatSync = patched;
+    Object.defineProperty(fs, 'lstatSync', { value: patched });
     try {
       const counted = mail();
       assert.throws(
@@ -254,7 +254,7 @@ test('openRememberedRoutines lets EPERM from lstat escape', () => {
       assert.deepEqual(fs.readFileSync(pointer), bytes);
       assertIdle(workspace);
     } finally {
-      fs.lstatSync = realLstatSync;
+      Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
     }
   });
 });

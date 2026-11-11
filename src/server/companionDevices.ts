@@ -273,7 +273,7 @@ class FakeDeviceRunner implements DeviceRunner {
       return { code: 0, stdout: "", stderr: "" };
     }
     if (command.startsWith("grep -c .")) return { code: 0, stdout: "0", stderr: "" };
-    if (command.includes("/proc/meminfo")) return { code: 0, stdout: "MemTotal:       8000000 kB\nMemFree:        4000000 kB\n---\n/dev/sdc 100G 12G 88G 12% /", stderr: "" };
+    if (command.includes("/proc/meminfo")) return { code: 0, stdout: "cpu 100 0 100 700 100 0 0 0\ncpu 150 0 150 900 200 0 0 0\nMemTotal:       8000000 kB\nMemFree:        4000000 kB\n---\n/dev/sdc 100G 12G 88G 12% /", stderr: "" };
     if (command.includes("Filesystem") || command.startsWith("df ")) return { code: 0, stdout: "Filesystem Size Used Avail Use%\n/dev/sdc 100G 12G 88G 12%", stderr: "" };
     return { code: 0, stdout: `fake-ok: ${command.slice(0, 80)}`, stderr: "" };
   }
@@ -1027,18 +1027,32 @@ export class DeviceManager {
     return true;
   }
 
-  async stats(id: string): Promise<{ memoryTotalMB?: number; memoryFreeMB?: number; disk?: string; raw: string } | DeviceOpError> {
+  async stats(id: string): Promise<{ memoryTotalMB?: number; memoryFreeMB?: number; cpuUtilization?: number; disk?: string; diskUsedGB?: number; diskTotalGB?: number; diskUsedPercent?: number; raw: string } | DeviceOpError> {
     const device = getDevice(id);
     if (!device) return { error: "الجهاز غير موجود" };
-    const res = await this.runner.exec(device.osName, DEVICE_USER, "cat /proc/meminfo | head -2; echo ---; df -h / | tail -1", 30_000);
+    const res = await this.runner.exec(device.osName, DEVICE_USER, "head -n 1 /proc/stat; sleep 0.2; head -n 1 /proc/stat; cat /proc/meminfo | head -2; echo ---; df -h / | tail -1", 30_000);
     if (res.code !== 0) return { error: `تعذر قراءة موارد الجهاز: ${res.stderr || "stats exec failed"}` };
     const memTotal = /MemTotal:\s+(\d+) kB/.exec(res.stdout);
     const memFree = /MemFree:\s+(\d+) kB/.exec(res.stdout);
+    const cpu = [...res.stdout.matchAll(/^cpu\s+([\d\s]+)$/gm)]
+      .map((match) => match[1]!.trim().split(/\s+/).map(Number).slice(0, 8))
+      .filter((sample) => sample.length === 8 && sample.every(Number.isFinite));
+    const cpuTicks = cpu.length >= 2 ? cpu[1]!.reduce((sum, value) => sum + value, 0) - cpu[0]!.reduce((sum, value) => sum + value, 0) : 0;
+    const idleTicks = cpu.length >= 2 ? cpu[1]![3]! + cpu[1]![4]! - cpu[0]![3]! - cpu[0]![4]! : 0;
+    const cpuUtilization = cpuTicks > 0 ? Math.max(0, Math.min(100, 100 * (1 - idleTicks / cpuTicks))) : undefined;
     const diskLine = res.stdout.split("---").pop()?.trim() ?? "";
+    const disk = /^\S+\s+([\d.]+)([KMGT])\s+([\d.]+)([KMGT])\s+\S+\s+(\d+)%/i.exec(diskLine);
+    const diskScale = (unit: string | undefined): number => unit ? ({ K: 1 / 1024 / 1024, M: 1 / 1024, G: 1, T: 1024 })[unit.toUpperCase()] ?? 1 : 1;
     return {
       ...(memTotal ? { memoryTotalMB: Math.round(Number(memTotal[1]) / 1024) } : {}),
       ...(memFree ? { memoryFreeMB: Math.round(Number(memFree[1]) / 1024) } : {}),
+      ...(cpuUtilization !== undefined ? { cpuUtilization } : {}),
       ...(diskLine ? { disk: diskLine } : {}),
+      ...(disk ? {
+        diskUsedGB: Math.round(Number(disk[3]) * diskScale(disk[4]) * 10) / 10,
+        diskTotalGB: Math.round(Number(disk[1]) * diskScale(disk[2]) * 10) / 10,
+        diskUsedPercent: Number(disk[5]),
+      } : {}),
       raw: res.stdout.slice(0, 2000),
     };
   }

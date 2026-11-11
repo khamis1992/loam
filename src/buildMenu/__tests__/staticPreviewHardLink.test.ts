@@ -200,7 +200,7 @@ test('EPERM from the preview, notebook, and tuning writers is not swallowed', ()
       }
       return realLstat(target, options);
     }) as typeof fs.lstatSync;
-    fs.lstatSync = patched;
+    Object.defineProperty(fs, 'lstatSync', { value: patched });
     try {
       assert.throws(() => loaded.showSavedCell('cell-1', 'changed-preview'), denied);
       assert.throws(() => loaded.saveNotebookCell('cell-1', 'print(2)\n'), denied);
@@ -212,7 +212,7 @@ test('EPERM from the preview, notebook, and tuning writers is not swallowed', ()
       assert.equal(fs.existsSync(`${notebook}.tmp`), false);
       assert.equal(fs.existsSync(`${tuning}.tmp`), false);
     } finally {
-      fs.lstatSync = realLstat;
+      Object.defineProperty(fs, 'lstatSync', { value: realLstat });
     }
   });
 });

@@ -53,12 +53,12 @@ test('remembered kernel recovery skips an outside, escaped, or symlink pointer a
     assert.equal(originalLstat(symlinkPointer).isSymbolicLink(), false);
     assert.equal(originalLstat(nested).isSymbolicLink(), false);
 
-    fs.lstatSync = ((target: fs.PathLike, options?: fs.StatOptions) => {
+    Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: fs.StatOptions) => {
       if (samePath(path.resolve(String(target)), path.resolve(symlinkPointer))) {
         return { isFile: () => true, isDirectory: () => false, isSymbolicLink: () => true } as fs.Stats;
       }
       return options === undefined ? originalLstat(target) : originalLstat(target, options);
-    }) as typeof fs.lstatSync;
+    }) as typeof fs.lstatSync });
     fs.realpathSync = ((target: fs.PathLike) => {
       const resolved = path.resolve(String(target));
       if (samePath(resolved, path.resolve(nested))) return path.resolve(outside);
@@ -88,7 +88,7 @@ test('remembered kernel recovery skips an outside, escaped, or symlink pointer a
     assert.equal(after.digest, null);
     assert.equal(fs.readFileSync(pinPath).equals(pinBefore), true);
   } finally {
-    fs.lstatSync = originalLstat;
+    Object.defineProperty(fs, 'lstatSync', { value: originalLstat });
     fs.realpathSync = originalRealpath;
     fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(outside, { recursive: true, force: true });

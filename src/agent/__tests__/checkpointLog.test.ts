@@ -26,9 +26,9 @@ const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "loam-checkpointlog-"));
 process.env.LOAM_DATA_DIR = tmpDir;
 process.env.MANUS_LOCAL_DATA_DIR = tmpDir;
 
-import { after as afterSeq } from "../../protocol/eventLog.js";
-import { closeDb, resetDb } from "../../server/sqliteStore.js";
-import {
+const { after: afterSeq } = await import("../../protocol/eventLog.js");
+const { closeDb, resetDb } = await import("../../server/sqliteStore.js");
+const {
   TERMINAL_TOOL_STATES,
   hasUnfinishedToolCall,
   inFlightToolCalls,
@@ -37,11 +37,14 @@ import {
   recordToolCall,
   recordToolResult,
   writeCheckpoint,
-} from "../checkpointLog.js";
-import { requiresReplayConfirmation, type SavedRun } from "../../server/recovery.js";
-import { runAgent } from "../loop.js";
-import { loadConfig } from "../../config.js";
-import { ToolRegistry, type Tool } from "../../tools/registry.js";
+} = await import("../checkpointLog.js");
+const { requiresReplayConfirmation } = await import("../../server/recovery.js");
+const { runAgent } = await import("../loop.js");
+const { loadConfig } = await import("../../config.js");
+const { ToolRegistry } = await import("../../tools/registry.js");
+import type { Tool } from "../../tools/registry.js";
+type ToolRegistry = InstanceType<typeof ToolRegistry>;
+import type { SavedRun } from "../../server/recovery.js";
 import type { ExecutionCheckpoint } from "../checkpoint.js";
 import type { ChatResult, OllamaClient, OllamaToolCall } from "../../ollama.js";
 

@@ -81,7 +81,7 @@ async function withProject(name: string, run: (root: string, outside: string) =>
 }
 
 function plant(root: string, outside: string, parts: string[], bytes: Buffer): { inside: string; outsideFile: string } {
-  const outsideFile = path.join(outside, parts[parts.length - 1]);
+  const outsideFile = path.join(outside, parts.at(-1) ?? '');
   fs.writeFileSync(outsideFile, bytes);
   const inside = path.join(root, ...parts);
   fs.mkdirSync(path.dirname(inside), { recursive: true });
@@ -144,7 +144,7 @@ async function assertEpermUnread(target: string, skip: number, run: () => unknow
     if (typeof filePath !== 'number' && path.resolve(String(filePath)) === resolved) used = true;
     return realRead(...args);
   }) as typeof fs.readFileSync;
-  fs.lstatSync = ((filePath: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+  Object.defineProperty(fs, 'lstatSync', { value: ((filePath: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
     if (path.resolve(String(filePath)) === resolved) {
       seen += 1;
       if (seen > skip) {
@@ -154,14 +154,14 @@ async function assertEpermUnread(target: string, skip: number, run: () => unknow
       }
     }
     return realLstat(filePath, options);
-  }) as typeof fs.lstatSync;
+  }) as typeof fs.lstatSync });
   try {
     await assert.rejects(async () => {
       await run();
     }, isEperm);
   } finally {
     fs.readFileSync = realRead;
-    fs.lstatSync = realLstat;
+    Object.defineProperty(fs, 'lstatSync', { value: realLstat });
   }
   assert.equal(used, false);
   assert.equal(seen > skip, true);

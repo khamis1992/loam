@@ -6,10 +6,10 @@ const nonce = 'ab'.repeat(16);
 const loopback = 'http://127.0.0.1:9/';
 
 test('attachPreviewNonce leaves a result unchanged, rejects a bad nonce, and attaches only with a preview url', () => {
-  const bare = { summary: 'page', previewHtml: '<p></p>' };
+  const bare = {};
   assert.equal(attachPreviewNonce(bare, nonce), bare);
   assert.equal(attachPreviewNonce(bare, 'spawn'), bare);
-  assert.deepEqual(bare, { summary: 'page', previewHtml: '<p></p>' });
+  assert.deepEqual(bare, {});
   assert.equal('previewUrl' in bare, false);
   assert.equal('previewNonce' in bare, false);
 

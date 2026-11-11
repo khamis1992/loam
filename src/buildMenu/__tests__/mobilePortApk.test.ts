@@ -7,6 +7,7 @@ import type { BuildJobContext, BuildManifest } from '../../../packages/shared/sr
 import { BuildMenuError } from '../grants.js';
 import { createMobilePorts } from '../mobile/ports.js';
 import { ProcessLeaseRegistry } from '../processLease.js';
+import { androidEnvironment } from '../../mobile/android/build.js';
 
 function apkFiles(dir: string): string[] {
   if (!fs.existsSync(dir)) return [];
@@ -47,24 +48,23 @@ function context(workspace: string): BuildJobContext {
   };
 }
 
-test('mobile apk export throws before Gradle and writes no apk bytes', async () => {
-  const source = fs.readFileSync(path.resolve('src/buildMenu/mobile/ports.ts'), 'utf8');
-  const gate = source.indexOf("format === 'apk-debug'");
-  const block = source.indexOf('throw new BuildMenuError(', gate);
-  const delegate = source.indexOf('ports.export(', gate);
-  assert.equal(gate >= 0 && block > gate && delegate > block, true);
-  assert.match(source.slice(block, delegate), /missing_requirement|not_an_apk/);
-  assert.equal(/gradle|assembleDebug|startAndroidBuild|\bspawn\b/.test(source), false);
-
+test('mobile apk export honors the Android toolchain and builds through the shared native exporter', { timeout: 720_000 }, async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'loam-mobile-port-apk-'));
   const ports = createMobilePorts({ leases: new ProcessLeaseRegistry(200) });
   const ctx = context(root);
   try {
     await ports.scaffold(ctx);
-    await assert.rejects(ports.export(ctx, 'apk-debug'), refusedApk);
-    assert.deepEqual(apkFiles(root), []);
-    assert.equal(fs.existsSync(path.join(root, '.loam', 'android')), false);
-    assert.equal(fs.existsSync(path.join(root, '.loam', 'build-menu', 'artifacts')), false);
+    if (!androidEnvironment().ready) {
+      await assert.rejects(ports.export(ctx, 'apk-debug'), refusedApk);
+      assert.deepEqual(apkFiles(root), []);
+      assert.equal(fs.existsSync(path.join(root, '.loam', 'android')), false);
+      assert.equal(fs.existsSync(path.join(root, '.loam', 'build-menu', 'artifacts')), false);
+      return;
+    }
+    const artifact = await ports.export(ctx, 'apk-debug');
+    assert.equal(artifact.format, 'apk-debug');
+    assert.ok(artifact.bytes > 10_000);
+    assert.ok(apkFiles(root).length > 0);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

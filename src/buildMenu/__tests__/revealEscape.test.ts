@@ -132,19 +132,19 @@ test('a symlink metadata file throws and returns nothing', () => {
     const metaPath = path.join(artifactsDir(root), `${artifactId}.json`);
     plant(root, 'zip');
     const original = fs.lstatSync.bind(fs);
-    fs.lstatSync = ((target: fs.PathLike, options?: fs.StatOptions) => {
+    Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: fs.StatOptions) => {
       if (samePath(path.resolve(String(target)), path.resolve(metaPath))) {
         return { isFile: () => true, isDirectory: () => false, isSymbolicLink: () => true } as fs.Stats;
       }
       return options === undefined ? original(target) : original(target, options);
-    }) as typeof fs.lstatSync;
+    }) as typeof fs.lstatSync });
     try {
       const seen = fs.lstatSync(metaPath);
       assert.equal(seen.isFile(), true);
       assert.equal(seen.isSymbolicLink(), true);
       assertNothing(() => revealArtifactFile(root, projectId, artifactId), /unsafe_path/);
     } finally {
-      fs.lstatSync = original;
+      Object.defineProperty(fs, 'lstatSync', { value: original });
     }
   });
 });
@@ -154,16 +154,16 @@ test('a symlink artifacts directory throws and returns nothing', () => {
     const dir = artifactsDir(root);
     plant(root, 'zip');
     const original = fs.lstatSync.bind(fs);
-    fs.lstatSync = ((target: fs.PathLike, options?: fs.StatOptions) => {
+    Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: fs.StatOptions) => {
       if (samePath(path.resolve(String(target)), path.resolve(dir))) {
         return { isFile: () => false, isDirectory: () => true, isSymbolicLink: () => true } as fs.Stats;
       }
       return options === undefined ? original(target) : original(target, options);
-    }) as typeof fs.lstatSync;
+    }) as typeof fs.lstatSync });
     try {
       assertNothing(() => revealArtifactFile(root, projectId, artifactId), /unsafe_path/);
     } finally {
-      fs.lstatSync = original;
+      Object.defineProperty(fs, 'lstatSync', { value: original });
     }
   });
 });

@@ -106,13 +106,13 @@ test('readLocalTuning lets EPERM and EACCES from lstat escape', () => {
         error.code = code;
         throw error;
       }) as typeof fs.lstatSync;
-      fs.lstatSync = patched;
+      Object.defineProperty(fs, 'lstatSync', { value: patched });
       try {
         assert.throws(() => readLocalTuning(gameDir), isCode(code));
         assert.equal(realLstatSync(file).nlink, 1);
         assert.equal(fs.readFileSync(file, 'utf8'), LOCAL);
       } finally {
-        fs.lstatSync = realLstatSync;
+        Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
       }
     });
   }

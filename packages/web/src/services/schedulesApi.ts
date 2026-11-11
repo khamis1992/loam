@@ -7,6 +7,9 @@ export interface Schedule {
   enabled?: boolean;
   nextRunAt?: string;
   lastRunAt?: string;
+  lastTaskId?: string;
+  lastStatus?: 'ok' | 'retrying' | 'failed';
+  lastError?: string;
   cron?: string;
   runAt?: string;
   timezone?: string;
@@ -23,6 +26,10 @@ export interface ScheduleDraft {
   intervalSeconds?: number;
   cron?: string;
   at?: string;
+  trigger?: 'webhook' | 'github';
+  webhookSecret?: string;
+  githubEvents?: string[];
+  playbook?: string;
 }
 
 export interface SchedulePatch {

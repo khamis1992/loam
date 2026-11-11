@@ -73,9 +73,9 @@ function mockLstat(match: (target: string) => boolean, stat: fs.Stats): () => vo
     if (match(path.resolve(String(target)))) return stat;
     return options === undefined ? original(target) : original(target, options);
   }) as typeof fs.lstatSync;
-  fs.lstatSync = patched;
+  Object.defineProperty(fs, 'lstatSync', { value: patched });
   return () => {
-    fs.lstatSync = original;
+    Object.defineProperty(fs, 'lstatSync', { value: original });
   };
 }
 
@@ -109,11 +109,11 @@ test('sort skips a symlink photo and does not write outside the root', () => {
     fs.writeFileSync(linked, linkedBytes);
     const originalReaddir = fs.readdirSync.bind(fs);
     const originalCopy = fs.copyFileSync.bind(fs);
-    fs.readdirSync = ((target: fs.PathLike, options?: { withFileTypes?: boolean }) => {
+    fs.readdirSync = ((target: fs.PathLike, options?: { withFileTypes: true }) => {
       const entries = options === undefined ? originalReaddir(target) : originalReaddir(target, options);
       const withTypes = typeof options === 'object' && options !== null && options.withFileTypes === true;
       if (!withTypes || !samePath(path.resolve(String(target)), fixture.root)) return entries;
-      return (entries as fs.Dirent[]).map((entry) => {
+      return (entries as unknown as fs.Dirent[]).map((entry) => {
         if (entry.name !== 'linked.png') return entry;
         return {
           name: 'linked.png',

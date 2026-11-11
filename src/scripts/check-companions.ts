@@ -45,7 +45,7 @@ for (const workMode of WORK_MODES) {
     mode: 'build', workMode: workMode.id, registeredTools: ALL_TOOLS,
   } as Parameters<typeof resolveCompanionCapabilities>[0]);
   const kb = resolved.allow.filter((tool) => tool.startsWith('kb_'));
-  assert.ok(kb.length === COMPANION_SERVICES.find((s) => s.id === 'knowledge')!.tools.length,
+  assert.ok(kb.length === COMPANION_SERVICES.find((s) => s.id === 'knowledge')!.tools.filter((tool) => tool.startsWith('kb_')).length,
     `work mode ${workMode.id} must grant the knowledge service (kb_*), got ${JSON.stringify(kb)}`);
 }
 
@@ -296,6 +296,8 @@ assert.equal(getDeviceRecord(devId)?.state, 'stopped');
 // 9. stats + journal + delete (explicit confirm required)
 const statsRes = await dm.stats(devId);
 assert.ok(!('error' in statsRes) && statsRes.memoryTotalMB! > 0, JSON.stringify(statsRes));
+assert.ok(!('error' in statsRes) && statsRes.cpuUtilization === 25, JSON.stringify(statsRes));
+assert.ok(!('error' in statsRes) && statsRes.diskUsedGB === 12 && statsRes.diskTotalGB === 100 && statsRes.diskUsedPercent === 12, JSON.stringify(statsRes));
 const journal = devicesModule.readJournal(getDeviceRecord(devId)!);
 assert.ok(journal.some((e) => e.event === 'create' && e.ok));
 assert.ok(journal.some((e) => e.event === 'control-taken'));
@@ -383,11 +385,13 @@ console.log('Companions stage 3 (services): tasks service verified end-to-end ag
     model: 'test-model', fallbackModel: 'test-model', ollamaUrl: 'http://127.0.0.1:9',
     workspace: path.join(matrixTmp, 'ws'),
     computerUse: { enabled: true, screenshotDir: path.join(matrixTmp, 'shots') },
-    memory: { enabled: false }, selfImprove: { enabled: false }, mcpServers: {},
+    memory: { enabled: false }, selfImprove: { enabled: false }, autoApprove: true, mcpServers: {},
   }));
   fs.mkdirSync(path.join(matrixTmp, 'ws'), { recursive: true });
   const { loadConfig } = await import('../config.js');
   const cfg = loadConfig();
+  const { updateSettings } = await import('../server/settings.js');
+  updateSettings({ autoApprove: true });
   const { buildRuntime } = await import('../setup/runtime.js');
   const rt = await buildRuntime(cfg);
   const reg = rt.registry;
@@ -823,7 +827,7 @@ import http from 'node:http';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 
-const captures: Array<{ tools: string[]; system: string; lastRole: string }> = [];
+const captures: Array<{ tools: string[]; system: string; lastRole: string; lastUser: string }> = [];
 const inFlight = new Set<string>();
 let browserOverlap = false;
 const isoPageIds = new Map<string, string>();
@@ -846,12 +850,13 @@ const model = http.createServer(async (req, res) => {
     tools: (body.tools ?? []).map((t: { function?: { name?: string } }) => t.function?.name ?? '').filter(Boolean),
     system: messages[0]?.content ?? '',
     lastRole: messages.at(-1)?.role ?? '',
+    lastUser: messages.filter((m) => m.role === 'user').at(-1)?.content.slice(0, 500) ?? '',
   });
   // Own-device runs actually exercise a device tool before finishing; automate-mode
   // runs exercise the new tasks service end-to-end.
   const isoAgent = /متصفح معزول ([^\s"])/.exec(messages[0]?.content ?? '')?.[1];
   const isOwnDevice = (messages[0]?.content ?? '').includes('جهازك الافتراضي المعزول');
-  const isAutomate = !isoAgent && (messages[0]?.content ?? '').includes('سجّل الأدلة');
+  const isAutomate = !isoAgent && messages.some((m) => m.role === 'user' && m.content.includes('أنشئ مهمة تقرير أسبوعي')) && (body.tools ?? []).some((t: { function?: { name?: string } }) => t.function?.name === 'task_create');
   const afterTool = messages.at(-1)?.role === 'tool';
   let payload: { role: string; content: string; tool_calls?: unknown[] };
   const canDelegate = (body.tools ?? []).some((t: { function?: { name?: string } }) => t.function?.name === 'companion_delegate');
@@ -904,13 +909,16 @@ const workspace = path.join(tmp, 'workspace'); fs.mkdirSync(workspace);
 const probe = http.createServer(); probe.listen(0, '127.0.0.1'); await once(probe, 'listening');
 const port = (probe.address() as import('node:net').AddressInfo).port;
 await new Promise<void>((resolve) => probe.close(() => resolve()));
+probe.listen(0, '127.0.0.1'); await once(probe, 'listening');
+const protocolPort = (probe.address() as import('node:net').AddressInfo).port;
+await new Promise<void>((resolve) => probe.close(() => resolve()));
 const base = `http://127.0.0.1:${port}`;
 const config = path.join(tmp, 'config.json');
 fs.writeFileSync(config, JSON.stringify({
   model: 'test-model', fallbackModel: 'test-model', ollamaUrl: `http://127.0.0.1:${modelPort}`,
   workspace, computerUse: { enabled: false, screenshotDir: path.join(tmp, 'shots') },
   memory: { enabled: false }, screen: { enabled: false }, selfImprove: { enabled: false },
-  orchestrator: { enabled: false }, mcpServers: {},
+  orchestrator: { enabled: false }, failover: { providers: [] }, mcpServers: {},
 }));
 
 let child: ChildProcess | undefined;
@@ -924,7 +932,7 @@ const start = async (): Promise<void> => {
   logs = '';
   child = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
     cwd: path.resolve(import.meta.dirname, '../..'), windowsHide: true,
-    env: { ...process.env, MANUS_LOCAL_CONFIG: config, MANUS_LOCAL_DATA_DIR: path.join(tmp, 'data'), MANUS_LOCAL_PORT: String(port), MANUS_LOCAL_EVALS_DIR: path.join(tmp, 'evals'), MANUS_LOCAL_SKILLS_DIR: path.join(tmp, 'skills'), LOAM_DEVICE_RUNNER: 'fake', LOAM_REMOTE_KEY: 'gate-remote-key' },
+    env: { ...process.env, MANUS_LOCAL_CONFIG: config, LOAM_CONFIG: config, MANUS_LOCAL_DATA_DIR: path.join(tmp, 'data'), LOAM_DATA_DIR: path.join(tmp, 'data'), MANUS_LOCAL_PORT: String(port), AS_PROTOCOL_PORT: String(protocolPort), LOAM_AUTH_DISABLED: 'true', MANUS_LOCAL_EVALS_DIR: path.join(tmp, 'evals'), MANUS_LOCAL_SKILLS_DIR: path.join(tmp, 'skills'), LOAM_DEVICE_RUNNER: 'fake', LOAM_REMOTE_KEY: 'gate-remote-key' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   child.stdout?.on('data', (c) => { logs += c; }); child.stderr?.on('data', (c) => { logs += c; });
@@ -940,7 +948,7 @@ const stop = async (): Promise<void> => {
 
 type Ev = Record<string, unknown>;
 const runChat = async (body: Record<string, unknown>): Promise<Ev[]> => {
-  const res = await fetch(`${base}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const res = await fetch(`${base}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: 'test-model', ...body }), signal: AbortSignal.timeout(60_000) });
   assert.ok(res.ok && res.body, `chat http ${res.status}`);
   const events: Ev[] = [];
   const reader = res.body!.getReader();
@@ -985,7 +993,7 @@ try {
 
   // C. default chat: no computer tools reach the model, workmode event says loam.
   captures.length = 0;
-  const eventsDefault = await runChat({ prompt: 'اقرأ الملفات' });
+  const eventsDefault = await runChat({ prompt: 'أجب باختصار' });
   assert.ok(eventsDefault.some((e) => e.type === 'done'), `default run must finish, got ${JSON.stringify(eventsDefault.slice(-2))}`);
   assert.ok(eventsDefault.some((e) => e.type === 'workmode' && e.workMode === 'loam'), 'workmode event must be emitted');
   assert.ok(captures.length > 0 && captures.every((c) => !c.tools.includes('computer_click')), 'computer tools must not reach a default run');
@@ -1620,6 +1628,9 @@ try {
     console.log('Companions vault+approvals (HTTP): a real user_device click waited for the user, the denial blocked execution with an honest message, the approvals center served the decision; and a secret traveled vault→device with the API never echoing values and the tool confirming no model exposure.');
     console.log('Companions stage 5 (HTTP): voice records round-trip; a coordinator actually delegated through the pipeline and the target companion completed the task under its own identity; per-companion usage counts real runs/tool calls with a local-cost note; and project handover moved tasks + transferred memory context explicitly.');
     console.log('Companions stage 4 (HTTP): companion memory verified over the API (user-source entry, edit, supersede, export) and injected into the agent\'s own runs (context + memory tools); a routine created with agentId ran immediately via run-now and its task landed under that companion; and an own_device routine executed for real on the companion\'s device (workmode deviceId + successful device_exec in the task steps).');
+} catch (error) {
+  console.error(JSON.stringify({ requests: captures.map((capture) => ({ lastRole: capture.lastRole, lastUser: capture.lastUser, hasTaskCreate: capture.tools.includes('task_create') })), serverLogs: logs.slice(-3000) }, null, 2));
+  throw error;
 } finally {
   await stop();
 }

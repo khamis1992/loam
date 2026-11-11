@@ -188,20 +188,20 @@ test('lstat EPERM is not swallowed and the report bytes stay', () => {
     assert.equal(fs.lstatSync(file).nlink, 1);
     const realLstatSync = fs.lstatSync;
     const resolved = path.resolve(file);
-    fs.lstatSync = ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+    Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
       if (path.resolve(String(target)) === resolved) {
         const error = new Error('operation not permitted') as NodeJS.ErrnoException;
         error.code = 'EPERM';
         throw error;
       }
       return realLstatSync(target, options);
-    }) as typeof fs.lstatSync;
+    }) as typeof fs.lstatSync });
     const mail = connector();
     try {
       assert.throws(() => runLocal(workspace, mail), isEperm);
       assert.equal(mail.calls, 0);
     } finally {
-      fs.lstatSync = realLstatSync;
+      Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
     }
     assert.equal(realLstatSync(file).nlink, 1);
     assert.equal(realLstatSync(file).isSymbolicLink(), false);

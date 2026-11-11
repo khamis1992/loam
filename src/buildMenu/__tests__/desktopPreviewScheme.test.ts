@@ -141,7 +141,7 @@ function boot(useBridge: boolean): Preview {
     value: '',
     addEventListener(_type: string, fn: () => void) { save = fn; },
   };
-  let save: (() => void) | null = null;
+  let save: (() => void) | undefined;
   const error = { hidden: true, textContent: '' };
   const exported = { hidden: true, value: '' };
   const empty = { hidden: true };

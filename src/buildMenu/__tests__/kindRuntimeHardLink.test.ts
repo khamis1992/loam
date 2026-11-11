@@ -275,14 +275,14 @@ test('lstat EPERM is not swallowed before the simulation or source note write', 
     materialize({ selection: { kind: 'mobile' }, workspace: htmlRoot, title: 'جوال' });
     fs.writeFileSync(htmlFile, previous);
     const resolved = path.resolve(htmlFile);
-    fs.lstatSync = ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+    Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
       if (path.resolve(String(target)) === resolved) {
         const error = new Error('operation not permitted') as NodeJS.ErrnoException;
         error.code = 'EPERM';
         throw error;
       }
       return realLstatSync(target, options);
-    }) as typeof fs.lstatSync;
+    }) as typeof fs.lstatSync });
     await assert.rejects(htmlPorts.preview(context(htmlRoot, { action: 'preview' }, 'mobile')), isEperm);
     assert.equal(htmlLease.started(), 0);
     assert.equal(realLstatSync(htmlFile).nlink, 1);
@@ -290,7 +290,7 @@ test('lstat EPERM is not swallowed before the simulation or source note write', 
     assert.equal(realLstatSync(htmlFile).isFile(), true);
     assert.deepEqual(fs.readFileSync(htmlFile), previous);
   } finally {
-    fs.lstatSync = realLstatSync;
+    Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
     fs.rmSync(htmlRoot, { recursive: true, force: true });
   }
 
@@ -298,14 +298,14 @@ test('lstat EPERM is not swallowed before the simulation or source note write', 
   const noteLease = blockedLeases();
   const notePorts = createKindPorts(mobileProfile, { leases: noteLease.leases });
   materialize({ selection: { kind: 'mobile' }, workspace: noteRoot, title: 'جوال' });
-  fs.lstatSync = ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+  Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
     if (String(target).endsWith('.source.json')) {
       const error = new Error('operation not permitted') as NodeJS.ErrnoException;
       error.code = 'EPERM';
       throw error;
     }
     return realLstatSync(target, options);
-  }) as typeof fs.lstatSync;
+  }) as typeof fs.lstatSync });
   try {
     await assert.rejects(
       notePorts.export(context(noteRoot, { action: 'package', format: 'source-zip' }, 'mobile'), 'source-zip'),
@@ -317,7 +317,7 @@ test('lstat EPERM is not swallowed before the simulation or source note write', 
     assert.equal(names.some((name) => name.endsWith('.source.json')), false);
     assert.deepEqual(exeFiles(noteRoot), []);
   } finally {
-    fs.lstatSync = realLstatSync;
+    Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
     fs.rmSync(noteRoot, { recursive: true, force: true });
   }
 });

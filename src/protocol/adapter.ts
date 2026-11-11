@@ -231,7 +231,9 @@ export async function startProtocolAdapter(deps: ProtocolAdapterDeps): Promise<P
         if (p.startsWith("/api/") && p !== "/api/health" && (req.method === "GET" || writeMethods.has(req.method ?? ""))) {
           const auth = req.headers.authorization?.replace(/^Bearer /, "");
           const userUid = auth ? tokenToUserUid(auth) ?? (consumeLoginToken(auth) ? "u_1" : null) : null;
-          if (!userUid) {
+          // External deliveries authenticate downstream with their per-automation HMAC secret.
+          const publicAutomationTrigger = req.method === "POST" && p.startsWith("/api/automations/trigger/");
+          if (!userUid && !publicAutomationTrigger) {
             sendJson(res, 401, { code: "unauthenticated", message: "login required" });
             return;
           }

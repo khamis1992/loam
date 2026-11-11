@@ -85,8 +85,8 @@ test('an aborted ready wait returns before the timeout', async () => {
 
 test('a native exit is reported once and a stopped window is not', () => {
   const child = new EventEmitter() as ChildProcess;
-  child.exitCode = null;
-  child.signalCode = null;
+  Object.defineProperty(child, 'exitCode', { value: null });
+  Object.defineProperty(child, 'signalCode', { value: null });
   let exits = 0;
   const lease = openNativeLease('native_exit', child, false);
   watchNativeExit(lease, () => { exits += 1; });
@@ -94,8 +94,8 @@ test('a native exit is reported once and a stopped window is not', () => {
   child.emit('exit', 1, null);
   assert.equal(exits, 1);
   const quietChild = new EventEmitter() as ChildProcess;
-  quietChild.exitCode = null;
-  quietChild.signalCode = null;
+  Object.defineProperty(quietChild, 'exitCode', { value: null });
+  Object.defineProperty(quietChild, 'signalCode', { value: null });
   const quiet = openNativeLease('native_quiet', quietChild, false);
   quiet.stopped = true;
   let ignored = 0;

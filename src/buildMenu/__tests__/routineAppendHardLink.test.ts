@@ -275,19 +275,19 @@ test('lstat EPERM is not swallowed and the file bytes stay', () => {
     assert.equal(fs.lstatSync(readFile).nlink, 1);
     const realLstatSync = fs.lstatSync;
     const deny = new Set([path.resolve(appendFile), path.resolve(readFile)]);
-    fs.lstatSync = ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+    Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
       if (deny.has(path.resolve(String(target)))) {
         const error = new Error('operation not permitted') as NodeJS.ErrnoException;
         error.code = 'EPERM';
         throw error;
       }
       return realLstatSync(target, options);
-    }) as typeof fs.lstatSync;
+    }) as typeof fs.lstatSync });
     try {
       assert.throws(() => writeProjectText(workspace, 'runs.jsonl', 'nope\n', true), isEperm);
       assert.throws(() => recordPreview(workspace), isEperm);
     } finally {
-      fs.lstatSync = realLstatSync;
+      Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
     }
     assert.equal(realLstatSync(appendFile).nlink, 1);
     assert.equal(realLstatSync(appendFile).isSymbolicLink(), false);

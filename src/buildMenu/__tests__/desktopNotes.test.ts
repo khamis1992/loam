@@ -86,7 +86,7 @@ test('a generated desktop window saves through the notes bridge and a widget kee
     const error = { hidden: true, textContent: '' };
     const exported = { hidden: true, value: '' };
     const empty = { hidden: true };
-    let onInput: (() => void) | null = null;
+    let onInput: (() => void) | undefined;
     const document = {
       querySelector(selector: string) {
         switch (selector) {

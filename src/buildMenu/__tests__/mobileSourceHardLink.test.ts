@@ -191,7 +191,7 @@ test('lstat EPERM is not swallowed before a worktree write', () => {
   const resolved = path.resolve(file);
   const realLstatSync = fs.lstatSync;
   let hits = 0;
-  fs.lstatSync = ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+  Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
     if (path.resolve(String(target)) === resolved) {
       hits += 1;
       if (hits > 1) {
@@ -201,7 +201,7 @@ test('lstat EPERM is not swallowed before a worktree write', () => {
       }
     }
     return realLstatSync(target, options);
-  }) as typeof fs.lstatSync;
+  }) as typeof fs.lstatSync });
   try {
     assert.throws(() => writeWorktreeFile(root, 'web/app.js', REPLACED), isEperm);
     assert.equal(hits > 1, true);
@@ -211,7 +211,7 @@ test('lstat EPERM is not swallowed before a worktree write', () => {
     assert.deepEqual(fs.readFileSync(outsideFile), previous);
     assert.deepEqual(apkFiles(root), []);
   } finally {
-    fs.lstatSync = realLstatSync;
+    Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
     removePair(root, outside);
   }
 });
@@ -228,7 +228,7 @@ test('lstat EPERM is not swallowed before a generated write', async () => {
     assertPlain(file);
     const resolved = path.resolve(file);
     let hits = 0;
-    fs.lstatSync = ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
+    Object.defineProperty(fs, 'lstatSync', { value: ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
       if (path.resolve(String(target)) === resolved) {
         hits += 1;
         if (hits > 1) {
@@ -238,7 +238,7 @@ test('lstat EPERM is not swallowed before a generated write', async () => {
         }
       }
       return realLstatSync(target, options);
-    }) as typeof fs.lstatSync;
+    }) as typeof fs.lstatSync });
     await assert.rejects(materializeSource(root, 'task-source', true), isEperm);
     assert.equal(hits > 1, true);
     assert.equal(realLstatSync(file).nlink, 1);
@@ -246,7 +246,7 @@ test('lstat EPERM is not swallowed before a generated write', async () => {
     assert.deepEqual(fs.readFileSync(file), previous);
     assert.deepEqual(apkFiles(root), []);
   } finally {
-    fs.lstatSync = realLstatSync;
+    Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
     removePair(root, outside);
   }
 });

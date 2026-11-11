@@ -113,6 +113,7 @@ test('a symlink is rejected without creating one and the file bytes stay', () =>
     const realLstatSync = fs.lstatSync;
     const patched = ((target: fs.PathLike, options?: Parameters<typeof fs.lstatSync>[1]) => {
       const stat = realLstatSync(target, options);
+      assert.ok(stat);
       if (path.resolve(String(target)) !== path.resolve(file)) return stat;
       return {
         isSymbolicLink: () => true,
@@ -122,14 +123,14 @@ test('a symlink is rejected without creating one and the file bytes stay', () =>
         size: stat.size,
       } as fs.Stats;
     }) as typeof fs.lstatSync;
-    fs.lstatSync = patched;
+    Object.defineProperty(fs, 'lstatSync', { value: patched });
     try {
       assert.throws(() => notes.saveNotes(root, 'changed'), isUnsafePath);
       assert.equal(realLstatSync(file).isSymbolicLink(), false);
       assert.equal(realLstatSync(file).isFile(), true);
       assert.deepEqual(fs.readFileSync(file), previous);
     } finally {
-      fs.lstatSync = realLstatSync;
+      Object.defineProperty(fs, 'lstatSync', { value: realLstatSync });
     }
   });
 });

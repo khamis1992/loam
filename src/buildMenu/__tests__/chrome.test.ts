@@ -74,7 +74,7 @@ test('an aborted chrome launch does not keep a browser process', async () => {
     const child = Object.assign(new EventEmitter(), { pid: 4242, exitCode: null as number | null }) as ChildProcess;
     child.kill = () => {
       kills += 1;
-      (child as { exitCode: number | null }).exitCode = 0;
+      Object.defineProperty((child as { exitCode: number | null }), 'exitCode', { value: 0 });
       child.emit('exit', 0, null);
       return true;
     };

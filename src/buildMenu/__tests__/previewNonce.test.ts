@@ -5,10 +5,10 @@ import { attachPreviewNonce } from '../previewNonce.js';
 
 test('a preview url keeps the lease nonce and a local page does not', () => {
   const nonce = 'ab'.repeat(16);
-  const withUrl = attachPreviewNonce({ summary: 'http://127.0.0.1:9/', previewUrl: 'http://127.0.0.1:9/' }, nonce);
+  const withUrl = attachPreviewNonce({ previewUrl: 'http://127.0.0.1:9/' }, nonce);
   assert.equal(withUrl.previewNonce, nonce);
   assert.throws(() => attachPreviewNonce({ previewUrl: 'http://127.0.0.1:9/' }, 'spawn'), /invalid_request/);
-  const local = attachPreviewNonce({ summary: 'page', previewHtml: '<p></p>' }, nonce);
+  const local = attachPreviewNonce({}, nonce);
   assert.equal(local.previewNonce, undefined);
   const server = fs.readFileSync(new URL('../serverPorts.ts', import.meta.url), 'utf8');
   assert.match(server, /attachPreviewNonce\(\{ summary: chromePreviewSummary\([\s\S]*\}, lease\.messageNonce\)/);

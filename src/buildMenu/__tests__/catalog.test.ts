@@ -104,7 +104,7 @@ test('each profile has a static Arabic prompt with kind, files, and permission l
   for (const profile of listProfiles()) {
     const prompt = arabicPromptTemplate(profile.kind);
     assert.equal(typeof prompt, 'string');
-    assert.equal(prompt instanceof Promise, false);
+    assert.equal(prompt.constructor !== Promise, true);
     assert.equal(arabicPromptTemplate(profile.kind), prompt);
     assert.match(prompt, /[\u0600-\u06FF]/);
     assert.match(prompt, /قالب تعليمات محلي ثابت/);

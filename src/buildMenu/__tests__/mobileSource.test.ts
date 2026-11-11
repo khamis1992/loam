@@ -142,7 +142,7 @@ test('mobile source export keeps an svg namespace and refuses a remote formactio
       ['javascript%3Aalert(1)', '<!doctype html><a href="javascript%3Aalert(1)">x</a>'],
       ['https%3A//evil.example/web.js', '<!doctype html><a href="https%3A//evil.example/web.js">x</a>'],
     ];
-    for (const [marker, page] of encoded) {
+    for (const [marker = '', page = ''] of encoded) {
       project = readMobile(root);
       assert.ok(project);
       saveSource(root, 'web/index.html', page, project.revision, codeTag(readCode(root)));
