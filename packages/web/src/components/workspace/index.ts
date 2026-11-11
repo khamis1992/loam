@@ -13,6 +13,10 @@ void import('./sheet/register').catch(() => undefined);
 void import('./slides/register').catch(() => undefined);
 void import('./craft/register').catch(() => undefined);
 void import('./canvas/register').catch(() => undefined);
+// Registered synchronously: the web editor is the common case for a built
+// page, and a lazy registration loses the race against the workspace tests
+// (and the first render) often enough to look like the file never opened.
+import './web/register';
 
 export * from './types';
 export {

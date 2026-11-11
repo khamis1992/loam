@@ -30,6 +30,7 @@ const GENERATION_BY_KIND: Record<WorkspaceKind, number> = {
   'loam-recorder': 3,
   'electron-window': 3,
   craft: 3,
+  web: 2,
 };
 
 function generationOf(def: WorkspaceEditorDef): number {

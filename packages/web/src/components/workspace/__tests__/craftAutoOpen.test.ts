@@ -84,8 +84,8 @@ describe('craft routing', () => {
     expect(editorKindForExtension('docx')).toBe('craft');
     expect(editorKindForExtension('csv')).toBe('craft');
     expect(editorKindForExtension('indd')).toBe('craft');
-    // The built-in editors keep owning their plain types when no Craft app does.
-    expect(editorKindForExtension('txt')).toBeNull();
+    // Plain text is a web/code artifact, so the web editor owns it.
+    expect(editorKindForExtension('txt')).toBe('web');
     expect(editorKindForExtension('mp4')).toBe('loam-video');
     expect(editorKindForExtension('webm')).toBe('loam-video');
   });

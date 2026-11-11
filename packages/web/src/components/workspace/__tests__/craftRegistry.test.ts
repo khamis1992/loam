@@ -34,8 +34,11 @@ describe('craft editor registration (cr-03)', () => {
     expect(loaded?.default).toBeTypeOf('function');
   });
 
-  it('leaves non-Craft types to the built-in editors', () => {
-    expect(getEditorForPath('notes/readme.txt')).toBeNull();
+  it('leaves non-web types to the built-in editors', () => {
+    // A file with no extension has no editor to claim it.
     expect(getEditorForPath('Makefile')).toBeNull();
+    // Plain text is a web/code artifact, so the web editor owns it.
+    expect(getEditorForPath('notes/readme.txt')?.kind).toBe('web');
+    expect(getEditorForPath('src/app.tsx')?.kind).toBe('web');
   });
 });

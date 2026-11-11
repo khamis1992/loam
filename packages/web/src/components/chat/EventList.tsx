@@ -1,5 +1,5 @@
 import { memo, useMemo, Fragment, type ReactNode } from 'react';
-import type { ChatEvent, ToolUsedEvent, CascadeTaskClockEvent, AttachmentEvent, ModeEvent, EnvironmentIssueEvent, CacheUsageEvent, ContextPrunedEvent } from '@shared/socket';
+import type { ChatEvent, ToolUsedEvent, CascadeTaskClockEvent, AttachmentEvent, ModeEvent, EnvironmentIssueEvent, CacheUsageEvent, ContextPrunedEvent, NewPlanStepEvent } from '@shared/socket';
 import { t, PRODUCT } from '@/i18n/t';
 import { Markdown } from './Markdown';
 import { DocumentPreviewCard, documentPreview } from './DocumentPreviewCard';
@@ -10,7 +10,7 @@ import { ToolUsedRow } from './ToolUsedRow';
 import { StatusUpdateRow } from './StatusUpdateRow';
 import { CacheUsageRow } from './CacheUsageRow';
 import { ContextPrunedRow } from './ContextPrunedRow';
-import { PlanStepRow, PlanUpdateRow, TodoListRow } from './PlanStep';
+import { PlanStepRow, PlanUpdateRow, TodoListRow, StepGroup } from './PlanStep';
 import { ApprovalCard, AskUserCard, FolderAccessApprovalCard, PlanApprovalCard, type LocalExecutionApprovalRequested, type PlanApprovalRequested } from '@/components/approval';
 import { AttachmentCard } from './AttachmentCard';
 import { craftAppForExtension, craftExtOf, editorKindForExtension } from '@/components/workspace/craft';
@@ -236,11 +236,23 @@ const Row = memo(function Row({
 
 export function EventList({ events, sessionId, socket, onOpenComputer, hibernated, onOpenFile }: EventListProps) {
   const collapsed = useMemo(() => collapseEvents(events as unknown as RenderableEvent[]), [events]);
+  const grouped = useMemo(() => groupEvents(collapsed), [collapsed]);
   const summary = useMemo(() => {
     const tools = collapsed.filter((e): e is ToolUsedEvent => e.type === 'toolUsed');
     return tools.length > 0 ? summarizeTools(tools) : '';
   }, [collapsed]);
-  const firstToolIndex = useMemo(() => collapsed.findIndex((e) => e.type === 'toolUsed'), [collapsed]);
+  // The summary prefixes the first tool row, whether that row is top-level or
+  // nested inside a step group.
+  const firstToolKey = useMemo(() => {
+    for (const item of grouped) {
+      if (item.kind === 'event' && item.event.type === 'toolUsed') return item.event.id;
+      if (item.kind === 'group') {
+        const child = item.children.find((e) => e.type === 'toolUsed');
+        if (child) return child.id;
+      }
+    }
+    return undefined;
+  }, [grouped]);
 
   // J7: hibernated views keep the canonical events but drop the rendered DOM
   // entirely. The status frame is deliberately tiny (one line plus the row
@@ -268,7 +280,33 @@ export function EventList({ events, sessionId, socket, onOpenComputer, hibernate
       data-event-count={events.length}
       className="mx-auto flex w-full max-w-[768px] flex-col gap-2 px-[var(--ui-content-padding-x,24px)] py-6"
     >
-      {collapsed.map((e, i) => {
+      {grouped.map((item) => {
+        if (item.kind === 'group') {
+          return (
+            <li key={item.step.id}>
+              <StepGroup step={item.step}>
+                {item.children.map((child) => {
+                  const isTool = child.type === 'toolUsed';
+                  return (
+                    <div
+                      key={child.id}
+                      className={isTool ? 'cursor-pointer' : undefined}
+                      onClick={isTool ? () => onOpenComputer?.(child as ToolUsedEvent) : undefined}
+                    >
+                      <Row e={child} sessionId={sessionId} socket={socket} onOpenFile={onOpenFile} />
+                      {firstToolKey === child.id && summary ? (
+                        <div className="mt-1 text-sm text-text-tertiary">
+                          {summary} <span aria-hidden="true">›</span>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </StepGroup>
+            </li>
+          );
+        }
+        const e = item.event;
         const isTool = e.type === 'toolUsed';
         const row = (
           <li
@@ -279,7 +317,7 @@ export function EventList({ events, sessionId, socket, onOpenComputer, hibernate
             <Row e={e} sessionId={sessionId} socket={socket} onOpenFile={onOpenFile} />
           </li>
         );
-        if (i === firstToolIndex && summary) {
+        if (firstToolKey === e.id && summary) {
           return (
             <Fragment key={`summary-${e.id}`}>
               <li className="text-sm text-text-tertiary">
@@ -296,6 +334,43 @@ export function EventList({ events, sessionId, socket, onOpenComputer, hibernate
 }
 
 const FINAL_TOOL_STATUSES = new Set<ToolUsedEvent['status']>(['success', 'error', 'failed', 'cancelled', 'stopped', 'rollback']);
+
+/** A rendered timeline item: either a single row or a plan step with nested rows. */
+export type GroupedItem =
+  | { kind: 'event'; event: RenderableEvent }
+  | { kind: 'group'; step: NewPlanStepEvent; children: RenderableEvent[] };
+
+/**
+ * Group tool/status/explanation rows under the plan step that owns them.
+ *
+ * Manus renders a run as a sequence of steps, each with its tool calls nested
+ * underneath. Loam already carries `planStepId` on toolUsed/statusUpdate; this
+ * fold turns the flat event list into that nested timeline. Events without a
+ * matching open step (a direct-mode run, or a status update before the first
+ * step) stay as top-level rows.
+ */
+export function groupEvents(events: RenderableEvent[]): GroupedItem[] {
+  const out: GroupedItem[] = [];
+  const byStepId = new Map<string, { step: NewPlanStepEvent; children: RenderableEvent[] }>();
+  for (const e of events) {
+    if (e.type === 'newPlanStep') {
+      const group = { step: e as NewPlanStepEvent, children: [] as RenderableEvent[] };
+      byStepId.set(group.step.stepId, group);
+      out.push({ kind: 'group', ...group });
+      continue;
+    }
+    const stepId = (e as { planStepId?: string }).planStepId;
+    if (stepId) {
+      const group = byStepId.get(stepId);
+      if (group) {
+        group.children.push(e);
+        continue;
+      }
+    }
+    out.push({ kind: 'event', event: e });
+  }
+  return out;
+}
 
 /** Merge toolUsed argument/start/finish frames for the same action into a single event. */
 export function collapseEvents(events: RenderableEvent[]): RenderableEvent[] {

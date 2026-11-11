@@ -398,6 +398,8 @@ export class OllamaClient {
     signals.push(AbortSignal.timeout(opts.timeoutMs ?? 600_000));
     const signal = signals.length === 1 ? signals[0]! : AbortSignal.any(signals);
 
+    const __t0 = Date.now();
+    let __firstTokenAt = 0;
     const res = await fetch(this.url("/api/chat"), {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -438,6 +440,7 @@ export class OllamaClient {
         const msg = parsed.message;
         if (msg?.content) {
           content += msg.content;
+          if (!__firstTokenAt) __firstTokenAt = Date.now() - __t0;
           opts.onToken?.(msg.content);
         }
         if (msg?.thinking) {
@@ -470,7 +473,8 @@ export class OllamaClient {
     if (!sawDone) throw new IncompleteModelStream("ollama");
 
     log.debug(`ollama chat model=${model} tools=${toolCalls.length} chars=${content.length} thinking=${thinking.length}`);
-    return { 
+    log.info(`[latency] model=${model} firstToken=${__firstTokenAt}ms total=${Date.now() - __t0}ms promptChars=${JSON.stringify(body).length} completionTokens=${completionTokens}`);
+    return {
       content, 
       toolCalls, 
       model, 

@@ -6,7 +6,7 @@ const sentDraftSessions = new Set<string>();
 import { usePathname, useSearchParams, useRouter } from 'next/navigation';
 import {
   Share, FileChartColumn, MoreHorizontal, PanelRight, CircleCheck, Copy, Repeat2,
-  Star, Loader2, AppWindow, Square,
+  Star, Loader2, AppWindow,
 } from 'lucide-react';
 import { useAppDispatch, useAppSelector, type AppDispatch } from '@/store';
 import { appendEvent, applyDelta, setStatus, setError } from '@/store/chatSlice';
@@ -23,6 +23,7 @@ import { AppBuilderWorkspace } from '@/components/appbuilder/AppBuilderWorkspace
 import { findProjectByTask, startRun, raceEstimate as fetchRaceEstimate, type AppProjectDto, type RaceEstimateDto } from '@/services/appBuilderApi';
 import { MatterComposer } from '@/components/legal/MatterComposer';
 import { EventList } from '@/components/chat/EventList';
+import { useConversationAutoScroll } from '@/components/chat/useConversationAutoScroll';
 import { ThinkingTrace } from '@/components/chat/ThinkingTrace';
 import { SessionStatusBadge } from '@/components/chat/SessionStatusBadge';
 import { useSessionRuntime } from '@/components/chat/useSessionRuntime';
@@ -159,6 +160,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
     : undefined;
   const draftCompare = draftAbModels !== undefined && draftAbModels.length > 1;
   const socketRef = useRef<ChatSocket | null>(null);
+  const conversationRef = useRef<HTMLDivElement>(null);
   const sentDraft = useRef<{ uid: string; sent: boolean }>({ uid: '', sent: false });
   if (sentDraft.current.uid !== sessionUid) {
     sentDraft.current = { uid: sessionUid, sent: sentDraftSessions.has(sessionUid) };
@@ -411,6 +413,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
     && attachmentEvents.some((preview) => preview.taskId === attachment.taskId && preview.path === 'previews/slide-1.png'),
   ), [attachmentEvents]);
   const eventListEvents = useMemo(() => presentationAttachment ? events.filter((event) => event.type !== 'attachment') : events, [events, presentationAttachment]);
+  useConversationAutoScroll(conversationRef, eventListEvents);
 
   const loadTaskFiles = async () => {
     if (!taskId) return;
@@ -728,7 +731,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
 
       <div className="flex h-dvh min-h-0 w-full flex-none overflow-hidden">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div ref={conversationRef} data-testid="conversation-scroll" className="min-h-0 flex-1 overflow-y-auto">
             <div className="mx-auto w-full max-w-[min(100%,48rem)] px-4 py-4 sm:px-6">
               <div className="mb-2 flex items-center gap-2">
                 <span className="text-lg">◉</span>
@@ -876,19 +879,6 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
                 {running ? '●' : wasStoppedByUser ? '◼' : errorMessage ? '✕' : hasResult && hasClockClosed ? '✓' : '○'}
               </span>
               {t(visualStatus)}
-              {running && (
-                <button
-                  type="button"
-                  onClick={handleStop}
-                  data-testid="stop-task"
-                  aria-label={t('Stop task')}
-                  title={t('Stop task')}
-                  className="ms-auto flex h-7 shrink-0 items-center gap-1 rounded-full bg-[var(--function-error)] px-3 text-xs font-medium text-white hover:opacity-90"
-                >
-                  <Square className="size-3 fill-current" aria-hidden />
-                  {t('Stop task')}
-                </button>
-              )}
             </div>
             {running && !selectedTool && (
               <ComputerDock

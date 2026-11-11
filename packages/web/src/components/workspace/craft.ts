@@ -148,6 +148,41 @@ export function editorKindForExtension(ext: string): WorkspaceKind | null {
     case 'webm':
     case 'mkv':
       return 'loam-video';
+    // Web / code. The agent builds pages and scripts in the Build mode, and
+    // they are not Office or Craft documents, so they need their own editor.
+    case 'html':
+    case 'htm':
+    case 'css':
+    case 'scss':
+    case 'sass':
+    case 'less':
+    case 'js':
+    case 'mjs':
+    case 'cjs':
+    case 'jsx':
+    case 'ts':
+    case 'mts':
+    case 'tsx':
+    case 'json':
+    case 'json5':
+    case 'svg':
+    case 'xml':
+    case 'md':
+    case 'markdown':
+    case 'txt':
+    case 'yml':
+    case 'yaml':
+    case 'toml':
+    case 'php':
+    case 'py':
+    case 'rb':
+    case 'go':
+    case 'rs':
+    case 'java':
+    case 'sh':
+    case 'bash':
+    case 'sql':
+      return 'web';
     default:
       return null;
   }

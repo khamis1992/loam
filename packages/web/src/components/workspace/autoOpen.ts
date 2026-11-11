@@ -281,6 +281,34 @@ export function decideUserMessageOpen(event: ChatMessageEvent): WorkspaceOpenTar
 
 const OFFICE_PATH_RE = /[\w./\\-]+\.(docx|docm|dotx|doc|odt|rtf|xlsx|xlsm|xls|csv|ods|pptx|ppt|odp|psd|png|jpg|jpeg|webp|tif|tiff|heic|avif|bmp|gif|idml|indd|pdf|mp4|mov|webm|mkv)(?=[\s,.;)]|$)/i;
 
+/** Keys that name a file, in priority order. */
+const PATH_KEYS = ['path', 'file', 'filePath', 'outputPath', 'output', 'savePath', 'dest'] as const;
+
+/**
+ * Recursively find a file path in a tool-detail payload.
+ *
+ * The protocol nests a tool's arguments under its mapped kind —
+ * `argumentsDetail: { textEditor: { path, action } }` for file tools — so a
+ * top-level `path` lookup misses the common case. The search is depth-bounded
+ * and only accepts a non-empty string, so a nested `output` object or a
+ * terminal command never masquerades as a file.
+ */
+function findPath(value: unknown, depth = 0): string | null {
+  if (depth > 4 || !value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const rec = value as Record<string, unknown>;
+  for (const key of PATH_KEYS) {
+    const v = rec[key];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  for (const nested of Object.values(rec)) {
+    if (nested && typeof nested === 'object') {
+      const found = findPath(nested, depth + 1);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 function candidatePath(event: ToolUsedEvent): string | null {
   const sources: unknown[] = [event.argumentsDetail, event.detail];
   for (const raw of sources) {
@@ -289,27 +317,14 @@ function candidatePath(event: ToolUsedEvent): string | null {
       try { structured = JSON.parse(structured); } catch { continue; }
     }
     if (!structured || typeof structured !== 'object' || Array.isArray(structured)) continue;
-    const rec = structured as Record<string, unknown>;
-    for (const key of ['path', 'file', 'filePath', 'outputPath', 'output', 'savePath', 'dest']) {
-      const v = rec[key];
-      if (typeof v === 'string' && v.trim()) return v.trim();
-    }
-    const nested = rec['result'] ?? rec['output'];
-    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
-      const n = nested as Record<string, unknown>;
-      for (const key of ['path', 'file', 'filePath']) {
-        const v = n[key];
-        if (typeof v === 'string' && v.trim()) return v.trim();
-      }
-    }
+    const found = findPath(structured);
+    if (found) return found;
   }
   const text = [event.brief ?? '', event.description ?? ''].join(' ');
   try {
     const result = JSON.parse(text) as Record<string, unknown>;
-    for (const key of ['path', 'file', 'filePath', 'outputPath', 'output', 'savePath', 'dest']) {
-      const value = result[key];
-      if (typeof value === 'string' && value.trim()) return value.trim();
-    }
+    const found = findPath(result);
+    if (found) return found;
   } catch {
     // Plain-text tool summaries use the extension matcher below.
   }

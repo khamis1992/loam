@@ -73,6 +73,39 @@ describe("automation cron trigger (D14)", () => {
     }
   });
 
+  it("never runs event-triggered routines from the cron loop", async () => {
+    mock.timers.enable({ apis: ["setInterval", "Date"] });
+    try {
+      // Each of these has its own trigger path (watcher/poller/HTTP), so the cron
+      // loop must skip them even when their nextRunAt is long past.
+      const fileWatch = db.addSchedule("fw", 30, undefined, undefined, "file-watch", "C:/tmp", true);
+      db.setScheduleNextRunAt(fileWatch.id, new Date(Date.now() - 60_000).toISOString());
+      const serviceWatch = db.addSchedule("sw", 30, undefined, undefined, "service-watch", undefined, true);
+      db.setScheduleNextRunAt(serviceWatch.id, new Date(Date.now() - 60_000).toISOString());
+      const urlWatch = db.addSchedule("uw", 300, undefined, undefined, "url-watch", "https://example.test", true);
+      db.setScheduleNextRunAt(urlWatch.id, new Date(Date.now() - 60_000).toISOString());
+      const webhook = db.addSchedule("wh", 3600, undefined, undefined, "cron", undefined, true, { trigger: "webhook", webhookSecret: "s" });
+      db.setScheduleNextRunAt(webhook.id, new Date(Date.now() - 60_000).toISOString());
+      const cron = db.addSchedule("cron", 3600, undefined, undefined, "cron", undefined, true, { cron: "* * * * *" });
+      db.setScheduleNextRunAt(cron.id, new Date(Date.now() - 60_000).toISOString());
+
+      let calls = 0;
+      const prompts: string[] = [];
+      const stop = scheduler.startScheduler({
+        runScheduled: async (prompt: string) => { calls += 1; prompts.push(prompt); return "t"; },
+        intervalMs: 60_000,
+      });
+      mock.timers.tick(60_000);
+      await flush();
+
+      assert.equal(calls, 1, "only the cron routine runs");
+      assert.deepEqual(prompts, ["cron"]);
+      stop();
+    } finally {
+      mock.timers.reset();
+    }
+  });
+
   it("does not fire a cron automation that is not yet due", async () => {
     mock.timers.enable({ apis: ["setInterval", "Date"] });
     try {

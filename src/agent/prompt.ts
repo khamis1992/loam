@@ -7,6 +7,7 @@ import { DESIGN_CRITIQUE_PROMPT, DESIGN_LINT_PROMPT } from "../modes/designRules
 import { personalizationBlock } from "../server/personalization.js";
 import { renderPolicyContext } from "../policy/riskTier.js";
 import { buildMasterPrompt, codingModeSection, deriveMasterSlots, isCodingTask } from "./masterPrompt.js";
+import { MASTER_PROMPT_SECTIONS } from "./masterPromptText.js";
 import { loadProjectMemory, type ProjectMemoryResult } from "./projectMemory.js";
 import { DESIGN_RULES_PROMPT, isUiIntent } from "./designPrompt.js";
 import { lazySeniorBlock, lazySeniorTail, resolveLazySeniorLevel } from "./lazySenior.js";
@@ -125,8 +126,34 @@ export function buildSystemPrompt(
   userPrompt?: string,
   /** Session id for the /lazy coding-discipline override (lazy-senior P2). */
   lazySessionId?: string,
+  /** Concise mode: a minimal prompt for simple tasks (questions, chat). */
+  concise?: boolean,
 ): string {
   const lines: string[] = [];
+  if (concise) {
+    // Concise mode: a small, fast prompt for simple tasks. The full master
+    // prompt (identity, principles, autonomy, loop) plus the workspace facts;
+    // the tool catalog, code discipline, verification gates and worked examples
+    // are omitted because a question or a chat reply does not need them.
+    const byId = new Map(MASTER_PROMPT_SECTIONS.map((s) => [s.id, s]));
+    const minimal = ["1", "2", "3", "5"]
+      .map((id) => byId.get(id)?.body ?? "")
+      .filter(Boolean)
+      .join("\n\n");
+    lines.push(minimal);
+    lines.push(
+      "You are Loam, a local assistant working in the current task's isolated workspace.",
+      "Reply in the user's language. Answer directly and concisely; do not invent files, APIs or results.",
+      `Workspace: ${cfg.workspace}`,
+      `Available tools (${toolNames.length}): ${toolNames.join(", ")}`,
+    );
+    if (memories.length > 0) {
+      lines.push("Context explicitly supplied by this task:");
+      for (const memory of memories) lines.push(memory.text);
+    }
+    if (extraContext?.trim()) lines.push(extraContext.trim());
+    return lines.join("\n");
+  }
   if (masterPromptEnabled()) {
     lines.push(buildMasterPrompt(deriveMasterSlots(cfg, toolNames), { model: cfg.model }));
   }

@@ -58,6 +58,7 @@ import { withPackGuard } from "./packs/guard.js";
 import { packSystemGuidance } from "./packs/guidance.js";
 import { isOutputType, modelAbChain, normalizeEffort, type EffortLevel } from "./llm/router.js";
 import { runOrchestratedAgent, type VerdictRecord } from "./agent/orchestrator.js";
+import { shouldBypassOrchestrator, CONCISE_TOOLS } from "./agent/directMode.js";
 import { createOrchestrationCore } from "./orchestration/core.js";
 import { recordCheckpoint } from "./orchestration/public.js";
 import { writeCheckpoint } from "./agent/checkpointLog.js";
@@ -212,6 +213,10 @@ async function main(): Promise<void> {
     publishTaskEvent(task, { type: "task-status", status: "running" });
     // Announce the id immediately so the UI can cancel while the run is alive.
     emit({ type: "task", taskId: task });
+    // Surface "Thinking" the moment the run is alive. The mapper turns this into a
+    // liveStatus frame, so the user sees activity before the (heavier) setup and
+    // the first model round-trip finish.
+    emit({ type: "task-status", status: "running" });
 
     // D19 session runtime: the run starts, so the session is active and its
     // budget is live. Hooks release this task's browser context and pty
@@ -681,10 +686,15 @@ async function main(): Promise<void> {
       }
       // After the early return above, lazyCommand (when set) is review|audit.
       const commandPrompt = lazyCommand ? chatCommandPrompt(lazyCommand) : effectivePrompt;
+      // Direct-mode route: a simple task bypasses the orchestrator so the model
+      // starts streaming immediately instead of waiting for a plan, a per-step
+      // critique and a final verification round-trip.
+      const directMode = shouldBypassOrchestrator(commandPrompt, history);
+      if (directMode.bypass) log.info(`run ${task}: direct mode (${directMode.reason})`);
       const agentOpts = {
         cfg: effectiveCfg,
         ollama: runOllama,
-        tools: agentTools,
+        tools: directMode.bypass ? agentTools.forAllowlist(CONCISE_TOOLS) : agentTools,
         // lazy-audit (P3): /audit runs strictly read-only through the mode
         // catalog's ask toolset instead of the run's full grant.
         ...(lazyCommand?.kind === "audit" ? { tools: agentTools.forMode("ask") } : {}),
@@ -693,6 +703,8 @@ async function main(): Promise<void> {
         history,
         memories,
         ...(suffix ? { systemSuffix: suffix } : {}),
+        concise: directMode.bypass,
+        skipVerify: directMode.bypass,
         ...(effortMaxSteps || activePackId ? { maxSteps: Math.min(effortMaxSteps ?? 24, 24) } : {}),
         model: quickEditRoute.model,
         // Neo N10: output type narrows the tool set, effort picks the model and
@@ -742,7 +754,7 @@ async function main(): Promise<void> {
       const fastDesktop = !missionRun && activePackId === "loam-desktop" && desktopTemplateRequest(commandPrompt, effectiveMode);
       // Orchestration Core §4.0.3: one Core per run (root span loam.run) for
       // orchestrated runs; plain runAgent runs keep today's behaviour untouched.
-      const core = !fastDesktop && !fastSvgImage && !fastStaticWebsite && !fastSingleSlide && !fastPresentationVideo && opts.savedRun.orchestrated && !activePackId ? createOrchestrationCore(effectiveCfg, ollama, task, task) : undefined;
+      const core = !fastDesktop && !fastSvgImage && !fastStaticWebsite && !fastSingleSlide && !fastPresentationVideo && !directMode.bypass && opts.savedRun.orchestrated && !activePackId ? createOrchestrationCore(effectiveCfg, ollama, task, task) : undefined;
       if (core) emit({ type: "trace_started", traceId: core.runSpan.context.traceId, traceparent: core.traceparentEnv().TRACEPARENT ?? "" });
       try {
       const result = fastDesktop ? await runDesktopFastPath({
@@ -789,7 +801,7 @@ async function main(): Promise<void> {
         signal: runSignal,
         ...(activePackId ? { packId: activePackId } : {}),
         ...(quickEditRoute.model ? { model: quickEditRoute.model } : {}),
-      }) : opts.savedRun.orchestrated && !activePackId ? await runOrchestratedAgent({
+      }) : opts.savedRun.orchestrated && !activePackId && !directMode.bypass ? await runOrchestratedAgent({
         ...agentOpts, verdicts: verdicts as VerdictRecord[], resume: opts.savedRun.checkpoint, lifecycleHooks: true,
         ...(core ? { core } : {}),
         saveCheckpoint: (checkpoint) => {

@@ -159,6 +159,13 @@ export interface RunOptions {
   /** Appended after the built (or overridden) system prompt. Used by orchestrator workers.
    *  H5: the correction-learning lesson block joins this suffix (src/index.ts, BUILD_SPEC §6.5). */
   systemSuffix?: string;
+  /** Concise mode: a minimal system prompt for simple tasks (questions, chat).
+   *  Skips the full master prompt (tool catalog, code discipline, gates, examples). */
+  concise?: boolean;
+  /** Skip the final independent-verification round-trip. Concise mode sets this:
+   *  a question or a chat reply has no build/test gate to prove, and the extra
+   *  model call is the dominant remaining latency. */
+  skipVerify?: boolean;
   /** Overrides cfg.agent.maxSteps for this run (orchestrator workers get a tighter budget). */
   maxSteps?: number;
   /** Preferred model for this run. Used by the quick-edit route to send a
@@ -477,6 +484,7 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
       undefined,
       opts.prompt,
       opts.sessionId ?? opts.taskId,
+      opts.concise === true,
     );
   const system =
     opts.systemSuffix && opts.systemSuffix.trim().length > 0
@@ -772,6 +780,10 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
     }
 
     const requestTools = opts.tools.toOllama();
+    {
+      const systemMsg = messages.find((m) => m.role === "system");
+      log.debug(`[prompt-size] system=${systemMsg ? systemMsg.content.length : 0} tools=${requestTools.length} toolsChars=${JSON.stringify(requestTools).length} messagesChars=${JSON.stringify(messages).length} perTool=${requestTools.map((t) => `${t.function.name}:${JSON.stringify(t).length}`).join(",")}`);
+    }
     // Neo N10: the tool about to be called can narrow the model for this
     // request only. `null` means "not yet known", so the run's own plan applies.
     const routingTool: string | null = lastToolCallName;
@@ -833,6 +845,7 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
       ...(cacheControl ? { cacheControl } : {}),
       think: shouldThink,
       onThinking,
+      onToken: (text) => opts.emit({ type: "assistant_token", text }),
       ...(outputType !== "auto" ? { outputType } : {}),
       ...(effortLevel ? { effort: effortLevel } : {}),
       ...(routingTool ? { tool: routingTool } : {}),
@@ -973,22 +986,24 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
         if (stop.additionalContext) {
           messages.push({ role: "user", content: wrapHookContext(stop.additionalContext) });
         }
-        const checked = await verifyFinal({ acceptanceGuard, independentGuard, independentRequest, cfg: opts.cfg, ollama: opts.ollama, request: opts.prompt, goal: opts.prompt, finalText, completedSteps: [], trace,
-          history: opts.history, tools: opts.tools, emit: opts.emit, signal: opts.signal, taskId: opts.taskId });
-        addUsage(usage, checked.usage);
-        throwIfCancelled(opts.signal, opts.taskId);
-        opts.emit({ type: "verify", verdict: checked.verdict, reason: checked.reason });
-        verificationAttempts++;
-        if (checked.verdict !== "pass") {
-          lastStepFailed = true;
-          if (checked.unavailable) throw new Error(`Independent verification unavailable; preserve output and retry verification when the environment is ready: ${checked.reason}`);
-          if (verificationAttempts >= 2) throw new Error(`task incomplete: final verification ${checked.verdict}: ${checked.reason}`);
-          messages.push({ role: "assistant", content: finalText });
-          messages.push({ role: "user", content: `Verification did not pass: ${checked.reason}\n${checked.fixes.join("\n")}\nObtain evidence or repair the result. Do not claim completion without verification.` });
-          continue;
+        if (!opts.skipVerify) {
+          const checked = await verifyFinal({ acceptanceGuard, independentGuard, independentRequest, cfg: opts.cfg, ollama: opts.ollama, request: opts.prompt, goal: opts.prompt, finalText, completedSteps: [], trace,
+            history: opts.history, tools: opts.tools, emit: opts.emit, signal: opts.signal, taskId: opts.taskId });
+          addUsage(usage, checked.usage);
+          throwIfCancelled(opts.signal, opts.taskId);
+          opts.emit({ type: "verify", verdict: checked.verdict, reason: checked.reason });
+          verificationAttempts++;
+          if (checked.verdict !== "pass") {
+            lastStepFailed = true;
+            if (checked.unavailable) throw new Error(`Independent verification unavailable; preserve output and retry verification when the environment is ready: ${checked.reason}`);
+            if (verificationAttempts >= 2) throw new Error(`task incomplete: final verification ${checked.verdict}: ${checked.reason}`);
+            messages.push({ role: "assistant", content: finalText });
+            messages.push({ role: "user", content: `Verification did not pass: ${checked.reason}\n${checked.fixes.join("\n")}\nObtain evidence or repair the result. Do not claim completion without verification.` });
+            continue;
+          }
+          lastStepFailed = false;
+          finalText = checked.finalAnswer ?? finalText;
         }
-        lastStepFailed = false;
-        finalText = checked.finalAnswer ?? finalText;
         opts.emit({ type: "assistant_message", text: finalText });
         opts.emit({ type: "done", text: finalText, steps: step, model: usedModel });
         endedReason = "completed";
@@ -1105,6 +1120,7 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
       for (const call of result.toolCalls) {
         const name = call.function?.name ?? "";
         const args = normalizeArgs(call.function?.arguments);
+        log.debug(`[tool] ${name} ${JSON.stringify(args).slice(0, 200)}`);
         opts.emit({ type: "tool_call", name, args });
         lastToolCallName = name;
 
@@ -1129,6 +1145,7 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
             ...(opts.studioOptions ? { studioOptions: opts.studioOptions } : {}),
           });
         noteToolOutcome(opts.taskId, name, args, toolResult.ok, toolResult.content ?? "");
+        log.debug(`[tool] ${name} done ok=${toolResult.ok} ms=${Date.now() - t0} chars=${(toolResult.content ?? "").length}`);
 
         if (logSession) {
           recordToolResult(logSession, callId, name, toolResult.ok ? "succeeded" : "failed", toolResult.content, opts.taskId, opts.cfg.workspace);

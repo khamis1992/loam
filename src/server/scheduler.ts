@@ -1,7 +1,20 @@
-import { dueSchedules, getTask, recordScheduleOutcome } from "./db.js";
+import { dueSchedules, getTask, recordScheduleOutcome, type Schedule } from "./db.js";
 import { getAgent } from "./agents.js";
 import { log } from "../log.js";
 import { DEFAULT_RETRY_DELAY_MS } from "./scheduleTime.js";
+
+/**
+ * True when the schedule is fired by its own trigger, not by the cron tick.
+ *
+ * `url-watch` has its own poller, `file-watch`/`service-watch` have their own
+ * watchers, and the event triggers (webhook, github, slack, pagerduty, linear,
+ * sentry) fire from the HTTP trigger route. Running any of these from the cron
+ * loop as well would double-run them, so the scheduler skips them.
+ */
+function isEventTriggered(schedule: Schedule): boolean {
+  if (schedule.kind === "url-watch" || schedule.kind === "file-watch" || schedule.kind === "service-watch") return true;
+  return schedule.trigger !== undefined && schedule.trigger !== "cron";
+}
 
 export interface SchedulerDeps {
   runScheduled: (prompt: string, scheduleId: string, agentId?: string, workMode?: string) => Promise<string>;
@@ -24,8 +37,10 @@ export function startScheduler(deps: SchedulerDeps): () => void {
       for (const schedule of dueSchedules()) {
         // Archived companions keep their schedules but never run them.
         if (schedule.agentId && getAgent(schedule.agentId)?.archivedAt) continue;
-        // MF7: url-watch routines are change-triggered; their own poller fires them.
-        if (schedule.kind === "url-watch") continue;
+        // Event-triggered routines (url-watch/file-watch/service-watch pollers and
+        // webhook/github/... HTTP triggers) fire from their own path; the cron loop
+        // must not run them too.
+        if (isEventTriggered(schedule)) continue;
         const previous = schedule.lastTaskId ? getTask(schedule.lastTaskId) : undefined;
         if (previous && ["queued", "running", "interrupted"].includes(previous.status)) continue;
         log.info(`scheduler: running ${schedule.id} -> ${schedule.prompt.slice(0, 60)}`);

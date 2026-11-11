@@ -128,6 +128,15 @@ import { handleEventsRoutes } from "./routes/events.js";
 import { handleDesignStudioRoutes } from "./routes/designStudio.js";
 import { handleSchedulesRoutes } from "./routes/schedules.js";
 import { handleAutomationsRoutes } from "./routes/automations.js";
+import { handleChannelRoutes } from "./routes/channels.js";
+import { handleAssetsRoutes } from "./routes/assets.js";
+import { handleBrowserLiveRoutes } from "./routes/browserLive.js";
+import { handleCompanyRoutes } from "./routes/company.js";
+import { handleDeployRoutes } from "./routes/deploy.js";
+import { handleGroupChatsRoutes } from "./routes/groupChats.js";
+import { handleNotificationsRoutes } from "./routes/notifications.js";
+import { handleStudioHostRoutes } from "./routes/studioHost.js";
+import { handleWatchesRoutes } from "./routes/watches.js";
 import { handleAppBuilderRoutes } from "./routes/appBuilder.js";
 import { configureBuildMenu, handleBuildMenuRoutes } from "./routes/buildMenu.js";
 import { configureOpenRoutines, openRememberedRoutines } from "../buildMenu/automations/open.js";
@@ -2392,6 +2401,16 @@ loadAgents();
         if (await handleSchedulesRoutes(req, res, p)) return;
         // D14: event-trigger deliveries (HMAC-verified webhook / GitHub events).
         if (await handleAutomationsRoutes(req, res, p)) return;
+        // MF11: messaging channels (Telegram/Email) status and bindings.
+        if (await handleChannelRoutes(req, res, p)) return;
+        // Parity: routes the UI/desktop already call but were never dispatched.
+        if (await handleNotificationsRoutes(req, res, p)) return;
+        if (await handleGroupChatsRoutes(req, res, p)) return;
+        if (await handleAssetsRoutes(req, res, p)) return;
+        if (await handleStudioHostRoutes(req, res, p)) return;
+        if (await handleWatchesRoutes(req, res, p)) return;
+        if (await handleBrowserLiveRoutes(req, res, p)) return;
+        if (await handleDeployRoutes(req, res, p)) return;
         // Cap G §4.15.2: /api/app-projects/* (Agent Studio App Builder).
         configureBuildMenu(cfg.buildMenu?.enabled === true);
         if (await handleBuildMenuRoutes(req, res, p)) return;

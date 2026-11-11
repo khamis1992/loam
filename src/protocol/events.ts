@@ -397,6 +397,7 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
         timestamp: ts,
         agentStatus,
         brief,
+        planStepId: state.lastPlanStepId,
         noRender: agentStatus === "running",
       };
       out.push(statusUpdate);
