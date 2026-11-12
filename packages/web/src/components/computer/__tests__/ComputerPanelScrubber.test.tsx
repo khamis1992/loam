@@ -98,6 +98,25 @@ describe('ComputerPanel editor visibility', () => {
     expect(screen.getByText('Workspace content')).toBeInTheDocument();
   });
 
+  it('hides Editor for a failed write that only names a task directory', () => {
+    const event = {
+      ...toolEvent('failed-editor', 'text_editor'),
+      status: 'error',
+      argumentsDetail: { path: 'C:/workspace/.loam-tasks/task-without-files' },
+      description: 'Cannot write to a directory',
+    } as ToolUsedEvent;
+    render(
+      <ComputerPanel
+        event={event}
+        sessionId="failed-editor"
+        onClose={() => {}}
+        workspaceSlot={<div>Workspace content</div>}
+      />,
+    );
+    expect(screen.queryByRole('tab', { name: 'Editor' })).toBeNull();
+    expect(screen.getByRole('tab', { name: 'Workspace' })).toBeInTheDocument();
+  });
+
   it.each([
     { path: 'notes.txt', content: '' },
     { content: 'Editable text' },

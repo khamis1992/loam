@@ -1016,7 +1016,7 @@ function extractEditorDetail(event: ToolUsedEvent): EditorDetail {
 }
 
 function hasEditorContent(event?: ToolUsedEvent): boolean {
-  if (!event) return false;
+  if (!event || ['error', 'failed', 'cancelled', 'stopped', 'rollback'].includes(event.status)) return false;
   const detail = extractEditorDetail(event);
   return Boolean(
     docPathOf(event) || detail.path?.trim() || detail.content?.trim() || detail.oldContent?.trim(),
