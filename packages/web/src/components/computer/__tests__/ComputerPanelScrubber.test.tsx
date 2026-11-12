@@ -98,6 +98,46 @@ describe('ComputerPanel editor visibility', () => {
     expect(screen.getByText('Workspace content')).toBeInTheDocument();
   });
 
+  it('hides Editor for a pending directory read without content', () => {
+    const event = {
+      ...toolEvent('pending-read', 'text_editor'),
+      status: 'argumentsFinished',
+      argumentsDetail: { textEditor: { action: 'read', path: 'C:/workspace/.loam-tasks/task-without-files' } },
+    } as ToolUsedEvent;
+    render(
+      <ComputerPanel
+        event={event}
+        sessionId="pending-read"
+        onClose={() => {}}
+        workspaceSlot={<div>Workspace content</div>}
+      />,
+    );
+    expect(screen.queryByRole('tab', { name: 'Editor' })).toBeNull();
+    expect(screen.getByRole('tab', { name: 'Workspace' })).toBeInTheDocument();
+  });
+
+  it.each([
+    { resultPath: '', expected: false },
+    { resultPath: 'notes.txt', expected: true },
+  ])('uses the final read result instead of the requested directory', ({ resultPath, expected }) => {
+    const event = {
+      ...toolEvent(`read-${resultPath || 'empty'}`, 'text_editor'),
+      status: 'success',
+      argumentsDetail: { textEditor: { action: 'read', path: 'C:/workspace/.loam-tasks/task-without-files' } },
+      detail: { textEditor: { action: 'read', path: resultPath } },
+      description: '(empty)',
+    } as ToolUsedEvent;
+    render(
+      <ComputerPanel
+        event={event}
+        sessionId={`read-${resultPath || 'empty'}`}
+        onClose={() => {}}
+        workspaceSlot={<div>Workspace content</div>}
+      />,
+    );
+    expect(Boolean(screen.queryByRole('tab', { name: 'Editor' }))).toBe(expected);
+  });
+
   it('hides Editor for a failed write that only names a task directory', () => {
     const event = {
       ...toolEvent('failed-editor', 'text_editor'),

@@ -1,6 +1,6 @@
 {
   "name": "loam",
-  "version": "0.5.78",
+  "version": "0.5.79",
   "private": true,
   "engines": {
     "node": ">=24.0.0"
