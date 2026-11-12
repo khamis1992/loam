@@ -118,8 +118,12 @@ describe('WorkspacePanel editor gateway', () => {
     expect(link).toHaveAttribute('download', 'archive.zip');
 
     // The docx file stays openable: selecting its tab still hosts the editor.
+    // Let the auto-open effect settle first so the click is not raced by it.
+    await new Promise((r) => setTimeout(r, 100));
     fireEvent.click(screen.getByTitle('docs/plan.docx'));
-    expect(await screen.findByTestId('probe-editor')).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 100));
+    expect(screen.getByTitle('docs/plan.docx').className).toContain('bg-fill-tsp');
+    expect(screen.queryByText('No editor for this file type yet.')).toBeNull();
     vi.unstubAllGlobals();
   });
 
@@ -196,6 +200,32 @@ describe('WorkspacePanel editor gateway', () => {
     await screen.findByTestId('probe-editor');
     expect(captured?.file.path).toBe('recordings/recording.mp4');
     expect(captured?.file.kind).toBe('loam-video');
+    vi.unstubAllGlobals();
+  });
+
+  it('matches an absolute requested path against the workspace-relative file list', async () => {
+    const fetchMock = vi.fn().mockImplementation(() =>
+      filesResponse([{ name: 'plan.docx', path: 'docs/plan.docx', mtimeMs: 10 }]),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <WorkspacePanel
+        taskId="task_1"
+        live={false}
+        events={[]}
+        requestedKind="craft"
+        requestedCraftApp="docs"
+        requestedPath="C:\Users\me\workspace\.loam-tasks\task_1\docs\plan.docx"
+        onChatEdit={() => undefined}
+      />,
+    );
+
+    // The tool summary carried an absolute path; the panel must still select the
+    // listed workspace-relative file instead of showing "Select a file to edit".
+    expect(await screen.findByTitle('docs/plan.docx')).toBeInTheDocument();
+    expect(screen.getByTitle('docs/plan.docx').className).toContain('bg-fill-tsp');
+    expect(screen.queryByText('Select a file to edit')).toBeNull();
     vi.unstubAllGlobals();
   });
 });

@@ -34,6 +34,18 @@ function getSocketBase(): string {
   return '/';
 }
 
+/** Tool summaries often carry an absolute path (C:\…\workspace\file.xlsx) while the
+ *  file list is workspace-relative (file.xlsx). Match those without confusing a
+ *  same-named file in another folder. */
+function sameWorkspacePath(listed: string, requested: string | null | undefined): boolean {
+  if (!requested) return false;
+  const a = listed.replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase();
+  const b = requested.replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase();
+  if (!a || !b) return false;
+  if (a === b) return true;
+  return a.endsWith('/' + b) || b.endsWith('/' + a);
+}
+
 /** Shell-owned per-file panel: resolves the registered editor for a workspace file, forwards
  *  onSave to the per-kind save endpoint and onChatEdit onto the task's chat. */
 export function WorkspaceFilePanel({ file, onClose }: { file: WorkspaceFile; onClose: () => void }) {
@@ -309,51 +321,52 @@ export function WorkspacePanel({ taskId, live, events, requestedPath, requestedK
   }, [apiBase, taskId, lastTool?.timestamp, version]);
 
   // Auto-open override: applies once per distinct target so a manual file
-  // selection is never clobbered by a stale requestedPath.
+  // selection is never clobbered by a stale requestedPath. The same target
+  // re-applies only while the selection is still the auto-opened one, so an
+  // absolute tool-summary path can be corrected once the file list loads.
   const autoOpenKeyRef = useRef<string | null>(null);
+  const autoOpenedPathRef = useRef<string | null>(null);
+  const selectedPathRef = useRef(selectedPath);
+  selectedPathRef.current = selectedPath;
   useEffect(() => {
     if (!requestedKind && !requestedPath) return;
     const key = `${requestedKind ?? ''}:${requestedCraftApp ?? ''}:${requestedPath ?? ''}`;
-    if (autoOpenKeyRef.current === key) return;
+    const sameTarget = autoOpenKeyRef.current === key;
+    const currentSelection = selectedPathRef.current;
+    if (sameTarget && currentSelection && currentSelection !== autoOpenedPathRef.current) return;
     autoOpenKeyRef.current = key;
     if (requestedKind === 'loam-video') {
-      const match = requestedPath ? files.find((f) => f.path === requestedPath) : undefined;
-      if (match) setSelectedPath(match.path);
-      else if (requestedPath) setSelectedPath(requestedPath);
-      else {
-        const firstVideo = files.find((f) => getEditorForPath(f.path)?.kind === 'loam-video');
-        setSelectedPath(firstVideo ? firstVideo.path : LOAM_VIDEO_STUDIO_PATH);
-      }
+      const match = requestedPath ? files.find((f) => sameWorkspacePath(f.path, requestedPath)) : undefined;
+      const next = match?.path ?? requestedPath ?? LOAM_VIDEO_STUDIO_PATH;
+      autoOpenedPathRef.current = next;
+      setSelectedPath(next);
       return;
     }
     // Craft apps: the decision names a file and/or the app. Open the named file,
     // otherwise the newest file the craft editor owns.
     if (requestedKind === 'craft') {
-      const match = requestedPath ? files.find((f) => f.path === requestedPath) : undefined;
-      if (match) {
-        setSelectedPath(match.path);
-        return;
-      }
-      if (requestedPath) {
-        setSelectedPath(requestedPath);
-        return;
-      }
-      const firstCraft = files.find((f) => getEditorForPath(f.path)?.kind === 'craft');
-      if (firstCraft) setSelectedPath(firstCraft.path);
-      else setSelectedPath(craftSentinelPath(requestedCraftApp));
+      const match = requestedPath ? files.find((f) => sameWorkspacePath(f.path, requestedPath)) : undefined;
+      const firstCraft = match ? undefined : files.find((f) => getEditorForPath(f.path)?.kind === 'craft');
+      const next = match?.path ?? firstCraft?.path ?? requestedPath ?? craftSentinelPath(requestedCraftApp);
+      autoOpenedPathRef.current = next;
+      setSelectedPath(next);
       return;
     }
     // The Canvas tab is task-wide (the run graph), so there is no file to
     // match: any request for it selects the canvas sentinel.
     if (requestedKind === 'canvas') {
+      autoOpenedPathRef.current = CANVAS_RUN_PATH;
       setSelectedPath(CANVAS_RUN_PATH);
       return;
     }
-    if (requestedPath && files.some((f) => f.path === requestedPath)) setSelectedPath(requestedPath);
+    const match = requestedPath ? files.find((f) => sameWorkspacePath(f.path, requestedPath)) : undefined;
     // Gateway honesty: the requested file has no editor, so open it on the
     // fallback card instead of silently selecting a different file.
-    else if (requestedPath && !getEditorForPath(requestedPath)) setSelectedPath(requestedPath);
-    else if (requestedPath && files.length > 0) setSelectedPath(files[0].path);
+    const next = match?.path ?? (requestedPath && !getEditorForPath(requestedPath) ? requestedPath : undefined) ?? (files.length > 0 ? files[0].path : requestedPath);
+    if (next) {
+      autoOpenedPathRef.current = next;
+      setSelectedPath(next);
+    }
   }, [files, requestedPath, requestedKind, requestedCraftApp]);
 
   // Default selection + keep the selection valid as the file list changes.
@@ -371,7 +384,7 @@ export function WorkspacePanel({ taskId, live, events, requestedPath, requestedK
     if (
       selectedPath &&
       files.length > 0 &&
-      !files.some((f) => f.path === selectedPath) &&
+      !files.some((f) => sameWorkspacePath(f.path, selectedPath)) &&
       selectedPath !== LOAM_VIDEO_STUDIO_PATH &&
       selectedPath !== CANVAS_RUN_PATH &&
       !selectedPath.startsWith('__loam_craft_') &&
@@ -391,7 +404,7 @@ export function WorkspacePanel({ taskId, live, events, requestedPath, requestedK
     if (selectedPath?.startsWith('__loam_craft_')) {
       return { taskId, path: selectedPath, name: t('Loam'), kind: 'craft' as const };
     }
-    const listed = files.find((f) => f.path === selectedPath);
+    const listed = files.find((f) => sameWorkspacePath(f.path, selectedPath));
     if (listed) return listed;
     if (selectedPath && getEditorForPath(selectedPath)?.kind === 'loam-video') {
       return {
@@ -416,7 +429,7 @@ export function WorkspacePanel({ taskId, live, events, requestedPath, requestedK
     if (selected) return null;
     if (getEditorForPath(selectedPath)) return null;
     if (!extensionOf(selectedPath)) return null;
-    const listed = unresolvedFiles.find((f) => f.path === selectedPath);
+    const listed = unresolvedFiles.find((f) => sameWorkspacePath(f.path, selectedPath));
     return {
       taskId,
       path: selectedPath,
