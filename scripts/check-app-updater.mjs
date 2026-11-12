@@ -10,6 +10,14 @@ native.setFeedURL=()=>{};native.checkForUpdates=()=>{checks++;native.emit('check
 const dialogs=[];
 const context={module:{exports:{}},require:name=>name==='electron'?{app:{isPackaged:true,getVersion:()=> '0.5.24',getPath:()=>'/missing'},dialog:{showMessageBox:async options=>{dialogs.push(options);return {response:1};}}}:name==='electron-updater'?{autoUpdater:native}:require(name),process:{env:{}},console,setInterval:()=>1,clearInterval:()=>{}};
 vm.runInNewContext(await fs.readFile('electron/updater.cjs','utf8'),context);const updater=context.module.exports;
+const versionRoot=await fs.mkdtemp(path.join(os.tmpdir(),'loam-version-'));
+try{
+ for(const [current,expected] of [['0.5.20','0.5.25'],['0.5.24','0.5.25'],['0.5.25','0.5.25'],['0.6.0','0.6.0']]){
+  await fs.writeFile(path.join(versionRoot,'package.json'),JSON.stringify({version:current}));
+  assert.equal(updater.ensureNewerVersion(versionRoot),expected);
+  assert.equal(JSON.parse(await fs.readFile(path.join(versionRoot,'package.json'),'utf8')).version,expected);
+ }
+}finally{await fs.rm(versionRoot,{recursive:true,force:true});}
 updater.init({localFeed:'http://127.0.0.1:1234/',canInstall:async()=>allowed});await Promise.resolve();assert.equal(checks,1);const concurrent=updater.check();assert.equal(checks,1);
 native.emit('update-not-available',{version:'0.5.24'});resolveCheck({});assert.equal((await concurrent).state,'current');assert.ok(updater.getStatus().checkedAt);
 const interactive=updater.checkInteractive();await Promise.resolve();native.emit('update-not-available',{version:'0.5.24'});resolveCheck({});await interactive;assert.match(dialogs.at(-1).message,/محليًا/);assert.match(dialogs.at(-1).detail,/0.5.24/);
@@ -21,4 +29,4 @@ assert.equal(native.autoInstallOnAppQuit,false);assert.equal(updater.getStatus()
 await assert.rejects(updater.installNow(),/المهام/);assert.equal(installs,0);allowed=true;assert.equal(await updater.installNow(),true);assert.equal(installs,1);assert.equal(updater.getStatus().state,'installing');assert.equal(await updater.installNow(),false);
 const {startLocalUpdates}=require('../electron/local-updates.cjs');const dir=await fs.mkdtemp(path.join(os.tmpdir(),'loam-updates-'));await fs.writeFile(path.join(dir,'latest.yml'),'version: 0.5.24');await fs.writeFile(path.join(dir,'secret.txt'),'private');const feed=await startLocalUpdates(dir);
 try{assert.equal((await fetch(feed.url+'latest.yml')).status,200);assert.equal((await fetch(feed.url+'secret.txt')).status,404);assert.equal((await fetch(feed.url+'latest.yml',{method:'POST'})).status,404);}finally{feed.close();await fs.rm(dir,{recursive:true,force:true});}
-console.log('PASS update coalescing, progress, explicit install, active-task guard, double install guard, local channel artifact isolation');
+console.log('PASS installed-relative version bump, update coalescing, progress, explicit install, active-task guard, double install guard, local channel artifact isolation');

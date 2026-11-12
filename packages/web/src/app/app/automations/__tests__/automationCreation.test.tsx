@@ -117,4 +117,28 @@ describe('AutomationsPage trigger creation', () => {
     expect(screen.getByText('Paused')).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Monthly reconciliation' })).toBeTruthy();
   });
+
+  it('clamps long prompts and run summaries in update cards', async () => {
+    const longPrompt = 'File change report routine: inspect the workspace directory and report every created, modified, or deleted file with a detailed Arabic summary and the complete absolute path that must not expand the card';
+    const longError = 'The automation returned a detailed run report with several lines of output, file paths, warnings, and execution notes that should be truncated instead of expanding the update card beyond the reference layout.';
+    vi.stubGlobal('fetch', vi.fn(async () => json({
+      schedules: [{
+        id: 'sched_long',
+        prompt: longPrompt,
+        enabled: true,
+        lastRunAt: '2026-11-12T10:46:00.000Z',
+        lastTaskId: 'task_long',
+        lastStatus: 'failed',
+        lastError: longError,
+      }],
+    })));
+    render(<AutomationsPage />);
+
+    const prompt = await screen.findByText(longPrompt);
+    expect(prompt.className).toContain('line-clamp-2');
+    expect(prompt.className).not.toContain('block');
+    expect(prompt.className).toContain('break-words');
+    expect(screen.getByText(longError).className).toContain('line-clamp-3');
+    expect(prompt.parentElement?.className).toContain('flex-col');
+  });
 });

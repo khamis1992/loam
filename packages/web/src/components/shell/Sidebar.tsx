@@ -3,13 +3,12 @@
 import { useMemo, useState, useEffect, useRef, type ComponentType } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import {
-  SquarePen, Monitor, Search, BookOpen, Layers, Workflow, LayoutGrid, MoreHorizontal,
-  ChevronRight, Share2, MonitorSmartphone, Clapperboard, Palette, Store, KanbanSquare, Brain, Globe2,
-  PanelLeft, PanelLeftClose, PanelLeftOpen, ArrowLeft, ArrowRight, Scale, Landmark,
+  SquarePen, Monitor, Search, BookOpen, Workflow, LayoutGrid, MoreHorizontal,
+  ChevronRight, Share2, MonitorSmartphone, Globe2,
+  PanelLeftClose, PanelLeftOpen, ArrowLeft, ArrowRight,
 } from 'lucide-react';
 import { useAppSelector, useAppDispatch, toggleSidebar } from '@/store';
-import { selectSession, startNewTask, loadSessions, type AgentSession } from '@/store/sessionsSlice';
-import { openSettings } from '@/store';
+import { selectSession, loadSessions, type AgentSession } from '@/store/sessionsSlice';
 import { t } from '@/i18n/t';
 import clsx from 'clsx';
 import { fetchCredits, type CreditsReferral } from '@/services/creditsApi';
@@ -68,21 +67,11 @@ export function Sidebar() {
   const nav: NavItem[] = [
     { id: 'new-task', label: t('New task'), icon: SquarePen, href: '/app' },
     { id: 'computers', label: t('Computers'), icon: Monitor, href: '/app/computers' },
-    { id: 'agent-loam', label: t('Agent Loam'), icon: AgentLoamIcon, href: '/app/agents' },
     { id: 'search', label: t('Search'), icon: Search, shortcut: t('Ctrl+K'), onClick: 'search' },
     { id: 'library', label: t('Library'), icon: BookOpen, href: '/app/library' },
     { id: 'websites', label: t('Websites'), icon: Globe2, href: '/app/websites' },
-    { id: 'creations', label: t('Creations'), icon: Layers, href: '/app/creations' },
-    { id: 'board', label: t('Board'), icon: KanbanSquare, href: '/app/board' },
-    { id: 'wiki', label: t('Wiki'), icon: BookOpen, href: '/app/wiki' },
-    { id: 'memory-hub', label: t('Memory'), icon: Brain, href: '/app/memory' },
-    { id: 'legal', label: t('Legal'), icon: Scale, href: '/legal' },
-    { id: 'finance', label: t('Finance'), icon: Landmark, href: '/app/finance' },
-    { id: 'studio', label: t('Studio'), icon: Palette, href: '/app/studio' },
     { id: 'automations', label: t('Automations'), icon: Workflow, href: '/app/automations' },
     { id: 'plugins', label: t('Plugins'), icon: LayoutGrid, href: '/app/plugins' },
-    { id: 'marketplace', label: t('Marketplace'), icon: Store, href: '/app/marketplace' },
-    { id: 'video', label: t('Video'), icon: Clapperboard, href: '/app/video' },
     { id: 'more', label: t('More'), icon: MoreHorizontal, href: '/app/more' },
   ];
 
@@ -134,19 +123,10 @@ export function Sidebar() {
       data-collapsed={collapsed}
       className={clsx(
         'flex h-full shrink-0 flex-col bg-bg-nav px-2 pb-3 transition-[width] duration-medium ease-loam-in-out',
-        collapsed ? 'w-14' : 'w-[192px]',
+        collapsed ? 'w-14' : 'w-60',
       )}
     >
       <div className="mt-1 flex items-center gap-1">
-        <button
-          type="button"
-          aria-label={t('Toggle sidebar')}
-          title={t('Toggle sidebar')}
-          onClick={() => dispatch(toggleSidebar())}
-          className="flex h-7 w-7 items-center justify-center rounded-control text-text-secondary hover:bg-fill-hover"
-        >
-          <PanelLeft className="size-4" />
-        </button>
         <button
           type="button"
           aria-label={t(collapsed ? 'Expand sidebar' : 'Collapse sidebar')}
@@ -175,9 +155,18 @@ export function Sidebar() {
         >
           <ArrowRight className="size-4" />
         </button>
+        <button
+          type="button"
+          aria-label={t('Search')}
+          title={t('Search')}
+          onClick={() => setSearchOpen(true)}
+          className="flex h-7 w-7 items-center justify-center rounded-control text-text-tertiary hover:bg-fill-hover"
+        >
+          <Search className="size-4" />
+        </button>
       </div>
 
-      <div className="flex flex-col gap-0.5 py-1.5">
+      <div className="flex flex-col gap-0.5 py-2">
         {nav.map((item) => (
           <button
             key={item.id}
@@ -185,7 +174,7 @@ export function Sidebar() {
             onClick={() => navAction(item)}
             title={collapsed ? item.label : undefined}
             className={clsx(
-              'group flex h-[26px] w-full items-center gap-2 rounded-[8px] px-2 text-sm',
+              'group flex h-8 w-full items-center gap-2 rounded-[8px] px-3 text-sm',
               collapsed && 'justify-center px-0',
               isNavActive(item) || item.id === 'search'
                 ? 'bg-fill-hover text-text-primary'
@@ -193,11 +182,7 @@ export function Sidebar() {
             )}
             aria-current={isNavActive(item) ? 'page' : undefined}
           >
-            {item.id === 'agent-loam' ? (
-              <item.icon className="size-4 shrink-0" />
-            ) : (
-              <item.icon className="size-4 shrink-0" aria-hidden />
-            )}
+            <item.icon className="size-4 shrink-0" aria-hidden />
             {!collapsed && <span className="flex-1 truncate text-start">{item.label}</span>}
             {!collapsed && item.badge && (
               <span className="shrink-0 rounded-full bg-fill-tsp px-1.5 py-0 text-[10px] font-medium text-text-tertiary">
@@ -305,14 +290,6 @@ export function Sidebar() {
       />
       <SearchDialog open={searchOpen} onClose={() => setSearchOpen(false)} />
     </nav>
-  );
-}
-
-function AgentLoamIcon({ className }: { className?: string }) {
-  return (
-    <div className={clsx('relative flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#0081f2] to-[#64b5f6]', className)}>
-      <span className="text-[10px] font-semibold text-white">L</span>
-    </div>
   );
 }
 

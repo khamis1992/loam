@@ -170,18 +170,20 @@ export function ComputerPanel({ event, sessionId, onClose, workspaceSlot, focusW
   const visibleTabs = useMemo(() => {
     const tabs: { id: TabId; label: string; icon: typeof Terminal }[] = TABS.filter(
       (tab) =>
-        tab.id === derivedTab ||
-        seen[tab.id] !== undefined ||
-        (tab.id === 'live' && derivedTab === 'browser') ||
-        (tab.id === 'files' && Boolean(docPath)),
+        tab.id === 'editor'
+          ? hasEditorContent(seen.editor)
+          : tab.id === derivedTab ||
+            seen[tab.id] !== undefined ||
+            (tab.id === 'live' && derivedTab === 'browser') ||
+            (tab.id === 'files' && Boolean(docPath)),
     );
     if (workspaceSlot) tabs.push({ id: 'workspace' as const, label: 'Workspace', icon: FolderOpen });
     if (studioMode) tabs.push(STUDIO_TAB);
     return tabs;
-  }, [studioMode, workspaceSlot, derivedTab, seen, docPath]);
+  }, [studioMode, workspaceSlot, derivedTab, seen, event, docPath]);
   const activeTab = useMemo<TabId>(() => {
     const pick = userTab ?? (workspaceSlot && focusWorkspace ? 'workspace' : derivedTab);
-    return visibleTabs.some((tab) => tab.id === pick) ? pick : 'files';
+    return visibleTabs.some((tab) => tab.id === pick) ? pick : (visibleTabs[0]?.id ?? 'files');
   }, [userTab, workspaceSlot, focusWorkspace, derivedTab, visibleTabs]);
   const tabEvent = activeTab === derivedTab || (activeTab === 'files' && docPath) ? event : seen[activeTab];
   const isDriving = !isFinalStatus(event.status) && activeTab === 'browser';
@@ -1011,6 +1013,14 @@ function extractEditorDetail(event: ToolUsedEvent): EditorDetail {
     oldContent: typeof args?.find === 'string' ? args.find : undefined,
     action: String(args?.action ?? ''),
   };
+}
+
+function hasEditorContent(event?: ToolUsedEvent): boolean {
+  if (!event) return false;
+  const detail = extractEditorDetail(event);
+  return Boolean(
+    docPathOf(event) || detail.path?.trim() || detail.content?.trim() || detail.oldContent?.trim(),
+  );
 }
 
 function extractFilePath(event: ToolUsedEvent): string | null {

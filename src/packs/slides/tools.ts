@@ -49,16 +49,32 @@ function presentation(ctx: ToolContext): Presentation {
   return artifact;
 }
 
+function slideTextValue(value: unknown): string {
+  if (value === undefined || value === null) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) return value.map(slideTextValue).filter(Boolean).join("\n");
+  if (typeof value === "object") {
+    const raw = value as Record<string, unknown>;
+    for (const key of ["text", "content", "body", "value", "description", "summary", "paragraphs", "bullets", "bullet_points", "items"]) {
+      if (raw[key] !== undefined) return slideTextValue(raw[key]);
+    }
+  }
+  return "";
+}
+
 function normalizeSlide(input: unknown, index: number): Slide {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error(`slide ${index + 1} must be an object`);
   const raw = input as Record<string, unknown>;
-  const body = raw.body ?? raw.content ?? (Array.isArray(raw.bullet_points) ? raw.bullet_points.filter((item): item is string => typeof item === "string").join("\n") : "");
+  const body = raw.body ?? raw.content ?? (Array.isArray(raw.bullet_points) ? raw.bullet_points : "");
+  const content = slideTextValue(body);
+  const notes = slideTextValue(raw.notes ?? "");
   return {
     ...raw,
     id: String(raw.id ?? index + 1),
-    title: String(raw.title ?? raw.heading ?? ""),
-    body: String(body ?? ""),
-    notes: String(raw.notes ?? ""),
+    title: slideTextValue(raw.title ?? raw.heading ?? ""),
+    body: content || notes,
+    notes,
     background: String(raw.background ?? "#F7F3EA"),
     accent: String(raw.accent ?? "#187665"),
   } as Slide;

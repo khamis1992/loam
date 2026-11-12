@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 import { createDeckTools } from "../slides/tools.js";
+import { readStudio } from "../../studio/store.js";
 import type { Tool, ToolContext } from "../../tools/registry.js";
 import type { AgentEvent } from "../../agent/events.js";
 
@@ -68,6 +69,31 @@ describe("HTML and image slide formats", () => {
       const presented = await tools.get("deck_present")!.run({}, ctx);
       assert.equal(presented.ok, true, presented.content);
       assert.match(presented.content, /\.png/);
+    } finally {
+      fs.rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("normalizes structured slide text instead of exporting [object Object]", async () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "loam-structured-deck-"));
+    try {
+      const tools = toolsByName(createDeckTools());
+      const result = await tools.get("deck_init")!.run({
+        title: "دولة الإمارات",
+        slides: [
+          { id: "overview", title: "دولة الإمارات العربية المتحدة", body: { text: "دولة اتحادية في الخليج العربي." } },
+          { id: "facts", title: "حقائق", bullet_points: [{ text: "سبع إمارات" }, { text: "تأسست عام 1971" }] },
+          { id: "notes-only", title: "نبذة", notes: "معلومات موجزة عن الدولة." },
+        ],
+      }, context(workspace));
+      assert.equal(result.ok, true, result.content);
+      const artifact = readStudio(workspace);
+      assert.equal(artifact?.kind, "presentation");
+      if (artifact?.kind !== "presentation") return;
+      assert.equal(artifact.content.slides[0]?.body, "دولة اتحادية في الخليج العربي.");
+      assert.equal(artifact.content.slides[1]?.body, "سبع إمارات\nتأسست عام 1971");
+      assert.equal(artifact.content.slides[2]?.body, "معلومات موجزة عن الدولة.");
+      assert.equal(artifact.content.slides.some((slide) => slide.body.includes("[object Object]")), false);
     } finally {
       fs.rmSync(workspace, { recursive: true, force: true });
     }

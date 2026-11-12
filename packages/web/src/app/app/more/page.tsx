@@ -1,7 +1,10 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Settings, HelpCircle, FileText } from 'lucide-react';
+import {
+  ArrowLeft, Settings, HelpCircle, FileText, Bot, Layers, KanbanSquare,
+  BookOpen, Brain, Scale, Landmark, Palette, Store, Clapperboard,
+} from 'lucide-react';
 import { t } from '@/i18n/t';
 import { openSettings } from '@/store';
 import { useAppDispatch } from '@/store';
@@ -11,6 +14,16 @@ export default function MorePage() {
   const dispatch = useAppDispatch();
 
   const links = [
+    { label: t('Agent Loam'), icon: Bot, href: '/app/agents' },
+    { label: t('Creations'), icon: Layers, href: '/app/creations' },
+    { label: t('Board'), icon: KanbanSquare, href: '/app/board' },
+    { label: t('Wiki'), icon: BookOpen, href: '/app/wiki' },
+    { label: t('Memory'), icon: Brain, href: '/app/memory' },
+    { label: t('Legal'), icon: Scale, href: '/legal' },
+    { label: t('Finance'), icon: Landmark, href: '/app/finance' },
+    { label: t('Studio'), icon: Palette, href: '/app/studio' },
+    { label: t('Marketplace'), icon: Store, href: '/app/marketplace' },
+    { label: t('Video'), icon: Clapperboard, href: '/app/video' },
     { label: t('Settings'), icon: Settings, action: 'settings' },
     { label: t('Docs'), icon: FileText, href: '/app/help' },
     { label: t('Get help'), icon: HelpCircle, href: '/app/help' },

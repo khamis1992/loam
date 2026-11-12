@@ -3,15 +3,10 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Activity,
   AlertCircle,
-  ArrowLeft,
   ArrowUp,
-  ArrowUpRight,
   CalendarClock,
   Check,
-  CheckCircle2,
-  CirclePause,
   Clock,
   Copy,
   GitPullRequest,
@@ -22,7 +17,6 @@ import {
   Pencil,
   Play,
   Plus,
-  Radio,
   SlidersHorizontal,
   Trash2,
   Webhook,
@@ -31,7 +25,6 @@ import {
   Zap,
 } from 'lucide-react';
 import clsx from 'clsx';
-import styles from './automations.module.css';
 import { getLocale, t } from '@/i18n/t';
 import {
   createSchedule,
@@ -89,6 +82,12 @@ function formatDateTime(value: string): string {
   const time = Date.parse(value);
   if (!Number.isFinite(time)) return value;
   return new Intl.DateTimeFormat(getLocale() === 'ar' ? 'ar' : 'en', { dateStyle: 'medium', timeStyle: 'short' }).format(time);
+}
+
+function formatTime(value: string): string {
+  const time = Date.parse(value);
+  if (!Number.isFinite(time)) return value;
+  return new Intl.DateTimeFormat(getLocale() === 'ar' ? 'ar' : 'en', { hour: 'numeric', minute: '2-digit' }).format(time);
 }
 
 function updateSummary(s: Schedule): string {
@@ -279,47 +278,27 @@ export default function AutomationsPage() {
   const managed = useMemo(() => schedules.filter((s) => statusFilter === 'all' || (statusFilter === 'active' ? s.enabled : !s.enabled)), [schedules, statusFilter]);
   const webhookUrl = webhookSetup ? `${getApiBase()}/api/automations/trigger/${encodeURIComponent(webhookSetup.id)}` : '';
 
-  const activeCount = schedules.filter((schedule) => schedule.enabled).length;
-  const pausedCount = schedules.length - activeCount;
-
-  const createMenuContent = createMenu && (
-    <div role="menu" className={clsx(styles.menu, styles.createMenu)}>
-      <button role="menuitem" onClick={() => openCreate('schedule')} className={styles.menuItem}><Clock className="size-4" />{t('Schedule')}<ArrowUpRight className={styles.menuArrow} /></button>
-      <button role="menuitem" onClick={() => openCreate('trigger')} className={styles.menuItem}><GitPullRequest className="size-4" />{t('Trigger')}<ArrowUpRight className={styles.menuArrow} /></button>
-      <button role="menuitem" onClick={() => openCreate('advanced')} className={styles.menuItem}><Workflow className="size-4" /><span>{t('Advanced automation')}</span><span className={styles.beta}>Beta</span></button>
-    </div>
-  );
-
   if (createView === 'schedule') {
     return (
-      <div className={clsx(styles.page, styles.creationPage)}>
-        <header className={styles.creationTopbar}>
-          <button type="button" onClick={() => setCreateView(null)} className={styles.backButton}><ArrowLeft className={styles.backIcon} />{t('Back')}</button>
-          <span>{t('Automations')}</span>
-          <span className={styles.creationIndex}>01 / 01</span>
-        </header>
-        <div className={styles.creationScroll}>
-          <main className={styles.creationMain}>
-            <div className={styles.creationHeading}>
-              <p className={styles.kicker}><Workflow />{t('Loam automation studio')}</p>
-              <h1>{t('Automate your work')}</h1>
-              <p>{t('Set the trigger. Loam takes it from here.')}</p>
-            </div>
-            <form onSubmit={(event) => void createScheduled(event)} className={styles.scheduleForm}>
-              <section className={styles.formSection}>
-                <div className={styles.formSectionTitle}><span>01</span><h2>{t('When')}</h2><Clock /></div>
-                <div className={styles.scheduleControls}>
-                  <CalendarClock aria-hidden />
-                  <label><span className="sr-only">{t('Cadence')}</span><select aria-label={t('Cadence')} value={cadence} onChange={(e) => setCadence(e.target.value as typeof cadence)}><option value="daily">{t('Daily')}</option><option value="weekly">{t('Weekly')}</option><option value="monthly">{t('Monthly')}</option><option value="hourly">{t('Hourly')}</option></select></label>
-                  {cadence !== 'hourly' && <><span>{t('at')}</span><input aria-label={t('Time')} type="time" value={time} onChange={(e) => setTime(e.target.value)} /></>}
-                </div>
-              </section>
-              <section className={styles.formSection}>
-                <div className={styles.formSectionTitle}><span>02</span><h2>{t('Loam will')}</h2><Zap /></div>
-                <textarea value={newPrompt} onChange={(e) => setNewPrompt(e.target.value)} placeholder={t('Describe what Loam should do, e.g. summarize the latest AI news and send me the highlights')} rows={5} className={styles.schedulePrompt} />
-              </section>
-              {formError && <p role="alert" className={styles.formError}>{formError}</p>}
-              <div className={styles.formFooter}><p>{t('Set the trigger. Loam takes it from here.')}</p><button type="submit" disabled={!newPrompt.trim() || saving} className={styles.primaryButton}>{saving ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}{t('Create')}<ArrowUpRight className="size-4" /></button></div>
+      <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-bg-main">
+        <header className="flex h-14 shrink-0 items-center px-6"><h1 className="text-[18px] font-semibold text-text-primary">{t('Automations')}</h1></header>
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-12">
+          <main className="mx-auto w-full max-w-[768px]">
+            <h2 className="pt-14 text-center font-serif text-[34px] leading-tight text-text-primary">{t('Automate your work')}</h2>
+            <form onSubmit={(event) => void createScheduled(event)} className="mt-16 rounded-card border border-border-main bg-bg-menu p-4 shadow-sm">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-medium text-text-primary">{t('When')}</h3>
+                <button type="button" aria-label={t('Close')} onClick={() => setCreateView(null)} className="rounded-control p-1 text-text-tertiary hover:bg-fill-hover"><X className="size-4" /></button>
+              </div>
+              <div className="mt-3 flex items-center gap-2 rounded-[8px] border border-border-main p-3">
+                <Clock className="size-4 text-text-secondary" />
+                <label className="text-sm text-text-secondary"><span className="sr-only">{t('Cadence')}</span><select aria-label={t('Cadence')} value={cadence} onChange={(e) => setCadence(e.target.value as typeof cadence)} className="bg-transparent text-text-primary outline-none"><option value="daily">{t('Daily')}</option><option value="weekly">{t('Weekly')}</option><option value="monthly">{t('Monthly')}</option><option value="hourly">{t('Hourly')}</option></select></label>
+                {cadence !== 'hourly' && <><span className="text-sm text-text-tertiary">{t('at')}</span><input aria-label={t('Time')} type="time" value={time} onChange={(e) => setTime(e.target.value)} className="bg-transparent text-sm text-text-primary outline-none" /></>}
+              </div>
+              <h3 className="mt-5 text-sm font-medium text-text-primary">{t('Loam will')}</h3>
+              <textarea value={newPrompt} onChange={(e) => setNewPrompt(e.target.value)} placeholder={t('Describe what Loam should do, e.g. summarize the latest AI news and send me the highlights')} rows={4} className="mt-3 w-full resize-none rounded-[8px] border border-border-main bg-transparent p-3 text-sm leading-6 text-text-primary outline-none placeholder:text-text-tertiary focus:border-border-dark" />
+              {formError && <p role="alert" className="mt-2 text-xs text-func-error">{formError}</p>}
+              <div className="mt-2 flex justify-end"><button type="submit" disabled={!newPrompt.trim() || saving} className="flex items-center gap-2 rounded-[7px] bg-text-primary px-4 py-2 text-[13px] font-medium text-text-onblack disabled:opacity-40">{saving && <Loader2 className="size-4 animate-spin" />}{t('Create')}</button></div>
             </form>
           </main>
         </div>
@@ -329,40 +308,30 @@ export default function AutomationsPage() {
 
   if (createView === 'trigger' || createView === 'advanced') {
     return (
-      <div className={clsx(styles.page, styles.creationPage)}>
-        <header className={styles.creationTopbar}>
-          <button type="button" onClick={() => setCreateView(null)} className={styles.backButton}><ArrowLeft className={styles.backIcon} />{t('Back')}</button>
-          <span>{t('Automations')}</span>
-          <span className={styles.creationIndex}>01 / 02</span>
-        </header>
-        <div className={styles.creationScroll}>
-          <main className={styles.creationMain}>
-            <div className={styles.creationHeading}>
-              <p className={styles.kicker}><Workflow />{t('Loam automation studio')}</p>
-              <h1>{t('Automate your work')}</h1>
-              <p>{t('Set the trigger. Loam takes it from here.')}</p>
+      <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-bg-main">
+        <header className="flex h-14 shrink-0 items-center px-6"><h1 className="text-[18px] font-semibold text-text-primary">{t('Automations')}</h1></header>
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-12">
+          <main className="mx-auto w-full max-w-[768px]">
+            <h2 className="pt-14 text-center font-serif text-[34px] leading-tight text-text-primary">{t('Automate your work')}</h2>
+            <div className="mt-8 rounded-composer border border-border-main bg-bg-menu p-3 shadow-sm">
+              <label htmlFor="automation-brief" className="sr-only">{t('Give Loam a task to work on')}</label>
+              <textarea id="automation-brief" value={newPrompt} onChange={(event) => setNewPrompt(event.target.value)} placeholder={t('Give Loam a task to work on')} rows={2} data-testid="automation-brief" className="w-full resize-none bg-transparent px-1 py-1 text-sm text-text-primary outline-none placeholder:text-text-tertiary" />
+              <div className="flex justify-end"><button type="button" onClick={() => openNew(newPrompt, createView === 'advanced' ? 'advanced' : 'webhook')} aria-label={t('Send')} className="rounded-full bg-text-primary p-2 text-text-onblack hover:opacity-90"><ArrowUp className="size-4" /></button></div>
             </div>
-            <div className={styles.briefComposer}>
-              <label htmlFor="automation-brief"><span>01</span>{t('Give Loam a task to work on')}</label>
-              <textarea id="automation-brief" value={newPrompt} onChange={(event) => setNewPrompt(event.target.value)} placeholder={t('Give Loam a task to work on')} rows={3} data-testid="automation-brief" />
-              <button type="button" onClick={() => openNew(newPrompt, createView === 'advanced' ? 'advanced' : 'webhook')} aria-label={t('Send')}><ArrowUp /></button>
-            </div>
-            <section className={styles.startSection} aria-labelledby="automation-start-title">
-              <div className={styles.formSectionTitle}><span>02</span><h2 id="automation-start-title">{t('Choose how it starts')}</h2></div>
-              <div className={styles.kindGrid}>
-                <button type="button" data-testid="automation-kind-schedule" onClick={() => setCreateView('schedule')}><CalendarClock /><span><strong>{t('Schedule')}</strong><small>{t('Run at a time you choose')}</small></span><ArrowUpRight /></button>
-                <button type="button" data-testid="automation-kind-triggered" onClick={() => openNew(newPrompt, 'webhook')}><GitPullRequest /><span><strong>{t('Triggered task')}</strong><small>{t('Start from activity in your apps')}</small></span><ArrowUpRight /></button>
-                <button type="button" data-testid="automation-kind-advanced" onClick={() => openNew(newPrompt, 'advanced')}><Workflow /><span><strong>{t('Advanced automation')} <em>Beta</em></strong><small>{t('Describe when Loam should act')}</small></span><ArrowUpRight /></button>
+            <section className="mt-4 rounded-card border border-border-main bg-bg-menu p-4" aria-labelledby="automation-start-title">
+              <div className="flex items-center justify-between"><h3 id="automation-start-title" className="text-sm font-medium text-text-primary">{t('Choose how it starts')}</h3><button type="button" aria-label={t('Close')} onClick={() => setCreateView(null)} className="rounded-control p-1 text-text-tertiary hover:bg-fill-hover"><X className="size-4" /></button></div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                <button type="button" data-testid="automation-kind-schedule" onClick={() => setCreateView('schedule')} className="rounded-[9px] border border-border-main p-3 text-start hover:bg-fill-hover"><CalendarClock className="mb-4 size-4 text-text-secondary" /><span className="block text-[13px] font-medium text-text-primary">{t('Schedule')}</span><span className="mt-1 block text-[11px] text-text-tertiary">{t('Run at a time you choose')}</span></button>
+                <button type="button" data-testid="automation-kind-triggered" onClick={() => openNew(newPrompt, 'webhook')} className="rounded-[9px] border border-border-main p-3 text-start hover:bg-fill-hover"><GitPullRequest className="mb-4 size-4 text-text-secondary" /><span className="block text-[13px] font-medium text-text-primary">{t('Triggered task')}</span><span className="mt-1 block text-[11px] text-text-tertiary">{t('Start from activity in your apps')}</span></button>
+                <button type="button" data-testid="automation-kind-advanced" onClick={() => openNew(newPrompt, 'advanced')} className="rounded-[9px] border border-border-main p-3 text-start hover:bg-fill-hover"><Workflow className="mb-4 size-4 text-text-secondary" /><span className="block text-[13px] font-medium text-text-primary">{t('Advanced automation')} <span className="rounded bg-fill-tsp px-1 text-[9px] font-normal text-text-tertiary">Beta</span></span><span className="mt-1 block text-[11px] text-text-tertiary">{t('Describe when Loam should act')}</span></button>
               </div>
             </section>
-            <section className={styles.suggestions} aria-labelledby="automation-suggestions-title">
-              <div className={styles.formSectionTitle}><span>03</span><h2 id="automation-suggestions-title">{t('Suggestions')}</h2></div>
-              <div>
-                {SUGGESTIONS.map((suggestion, index) => (
-                  <button key={suggestion.title} type="button" onClick={() => { setNewPrompt(suggestion.prompt); if (suggestion.kind === 'advanced') setCreateView('advanced'); }}>
-                    <span className={styles.suggestionNumber}>0{index + 1}</span>
-                    <span className={styles.suggestionCopy}><strong>{suggestion.title}</strong><small>{suggestion.event}</small></span>
-                    <ArrowUpRight />
+            <section className="mt-6" aria-labelledby="automation-suggestions-title">
+              <h3 id="automation-suggestions-title" className="text-sm font-medium text-text-primary">{t('Suggestions')}</h3>
+              <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                {SUGGESTIONS.map((suggestion) => (
+                  <button key={suggestion.title} type="button" onClick={() => { setNewPrompt(suggestion.prompt); if (suggestion.kind === 'advanced') setCreateView('advanced'); }} className="flex min-h-[190px] flex-col rounded-card bg-fill-tsp p-3 text-start transition-colors hover:bg-fill-hover">
+                    <span className="rounded-[7px] bg-bg-menu p-2 text-[11px] text-text-secondary">{suggestion.event}</span><ArrowUp className="my-1 size-3 self-center rotate-180 text-text-tertiary" /><span className="rounded-[7px] bg-bg-menu p-2 text-[11px] leading-4 text-text-secondary">{suggestion.action}</span><span className="mt-auto pt-3 text-[12px] font-medium text-text-primary">{suggestion.title}</span>
                   </button>
                 ))}
               </div>
@@ -375,93 +344,62 @@ export default function AutomationsPage() {
   }
 
   return (
-    <div className={styles.page}>
-      <header className={styles.header}>
-        <div className={styles.titleBlock}>
-          <p className={styles.kicker}><Workflow />{t('Loam automation studio')}<span className={styles.kickerRule} /><span>{String(schedules.length).padStart(2, '0')}</span></p>
-          <div className={styles.titleLine}><h1>{t('Automations')}<span>.</span></h1><p>{t('Set the trigger. Loam takes it from here.')}</p></div>
-        </div>
-        <div className={styles.createWrap}>
-          <button type="button" onClick={() => { setCreateMenu((value) => !value); setFilterMenu(false); }} className={styles.primaryButton} aria-expanded={createMenu}><Plus />{t('Create')}<ArrowUpRight /></button>
-          {createMenuContent}
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-bg-main">
+      <header className="flex h-14 shrink-0 items-center justify-between px-6">
+        <h1 className="text-[18px] font-semibold tracking-[-0.01em] text-text-primary">{t('Automations')}</h1>
+        <div className="flex items-center gap-2">
+          {tab === 'updates' && <div className="flex items-center rounded-[6px] border border-border-main bg-bg-menu p-0.5 shadow-sm"><button type="button" aria-label={t('List view')} aria-pressed={updatesView === 'list'} onClick={() => setUpdatesView('list')} className={clsx('rounded-[5px] p-1.5', updatesView === 'list' ? 'bg-bg-menu text-text-primary shadow-sm' : 'text-text-tertiary')}><List className="size-4" /></button><button type="button" aria-label={t('Grid view')} aria-pressed={updatesView === 'grid'} onClick={() => setUpdatesView('grid')} className={clsx('rounded-[5px] p-1.5', updatesView === 'grid' ? 'bg-bg-menu text-text-primary shadow-sm' : 'text-text-tertiary')}><LayoutGrid className="size-4" /></button></div>}
+          <div className="relative">
+            <button type="button" aria-label={t('Filter')} onClick={() => { setFilterMenu((value) => !value); setCreateMenu(false); }} className="rounded-[6px] border border-border-main bg-bg-menu p-2 text-text-secondary shadow-sm hover:bg-fill-hover"><SlidersHorizontal className="size-4" /></button>
+            {filterMenu && <div role="menu" className="absolute end-0 top-10 z-30 w-40 rounded-card border border-border-main bg-bg-menu p-1.5 shadow-layer">{(['all', 'active', 'paused'] as const).map((filter) => <button key={filter} role="menuitemradio" aria-checked={statusFilter === filter} onClick={() => { setStatusFilter(filter); setFilterMenu(false); }} className={clsx('w-full rounded-control px-3 py-2 text-start text-xs hover:bg-fill-hover', statusFilter === filter ? 'font-medium text-text-primary' : 'text-text-secondary')}>{t(filter === 'all' ? 'All automations' : filter === 'active' ? 'Active' : 'Paused')}</button>)}</div>}
+          </div>
+          <div className="relative">
+            <button type="button" onClick={() => { setCreateMenu((value) => !value); setFilterMenu(false); }} className="flex items-center gap-1.5 rounded-[7px] border border-border-main bg-bg-menu px-3.5 py-2 text-[13px] font-medium text-text-primary shadow-sm hover:bg-fill-hover"><Plus className="size-4" />{t('Create')}</button>
+            {createMenu && <div role="menu" className="absolute end-0 top-11 z-30 w-64 rounded-card border border-border-main bg-bg-menu p-2 shadow-layer"><button role="menuitem" onClick={() => openCreate('schedule')} className="flex w-full items-center gap-2 rounded-control px-3 py-2.5 text-start text-[13px] text-text-primary hover:bg-fill-hover"><Clock className="size-4 text-text-secondary" />{t('Schedule')}</button><button role="menuitem" onClick={() => openCreate('trigger')} className="flex w-full items-center gap-2 rounded-control px-3 py-2.5 text-start text-[13px] text-text-primary hover:bg-fill-hover"><GitPullRequest className="size-4 text-text-secondary" />{t('Trigger')}</button><button role="menuitem" onClick={() => openCreate('advanced')} className="flex w-full items-center gap-2 rounded-control px-3 py-2.5 text-start text-[13px] text-text-primary hover:bg-fill-hover"><Workflow className="size-4 text-text-secondary" /><span>{t('Advanced automation')}</span><span className="rounded bg-fill-tsp px-1.5 py-0.5 text-[9px] text-text-tertiary">Beta</span></button></div>}
+          </div>
         </div>
       </header>
+      <div className="flex h-10 shrink-0 items-end gap-6 border-b border-border-main px-6" role="tablist" aria-label={t('Automation views')}>
+        {(['updates', 'manage'] as const).map((item) => <button key={item} role="tab" aria-selected={tab === item} onClick={() => setTab(item)} className={clsx('h-full border-b-2 text-[13px]', tab === item ? 'border-text-primary font-medium text-text-primary' : 'border-transparent text-text-tertiary hover:text-text-primary')}>{t(item === 'updates' ? 'Updates' : 'Manage')}</button>)}
+      </div>
 
-      <div className={styles.scroll}>
-        <section className={styles.hero} aria-label={t('Automation overview')}>
-          <div className={styles.heroCopy}>
-            <p className={styles.liveBadge}><Radio />{activeCount > 0 ? t('Running quietly in the background') : t('Ready when you are')}</p>
-            <h2>{activeCount > 0 ? t('Your work is in motion.') : t('Put your repeat work on autopilot.')}</h2>
-            <p>{t('Schedules, events, and intelligent playbooks — one calm place to keep them moving.')}</p>
-          </div>
-          <div className={styles.routeArt} aria-hidden="true">
-            <span className={styles.routeLine} />
-            <span className={styles.routeNode}><Clock /></span>
-            <span className={styles.routeNode}><Zap /></span>
-            <span className={styles.routeNode}><Check /></span>
-          </div>
-          <div className={styles.metrics}>
-            <div className={styles.metric}><span>{t('Active')}</span><strong>{String(activeCount).padStart(2, '0')}</strong><Activity /></div>
-            <div className={styles.metric}><span>{t('On pause')}</span><strong>{String(pausedCount).padStart(2, '0')}</strong><CirclePause /></div>
-            <div className={styles.metric}><span>{t('Runs logged')}</span><strong>{String(updates.length).padStart(2, '0')}</strong><ArrowUpRight /></div>
-          </div>
-        </section>
-
-        <section className={styles.console}>
-          <header className={styles.consoleHeader}>
-            <div className={styles.tabs} role="tablist" aria-label={t('Automation views')}>
-              <button role="tab" aria-label={t('Updates')} aria-selected={tab === 'updates'} onClick={() => setTab('updates')} className={clsx(styles.tab, tab === 'updates' && styles.tabActive)}><Activity />{t('Updates')}<span>{updates.length}</span></button>
-              <button role="tab" aria-label={t('Manage')} aria-selected={tab === 'manage'} onClick={() => setTab('manage')} className={clsx(styles.tab, tab === 'manage' && styles.tabActive)}><Workflow />{t('Manage')}<span>{schedules.length}</span></button>
-            </div>
-            <div className={styles.consoleTools}>
-              {tab === 'updates' && <div className={styles.viewSwitch}><button type="button" aria-label={t('List view')} aria-pressed={updatesView === 'list'} onClick={() => setUpdatesView('list')} className={clsx(updatesView === 'list' && styles.viewActive)}><List /></button><button type="button" aria-label={t('Grid view')} aria-pressed={updatesView === 'grid'} onClick={() => setUpdatesView('grid')} className={clsx(updatesView === 'grid' && styles.viewActive)}><LayoutGrid /></button></div>}
-              <div className={styles.filterWrap}>
-                <button type="button" aria-label={t('Filter')} aria-expanded={filterMenu} onClick={() => { setFilterMenu((value) => !value); setCreateMenu(false); }} className={clsx(styles.filterButton, statusFilter !== 'all' && styles.filterActive)}><SlidersHorizontal />{statusFilter !== 'all' && <span />}</button>
-                {filterMenu && <div role="menu" className={clsx(styles.menu, styles.filterMenu)}>{(['all', 'active', 'paused'] as const).map((filter) => <button key={filter} role="menuitemradio" aria-checked={statusFilter === filter} onClick={() => { setStatusFilter(filter); setFilterMenu(false); }} className={styles.menuItem}><span className={clsx(styles.filterDot, filter === 'active' && styles.filterDotActive, filter === 'paused' && styles.filterDotPaused)} />{t(filter === 'all' ? 'All automations' : filter === 'active' ? 'Active' : 'Paused')}{statusFilter === filter && <Check className={styles.menuArrow} />}</button>)}</div>}
-              </div>
-            </div>
-          </header>
-
-          <div className={styles.consoleBody} aria-live="polite">
-            {error && schedules.length > 0 && <div className={styles.inlineError} role="alert"><AlertCircle /><span>{error}</span><button type="button" onClick={() => { setLoading(true); void refresh(); }}>{t('Retry')}</button></div>}
-            {loading ? <div className={styles.state}><Loader2 className="size-6 animate-spin" /><p>{t('Loading')}</p></div> : error && schedules.length === 0 ? (
-              <div className={styles.state} role="alert"><AlertCircle className="size-7 text-func-error" /><p>{t('Failed to load automations')}</p><small>{error}</small><button type="button" onClick={() => { setLoading(true); void refresh(); }} className={styles.secondaryButton}>{t('Retry')}</button></div>
-            ) : tab === 'updates' ? (
-              updates.length === 0 ? <div className={styles.emptyState}><div className={styles.emptyArt} aria-hidden="true"><span><Clock /></span><i /><span><Zap /></span><i /><span><Check /></span></div><p>{t('No automation updates yet.')}</p><small>{t('Your latest automation activity will collect here.')}</small><button type="button" onClick={() => setCreateMenu(true)} className={styles.secondaryButton}><Plus />{t('Create your first automation')}</button></div> : (
-                <div className={styles.timeline}>
-                  {updateGroups.map(([date, items]) => (
-                    <section key={date} className={styles.dayGroup}>
-                      <h2><span>{new Intl.DateTimeFormat(getLocale() === 'ar' ? 'ar' : 'en', { month: 'short', day: 'numeric' }).format(new Date(`${date}T12:00:00`))}</span><span>{String(items.length).padStart(2, '0')}</span></h2>
-                      <div className={clsx(styles.updateItems, updatesView === 'grid' && styles.updateGrid)}>
-                        {items.map((s) => <button key={s.id} type="button" onClick={() => { if (s.lastTaskId) router.push(`/app/${s.lastTaskId}`); }} className={styles.updateRow}><span className={clsx(styles.updateStatus, s.lastStatus === 'failed' && styles.updateFailed)}>{s.lastStatus === 'failed' ? <AlertCircle /> : <CheckCircle2 />}</span><span className={styles.updateCopy}><strong>{s.prompt}</strong><span>{updateSummary(s)}</span></span><span className={styles.updateTime}><time>{formatDateTime(s.lastRunAt!)}</time><ArrowUpRight /></span></button>)}
-                      </div>
-                    </section>
-                  ))}
-                </div>
-              )
-            ) : (
-              <div>
-                {webhookSetup && <WebhookSetup id={webhookSetup.id} secret={webhookSetup.secret} url={webhookUrl} copied={copied} onCopy={copySetup} onClose={() => setWebhookSetup(null)} />}
-                {managed.length === 0 ? <div className={styles.emptyState}><div className={styles.emptyArt} aria-hidden="true"><span><Clock /></span><i /><span><Zap /></span><i /><span><Check /></span></div><p>{schedules.length === 0 ? t('No automations yet.') : t('No automations match this filter.')}</p><small>{t('Put your repeat work on autopilot.')}</small><button type="button" onClick={() => setCreateMenu(true)} className={styles.secondaryButton}><Plus />{t('Create your first automation')}</button></div> : (
-                  <div className={styles.manageList}>
-                    <div className={styles.manageColumns} aria-hidden="true"><span>{t('Automation')}</span><span>{t('Trigger')}</span><span>{t('Last run')}</span><span>{t('Status')}</span></div>
-                    {managed.map((s, index) => (
-                      <article key={s.id} className={styles.manageRow}>
-                        <div className={styles.automationIdentity}><span>{String(index + 1).padStart(2, '0')}</span><i>{s.trigger === 'webhook' || s.trigger === 'github' ? <Webhook /> : s.playbook ? <Workflow /> : <Clock />}</i></div>
-                        <div className={styles.automationCopy}><h2 title={s.prompt}>{s.prompt}</h2><p>{s.playbook || s.prompt}</p></div>
-                        <div className={styles.automationTiming}><span>{triggerLabel(s)}</span><strong dir="auto">{scheduleLabel(s)}</strong></div>
-                        <div className={styles.automationLastRun}><span>{t('Last run')}</span><time>{s.lastRunAt ? formatDateTime(s.lastRunAt) : t('Never run')}</time></div>
-                        <div className={styles.automationState}><span className={clsx(styles.statusPill, !s.enabled && styles.statusPaused)}><i />{t(s.enabled ? 'Active' : 'Paused')}</span><button type="button" aria-label={t('Automation actions')} aria-expanded={menuId === s.id} onClick={() => setMenuId(menuId === s.id ? null : s.id)} className={styles.moreButton}>{busyId === s.id ? <Loader2 className="animate-spin" /> : <MoreHorizontal />}</button>
-                          {menuId === s.id && <div className={clsx(styles.menu, styles.actionMenu)}><button type="button" onClick={() => { setMenuId(null); void runNow(s); }} disabled={busyId === s.id} className={styles.menuItem}><Play />{t('Run now')}</button><button type="button" onClick={() => { setMenuId(null); void toggle(s); }} disabled={busyId === s.id} className={styles.menuItem}><Zap />{t(s.enabled ? 'Pause' : 'Resume')}</button><button type="button" onClick={() => { setMenuId(null); setFormError(null); setDraft({ id: s.id, prompt: s.prompt, kind: s.trigger === 'webhook' || s.trigger === 'github' ? s.trigger : s.playbook ? 'advanced' : s.cron ? 'cron' : s.runAt ? 'once' : 'interval', intervalSeconds: String(s.intervalSeconds ?? 3600), cron: s.cron ?? '', at: s.runAt ?? '', webhookSecret: newSecret(), githubEvents: s.githubEvents?.join(', ') ?? 'pull_request.opened' }); }} className={styles.menuItem}><Pencil />{t('Edit')}</button>{confirmDelete === s.id ? <button type="button" onClick={() => void remove(s.id)} disabled={busyId === s.id} className={clsx(styles.menuItem, styles.deleteItem)}>{t('Confirm delete')}</button> : <button type="button" onClick={() => setConfirmDelete(s.id)} className={clsx(styles.menuItem, styles.deleteItem)}><Trash2 />{t('Delete')}</button>}</div>}
-                        </div>
-                      </article>
-                    ))}
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+        {loading ? <div className="flex items-center justify-center gap-2 py-16 text-text-secondary"><Loader2 className="size-5 animate-spin" />{t('Loading')}</div> : error && schedules.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 py-16 text-func-error" role="alert"><AlertCircle className="size-6" /><p className="text-sm">{t('Failed to load automations')}</p><p className="text-xs">{error}</p><button type="button" onClick={() => { setLoading(true); void refresh(); }} className="mt-2 rounded-[6px] bg-fill-hover px-3 py-1.5 text-xs text-text-primary">{t('Retry')}</button></div>
+        ) : tab === 'updates' ? (
+          updates.length === 0 ? <div className="flex flex-col items-center gap-3 py-16 text-text-tertiary"><Zap className="size-8 stroke-[1.25]" /><p className="text-sm">{t('No automation updates yet.')}</p><button type="button" onClick={() => setCreateMenu(true)} className="flex items-center gap-1 rounded-[7px] bg-fill-hover px-3 py-1.5 text-sm font-medium text-text-primary"><Plus className="size-4" />{t('Create your first automation')}</button></div> : (
+            <div className="mx-auto w-full max-w-[960px]">
+              {updateGroups.map(([date, items]) => (
+                <section key={date} className="mb-5">
+                  <h2 className="mb-2 text-sm font-medium text-text-primary">{new Intl.DateTimeFormat(getLocale() === 'ar' ? 'ar' : 'en', { month: 'short', day: 'numeric' }).format(new Date(`${date}T12:00:00`))} ({items.length})</h2>
+                  <div className={clsx('grid gap-3', updatesView === 'grid' && 'md:grid-cols-2')}>
+                    {items.map((s) => <button key={s.id} type="button" onClick={() => { if (s.lastTaskId) router.push(`/app/${s.lastTaskId}`); }} className="grid min-h-[124px] min-w-0 overflow-hidden rounded-card border border-border-main bg-bg-main text-start md:grid-cols-[236px_1fr]"><span className="flex min-w-0 flex-col border-b border-border-light bg-bg-menu p-4 md:border-b-0 md:border-e"><Clock className="mb-3 size-4 shrink-0 text-text-secondary" /><span dir="auto" className="min-w-0 break-words line-clamp-2 text-[13px] font-medium text-text-primary">{s.prompt}</span><span className="mt-auto block pt-2 text-[11px] text-text-tertiary">{formatTime(s.lastRunAt!)}</span></span><span dir="auto" className="min-w-0 break-words line-clamp-3 p-4 text-[13px] leading-6 text-text-secondary">{updateSummary(s)}</span></button>)}
                   </div>
-                )}
+                </section>
+              ))}
+            </div>
+          )
+        ) : (
+          <div className="mx-auto w-full max-w-[768px]">
+            {webhookSetup && <WebhookSetup id={webhookSetup.id} secret={webhookSetup.secret} url={webhookUrl} copied={copied} onCopy={copySetup} onClose={() => setWebhookSetup(null)} />}
+            {managed.length === 0 ? <div className="flex flex-col items-center gap-3 py-16 text-text-tertiary"><Zap className="size-8 stroke-[1.25]" /><p className="text-sm">{schedules.length === 0 ? t('No automations yet.') : t('No automations match this filter.')}</p><button type="button" onClick={() => setCreateMenu(true)} className="flex items-center gap-1 rounded-[7px] bg-fill-hover px-3 py-1.5 text-sm font-medium text-text-primary"><Plus className="size-4" />{t('Create your first automation')}</button></div> : (
+              <div className="grid gap-4 md:grid-cols-2">
+                {managed.map((s) => (
+                  <article key={s.id} className="relative min-w-0 rounded-card border border-border-main bg-bg-menu p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="flex size-8 items-center justify-center rounded-full border border-border-main">{s.trigger === 'webhook' || s.trigger === 'github' ? <Webhook className="size-4 text-text-secondary" /> : <Clock className="size-4 text-text-secondary" />}</span>
+                      <div className="flex items-center gap-2"><span className="flex items-center gap-1.5 text-[11px] text-text-tertiary"><span className={clsx('size-1.5 rounded-full', s.enabled ? 'bg-func-success' : 'bg-text-tertiary')} />{t(s.enabled ? 'Active' : 'Paused')}</span><button type="button" aria-label={t('Automation actions')} onClick={() => setMenuId(menuId === s.id ? null : s.id)} className="rounded-control p-1 text-text-tertiary hover:bg-fill-hover"><MoreHorizontal className="size-4" /></button></div>
+                    </div>
+                    <p className="mt-3 text-[11px] text-text-tertiary">{triggerLabel(s)} · {scheduleLabel(s)}</p>
+                    <h2 className="mt-1 truncate text-[13px] font-medium text-text-primary" title={s.prompt}>{s.prompt}</h2>
+                    <p className="mt-1 line-clamp-2 text-[11px] leading-5 text-text-tertiary">{s.playbook || s.prompt}</p>
+                    {menuId === s.id && <div className="absolute end-3 top-12 z-20 w-40 rounded-card border border-border-main bg-bg-menu p-1.5 shadow-layer"><button type="button" onClick={() => { setMenuId(null); void runNow(s); }} disabled={busyId === s.id} className="flex w-full items-center gap-2 rounded-control px-3 py-2 text-start text-xs text-text-primary hover:bg-fill-hover"><Play className="size-3.5" />{t('Run now')}</button><button type="button" onClick={() => { setMenuId(null); void toggle(s); }} disabled={busyId === s.id} className="flex w-full items-center gap-2 rounded-control px-3 py-2 text-start text-xs text-text-primary hover:bg-fill-hover"><Zap className="size-3.5" />{t(s.enabled ? 'Pause' : 'Resume')}</button><button type="button" onClick={() => { setMenuId(null); setFormError(null); setDraft({ id: s.id, prompt: s.prompt, kind: s.trigger === 'webhook' || s.trigger === 'github' ? s.trigger : s.playbook ? 'advanced' : s.cron ? 'cron' : s.runAt ? 'once' : 'interval', intervalSeconds: String(s.intervalSeconds ?? 3600), cron: s.cron ?? '', at: s.runAt ?? '', webhookSecret: newSecret(), githubEvents: s.githubEvents?.join(', ') ?? 'pull_request.opened' }); }} className="flex w-full items-center gap-2 rounded-control px-3 py-2 text-start text-xs text-text-primary hover:bg-fill-hover"><Pencil className="size-3.5" />{t('Edit')}</button>{confirmDelete === s.id ? <button type="button" onClick={() => void remove(s.id)} disabled={busyId === s.id} className="w-full rounded-control px-3 py-2 text-start text-xs text-func-error hover:bg-fill-hover">{t('Confirm delete')}</button> : <button type="button" onClick={() => setConfirmDelete(s.id)} className="flex w-full items-center gap-2 rounded-control px-3 py-2 text-start text-xs text-func-error hover:bg-fill-hover"><Trash2 className="size-3.5" />{t('Delete')}</button>}</div>}
+                  </article>
+                ))}
               </div>
             )}
           </div>
-        </section>
+        )}
       </div>
       <AutomationDraftDialog draft={draft} setDraft={setDraft} saving={saving} formError={formError} onSubmit={saveDraft} />
     </div>

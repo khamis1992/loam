@@ -284,8 +284,9 @@ function ensureNewerVersion(root) {
   const file = path.join(root, "package.json");
   const raw = fs.readFileSync(file, "utf8");
   const current = raw.match(/"version":\s*"([^"]+)"/)?.[1] || "0.0.0";
-  if (compareVersions(current, app.getVersion()) > 0) return current;
-  const parts = versionParts(current);
+  const installed = app.getVersion();
+  if (compareVersions(current, installed) > 0) return current;
+  const parts = versionParts(installed);
   while (parts.length < 3) parts.push(0);
   parts[2] += 1;
   const next = parts.join(".");
@@ -350,4 +351,4 @@ async function installNow() {
   try { setState({ state: 'installing' });u.quitAndInstall(true, true); return true; } catch (err) { installing = false;setState({ state: 'error', reason: String(err.message || err) });return false; }
 }
 
-module.exports = { init, check, checkInteractive, installNow, applyLocalUpdate, getStatus, feedUrl };
+module.exports = { init, check, checkInteractive, installNow, applyLocalUpdate, getStatus, feedUrl, ensureNewerVersion };

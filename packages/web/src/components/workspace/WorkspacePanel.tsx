@@ -46,6 +46,10 @@ function sameWorkspacePath(listed: string, requested: string | null | undefined)
   return a.endsWith('/' + b) || b.endsWith('/' + a);
 }
 
+function isInternalWorkspacePath(filePath: string): boolean {
+  return filePath.replace(/\\/g, '/').split('/').includes('.loam');
+}
+
 /** Shell-owned per-file panel: resolves the registered editor for a workspace file, forwards
  *  onSave to the per-kind save endpoint and onChatEdit onto the task's chat. */
 export function WorkspaceFilePanel({ file, onClose }: { file: WorkspaceFile; onClose: () => void }) {
@@ -284,7 +288,7 @@ export function WorkspacePanel({ taskId, live, events, requestedPath, requestedK
         const mapped: Array<WorkspaceFile & { mtimeMs: number }> = [];
         const unresolved: UnresolvedFile[] = [];
         for (const e of data.entries ?? []) {
-          if (e.dir) continue;
+          if (e.dir || isInternalWorkspacePath(e.path)) continue;
           const def = getEditorForPath(e.path);
           if (def) {
             mapped.push({ ...toWorkspaceFile(taskId, e, def), mtimeMs: e.mtimeMs ?? 0 });

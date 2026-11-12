@@ -72,3 +72,53 @@ describe('ComputerPanel timeline scrubber (H2)', () => {
     expect(screen.getByRole('button', { name: 'Previous step' }).hasAttribute('disabled')).toBe(false);
   });
 });
+
+describe('ComputerPanel editor visibility', () => {
+  afterEach(cleanup);
+
+  function renderEditor(sessionId: string, argumentsDetail: Record<string, unknown>) {
+    const event = {
+      ...toolEvent(`${sessionId}-editor`, 'text_editor'),
+      argumentsDetail,
+    } as ToolUsedEvent;
+    return render(
+      <ComputerPanel
+        event={event}
+        sessionId={sessionId}
+        onClose={() => {}}
+        workspaceSlot={<div>Workspace content</div>}
+      />,
+    );
+  }
+
+  it('hides Editor without a file or content and selects Workspace instead', () => {
+    renderEditor('empty-editor', {});
+    expect(screen.queryByRole('tab', { name: 'Editor' })).toBeNull();
+    expect(screen.getByRole('tab', { name: 'Workspace' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('Workspace content')).toBeInTheDocument();
+  });
+
+  it.each([
+    { path: 'notes.txt', content: '' },
+    { content: 'Editable text' },
+    { find: 'Original text', content: '' },
+  ])('shows Editor with a file path or editable text', (argumentsDetail) => {
+    renderEditor(`editor-${JSON.stringify(argumentsDetail)}`, argumentsDetail);
+    expect(screen.getByRole('tab', { name: 'Editor' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('hides Editor immediately when its latest event no longer has content', () => {
+    const { rerender } = renderEditor('changing-editor', { content: 'Editable text' });
+    expect(screen.getByRole('tab', { name: 'Editor' })).toBeInTheDocument();
+    rerender(
+      <ComputerPanel
+        event={toolEvent('changing-editor-empty', 'text_editor')}
+        sessionId="changing-editor"
+        onClose={() => {}}
+        workspaceSlot={<div>Workspace content</div>}
+      />,
+    );
+    expect(screen.queryByRole('tab', { name: 'Editor' })).toBeNull();
+    expect(screen.getByRole('tab', { name: 'Workspace' })).toHaveAttribute('aria-selected', 'true');
+  });
+});

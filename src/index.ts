@@ -58,7 +58,7 @@ import { withPackGuard } from "./packs/guard.js";
 import { packSystemGuidance } from "./packs/guidance.js";
 import { isOutputType, modelAbChain, normalizeEffort, type EffortLevel } from "./llm/router.js";
 import { runOrchestratedAgent, type VerdictRecord } from "./agent/orchestrator.js";
-import { shouldBypassOrchestrator, CONCISE_TOOLS } from "./agent/directMode.js";
+import { shouldBypassOrchestrator, CONCISE_TOOLS, shouldUseConciseTools } from "./agent/directMode.js";
 import { createOrchestrationCore } from "./orchestration/core.js";
 import { recordCheckpoint } from "./orchestration/public.js";
 import { writeCheckpoint } from "./agent/checkpointLog.js";
@@ -694,7 +694,7 @@ async function main(): Promise<void> {
       const agentOpts = {
         cfg: effectiveCfg,
         ollama: runOllama,
-        tools: directMode.bypass ? agentTools.forAllowlist(CONCISE_TOOLS) : agentTools,
+        tools: shouldUseConciseTools(directMode.bypass, activePackId) ? agentTools.forAllowlist(CONCISE_TOOLS) : agentTools,
         // lazy-audit (P3): /audit runs strictly read-only through the mode
         // catalog's ask toolset instead of the run's full grant.
         ...(lazyCommand?.kind === "audit" ? { tools: agentTools.forMode("ask") } : {}),

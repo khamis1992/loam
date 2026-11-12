@@ -3,7 +3,7 @@ import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 const root=path.resolve(import.meta.dirname,'..');
-const releaseDir=process.env.LOAM_RELEASE_DIR||'release';
+const releaseDir=process.env.LOAM_RELEASE_DIR||process.argv[2]||'release';
 const version=JSON.parse(await fs.readFile(path.join(root,'package.json'),'utf8')).version;
 const profile=process.env.LOAM_USER_DATA_DIR||path.join(process.env.APPDATA||path.join(os.homedir(),'AppData','Roaming'),'manus-local');
 const destination=path.join(profile,'updates');await fs.mkdir(destination,{recursive:true});

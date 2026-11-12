@@ -42,6 +42,10 @@ export const CONCISE_TOOLS: string[] = [
   "semantic_search",
 ];
 
+export function shouldUseConciseTools(bypass: boolean, activePackId?: string): boolean {
+  return bypass && !activePackId;
+}
+
 /** Questions that a single answer satisfies. */
 const QUESTION_PATTERN =
   /^(?:what|who|whom|whose|where|when|why|how|which|is|are|am|was|were|can|could|do|does|did|should|would|will|shall|may|might|have|has|had)\b/i;

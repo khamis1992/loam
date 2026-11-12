@@ -45,6 +45,7 @@ import { SideChatPanel } from '@/components/chat/SideChatPanel';
 import { AttachmentCard, kindFromName, type AttachmentKind } from '@/components/chat/AttachmentCard';
 import { ComputerPanel } from '@/components/computer/ComputerPanel';
 import { ComputerDock } from '@/components/computer/ComputerDock';
+import { TaskBrowserPanel } from '@/components/browser/TaskBrowserPanel';
 import { CompletionCard } from '@/components/chat/CompletionCard';
 import { PresentationVideoCard, type PresentationVideoRequest } from '@/components/chat/PresentationVideoCard';
 import {
@@ -143,6 +144,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   const status = useAppSelector((s) => s.chat.statusBySession[sessionUid]);
   const running = useAppSelector((s) => s.chat.running[sessionUid] ?? false);
   const error = useAppSelector((s) => s.chat.errorsBySession[sessionUid]);
+  const sessionTitle = useAppSelector((s) => s.sessions.list.find((session) => session.uid === sessionUid)?.title) ?? PRODUCT;
   const draftText = searchParams.get('draft') || '';
   const draftMode = (searchParams.get('mode') as TaskMode) || 'standard';
   const cwd = searchParams.get('cwd') || undefined;
@@ -368,6 +370,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
     ? { ...runtime.snapshot, state: 'idle', sleeping: false }
     : runtime.snapshot;
   const [selectedTool, setSelectedTool] = useState<ToolUsedEvent | null>(null);
+  const [browserOpen, setBrowserOpen] = useState(true);
   const [workspaceTarget, setWorkspaceTarget] = useState<WorkspaceOpenTarget | null>(null);
   const workspaceOpenActionRef = useRef<string>('');
   const editorsVersion = useSyncExternalStore(subscribeWorkspaceEditors, workspaceEditorsVersion, workspaceEditorsVersion);
@@ -672,39 +675,46 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-      <div className="flex h-row shrink-0 items-center justify-end gap-2 overflow-x-auto px-4 sm:px-6">
-        {running && taskId && !paused && (
+      <div className="flex h-row shrink-0 items-center justify-between gap-3 overflow-x-auto px-4 sm:px-6">
+        <div className="flex min-w-0 items-center gap-2">
+          <h1 className="truncate text-[13px] font-semibold text-text-primary" title={sessionTitle}>{sessionTitle}</h1>
+          <span className="shrink-0 rounded-control border border-border-main px-2 py-0.5 text-[11px] font-medium text-text-secondary">{resolvedLoamMode?.label || t('Standard')}</span>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {running && taskId && !paused && (
+            <button
+              type="button"
+              onClick={() => void handlePause()}
+              disabled={controlBusy}
+              className="flex h-row-sm items-center gap-1 rounded-control px-2 text-sm text-text-secondary hover:bg-fill-hover disabled:opacity-40"
+            >
+              {t('Pause')}
+            </button>
+          )}
           <button
             type="button"
-            onClick={() => void handlePause()}
-            disabled={controlBusy}
-            className="flex h-row-sm items-center gap-1 rounded-control px-2 text-sm text-text-secondary hover:bg-fill-hover disabled:opacity-40"
+            aria-label={t('Share')}
+            onClick={() => setShareOpen(true)}
+            className="rounded-control p-1.5 text-text-secondary hover:bg-fill-hover"
           >
-            {t('Pause')}
+            <Share className="size-4" />
           </button>
-        )}
-        <button
-          type="button"
-          onClick={() => setShareOpen(true)}
-          className="flex h-row-sm items-center gap-1 rounded-control px-2 text-sm text-text-secondary hover:bg-fill-hover"
-        >
-          <Share className="size-4" /> {t('Share')}
-        </button>
-        <button className="rounded-control p-1.5 text-text-secondary hover:bg-fill-hover"><FileChartColumn className="size-4" /></button>
-        <button className="rounded-control p-1.5 text-text-secondary hover:bg-fill-hover"><MoreHorizontal className="size-4" /></button>
-        {appProject && (
-          <button
-            type="button"
-            onClick={() => setAppBuilderOpen((v) => !v)}
-            aria-pressed={appBuilderOpen}
-            data-testid="appbuilder-toggle"
-            title={t('App Builder workspace')}
-            className={`rounded-control p-1.5 hover:bg-fill-hover ${appBuilderOpen ? 'text-icon-blue' : 'text-text-secondary'}`}
-          >
-            <AppWindow className="size-4" />
-          </button>
-        )}
-        <button className="rounded-control p-1.5 text-text-secondary hover:bg-fill-hover"><PanelRight className="size-4" /></button>
+          <button type="button" aria-label={t('View all files in this task')} onClick={() => { setFilesOpen(true); void loadTaskFiles(); }} className="rounded-control p-1.5 text-text-secondary hover:bg-fill-hover"><FileChartColumn className="size-4" /></button>
+          <button type="button" aria-label={t('More')} className="rounded-control p-1.5 text-text-secondary hover:bg-fill-hover"><MoreHorizontal className="size-4" /></button>
+          {appProject && (
+            <button
+              type="button"
+              onClick={() => setAppBuilderOpen((v) => !v)}
+              aria-pressed={appBuilderOpen}
+              data-testid="appbuilder-toggle"
+              title={t('App Builder workspace')}
+              className={`rounded-control p-1.5 hover:bg-fill-hover ${appBuilderOpen ? 'text-icon-blue' : 'text-text-secondary'}`}
+            >
+              <AppWindow className="size-4" />
+            </button>
+          )}
+          <button type="button" aria-label={t('Toggle browser panel')} aria-pressed={browserOpen} onClick={() => setBrowserOpen((value) => !value)} className="rounded-control p-1.5 text-text-secondary hover:bg-fill-hover"><PanelRight className="size-4" /></button>
+        </div>
       </div>
 
       {paused && (
@@ -730,7 +740,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
       )}
 
       <div className="flex h-dvh min-h-0 w-full flex-none overflow-hidden">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <div className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${browserOpen && !selectedTool ? 'lg:w-1/2 lg:flex-none lg:border-e lg:border-border-main' : ''}`}>
           <div ref={conversationRef} data-testid="conversation-scroll" className="min-h-0 flex-1 overflow-y-auto">
             <div className="mx-auto w-full max-w-[min(100%,48rem)] px-4 py-4 sm:px-6">
               <div className="mb-2 flex items-center gap-2">
@@ -874,7 +884,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
           </div>
 
           <div className="mx-auto w-full max-w-[min(100%,48rem)] shrink-0 px-4 pb-4 sm:px-6">
-            <div className="mb-2 flex min-h-8 items-center gap-2 rounded-control bg-fill-tsp px-2 py-1 text-sm text-text-secondary">
+            <div className="mb-1 flex min-h-6 items-center gap-2 px-1 text-xs text-text-secondary">
               <span className={running ? 'animate-pulse text-icon-blue' : wasStoppedByUser ? 'text-function-warning' : errorMessage ? 'text-function-error' : hasResult && hasClockClosed ? 'text-func-success' : 'text-text-tertiary'}>
                 {running ? '●' : wasStoppedByUser ? '◼' : errorMessage ? '✕' : hasResult && hasClockClosed ? '✓' : '○'}
               </span>
@@ -922,6 +932,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
             <SideChatPanel taskId={taskId ?? null} />
           </div>
         </div>
+        {browserOpen && !selectedTool && <TaskBrowserPanel />}
         {selectedTool && (
           <ComputerPanel
             sessionId={sessionUid}

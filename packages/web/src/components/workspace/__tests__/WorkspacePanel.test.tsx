@@ -20,7 +20,8 @@ function ProbeEditor(props: WorkspaceEditorProps) {
   return <div data-testid="probe-editor" />;
 }
 /** Second probe for the override tests: a distinct editor claiming .docx too. */
-function SlidesProbeEditor() {
+function SlidesProbeEditor(props: WorkspaceEditorProps) {
+  captured = props;
   return <div data-testid="slides-probe" />;
 }
 
@@ -226,6 +227,21 @@ describe('WorkspacePanel editor gateway', () => {
     expect(await screen.findByTitle('docs/plan.docx')).toBeInTheDocument();
     expect(screen.getByTitle('docs/plan.docx').className).toContain('bg-fill-tsp');
     expect(screen.queryByText('Select a file to edit')).toBeNull();
+    vi.unstubAllGlobals();
+  });
+
+  it('does not select internal .loam files as workspace artifacts', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => filesResponse([
+      { name: 'verify.json', path: '.loam/verify.json', mtimeMs: 30 },
+      { name: 'UAE.pptx', path: 'uploads/UAE.pptx', mtimeMs: 20 },
+    ])));
+    registerEditor({ kind: 'craft', label: 'Slides probe', extensions: ['pptx'], load: async () => ({ default: SlidesProbeEditor }) });
+
+    render(<WorkspacePanel taskId="task_1" live={false} events={[]} onChatEdit={() => undefined} />);
+
+    expect(await screen.findByTestId('slides-probe')).toBeInTheDocument();
+    expect(captured?.file.path).toBe('uploads/UAE.pptx');
+    expect(screen.queryByText('.loam/verify.json')).toBeNull();
     vi.unstubAllGlobals();
   });
 });

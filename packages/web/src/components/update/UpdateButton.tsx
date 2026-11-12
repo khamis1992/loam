@@ -9,9 +9,8 @@ import { desktopApis, desktopEvents, isDesktop } from '@/services/desktopApis';
 import { mapUpdaterStatus } from './UpdaterSettings';
 
 /**
- * Always-visible update control for the installed desktop app.
- * Settings still has the same action; this one sits in the sidebar so a new
- * build can be downloaded and installed without running the setup file.
+ * Sidebar update control for the installed desktop app, shown while an update
+ * check or installation needs attention. Settings offers the same actions.
  */
 export function UpdateButton({ collapsed = false }: { collapsed?: boolean }) {
   const dispatch = useAppDispatch();
@@ -37,7 +36,7 @@ export function UpdateButton({ collapsed = false }: { collapsed?: boolean }) {
     };
   }, [dispatch]);
 
-  if (!isDesktop()) return null;
+  if (!isDesktop() || upToDate) return null;
 
   const busy = status.state === 'checking' || status.state === 'downloading' || status.state === 'restarting';
   const downloaded = status.state === 'downloaded';

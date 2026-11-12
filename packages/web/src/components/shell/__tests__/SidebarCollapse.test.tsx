@@ -59,4 +59,16 @@ describe('Sidebar collapsible rail (H4)', () => {
     fireEvent.keyDown(window, { key: 'b', ctrlKey: true });
     expect(screen.getByLabelText(t('Sidebar')).getAttribute('data-collapsed')).toBe('false');
   });
+
+  it('keeps additional destinations under More', () => {
+    render(
+      <Provider store={store}>
+        <Sidebar />
+      </Provider>,
+    );
+    expect(screen.getByRole('button', { name: t('Automations') })).toBeTruthy();
+    expect(screen.getByRole('button', { name: t('More') })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: t('Board') })).toBeNull();
+    expect(screen.queryByRole('button', { name: t('Agent Loam') })).toBeNull();
+  });
 });
