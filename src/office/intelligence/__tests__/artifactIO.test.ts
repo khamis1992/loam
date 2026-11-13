@@ -51,7 +51,7 @@ describe("Office artifact change-set persistence", () => {
       assert.equal(reopened.artifact.kind, "presentation");
       if (reopened.artifact.kind === "presentation") {
         assert.equal(reopened.artifact.content.slides[0]?.title, "الوقائع المعدلة");
-        assert.equal(reopened.artifact.content.slides[0]?.body, "التفاصيل");
+        assert.equal(reopened.artifact.content.slides[0]?.body, "التفاصيل\n01 / 01");
         assert.equal(reopened.artifact.revision, loaded.ref.revision + 1);
       }
       await assert.rejects(() => saveOfficeChangeSet(workspace, changeSet), /changed|revision/i);
