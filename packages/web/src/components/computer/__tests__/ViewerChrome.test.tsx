@@ -120,7 +120,12 @@ describe('viewer chrome (Manus-style content panel)', () => {
   });
 
   it('does not show empty file or live tabs for terminal-only activity', () => {
-    const terminal = { ...officeEvent(), tool: 'shell_start', detail: {} } as unknown as ToolUsedEvent;
+    const terminal = {
+      ...officeEvent(),
+      tool: 'shell_start',
+      detail: {},
+      argumentsDetail: { terminal: { command: 'echo ready' } },
+    } as unknown as ToolUsedEvent;
     render(<ComputerPanel event={terminal} sessionId="terminal-tabs" onClose={() => {}} />);
     expect(screen.getByRole('tab', { name: t('Terminal') })).toBeTruthy();
     expect(screen.queryByRole('tab', { name: t('Files') })).toBeNull();

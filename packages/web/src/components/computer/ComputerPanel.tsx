@@ -172,10 +172,12 @@ export function ComputerPanel({ event, sessionId, onClose, workspaceSlot, focusW
       (tab) =>
         tab.id === 'editor'
           ? hasEditorContent(seen.editor)
-          : tab.id === derivedTab ||
-            seen[tab.id] !== undefined ||
-            (tab.id === 'live' && derivedTab === 'browser') ||
-            (tab.id === 'files' && Boolean(docPath)),
+          : tab.id === 'terminal'
+            ? hasTerminalContent(seen.terminal)
+            : tab.id === derivedTab ||
+              seen[tab.id] !== undefined ||
+              (tab.id === 'live' && derivedTab === 'browser') ||
+              (tab.id === 'files' && Boolean(docPath)),
     );
     if (workspaceSlot) tabs.push({ id: 'workspace' as const, label: 'Workspace', icon: FolderOpen });
     if (studioMode) tabs.push(STUDIO_TAB);
@@ -993,6 +995,12 @@ function extractTerminalDetail(event: ToolUsedEvent): TerminalDetail {
     output: event.description ? [event.description] : undefined,
     shellId: typeof args?.session === 'string' ? args.session : undefined,
   };
+}
+
+function hasTerminalContent(event?: ToolUsedEvent): boolean {
+  if (!event) return false;
+  const detail = extractTerminalDetail(event);
+  return Boolean(detail.command?.trim() || detail.output?.some((line) => line.trim()));
 }
 
 function extractEditorDetail(event: ToolUsedEvent): EditorDetail {

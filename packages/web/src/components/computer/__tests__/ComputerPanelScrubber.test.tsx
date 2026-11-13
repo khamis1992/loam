@@ -181,3 +181,54 @@ describe('ComputerPanel editor visibility', () => {
     expect(screen.getByRole('tab', { name: 'Workspace' })).toHaveAttribute('aria-selected', 'true');
   });
 });
+
+describe('ComputerPanel terminal visibility', () => {
+  afterEach(cleanup);
+
+  function renderTerminal(event: ToolUsedEvent, sessionId: string) {
+    return render(
+      <ComputerPanel
+        event={event}
+        sessionId={sessionId}
+        onClose={() => {}}
+        workspaceSlot={<div>Workspace content</div>}
+      />,
+    );
+  }
+
+  it('shows only Workspace when the terminal event has no command or output', () => {
+    renderTerminal(toolEvent('empty-terminal'), 'empty-terminal');
+    expect(screen.getAllByRole('tab').map((tab) => tab.getAttribute('aria-label'))).toEqual(['Workspace']);
+    expect(screen.getByRole('tab', { name: 'Workspace' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('Workspace content')).toBeInTheDocument();
+  });
+
+  it.each([
+    { argumentsDetail: { terminal: { command: 'echo ready' } } },
+    { detail: { terminal: { command: '', output: ['ready'] } } },
+  ])('shows Terminal with a real command or output', (detail) => {
+    const event = { ...toolEvent(`terminal-${JSON.stringify(detail)}`), ...detail } as ToolUsedEvent;
+    renderTerminal(event, `terminal-${JSON.stringify(detail)}`);
+    expect(screen.getByRole('tab', { name: 'Terminal' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Workspace' })).toBeInTheDocument();
+  });
+
+  it('hides Terminal immediately when its latest event becomes empty', () => {
+    const event = {
+      ...toolEvent('terminal-with-command'),
+      argumentsDetail: { terminal: { command: 'echo ready' } },
+    } as ToolUsedEvent;
+    const { rerender } = renderTerminal(event, 'changing-terminal');
+    expect(screen.getByRole('tab', { name: 'Terminal' })).toBeInTheDocument();
+    rerender(
+      <ComputerPanel
+        event={toolEvent('terminal-empty')}
+        sessionId="changing-terminal"
+        onClose={() => {}}
+        workspaceSlot={<div>Workspace content</div>}
+      />,
+    );
+    expect(screen.queryByRole('tab', { name: 'Terminal' })).toBeNull();
+    expect(screen.getByRole('tab', { name: 'Workspace' })).toHaveAttribute('aria-selected', 'true');
+  });
+});
