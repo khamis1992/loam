@@ -56,7 +56,7 @@ function slideTextValue(value: unknown): string {
   if (Array.isArray(value)) return value.map(slideTextValue).filter(Boolean).join("\n");
   if (typeof value === "object") {
     const raw = value as Record<string, unknown>;
-    for (const key of ["text", "content", "body", "value", "description", "summary", "paragraphs", "bullets", "bullet_points", "items"]) {
+    for (const key of ["text", "content", "body", "value", "description", "summary", "paragraphs", "bullets", "bullet_points", "items", "sections", "points", "lines"]) {
       if (raw[key] !== undefined) return slideTextValue(raw[key]);
     }
   }

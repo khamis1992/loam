@@ -1074,7 +1074,8 @@ export function createCraftOfficeTool(options: CraftOfficeToolOptions = {}): Too
           if (placeholderCraftText(title) || placeholderCraftText(bodyText)) {
             return failure({ retry: false, message: "office_craft action \"edit\" needs real slide content, not an angle-bracket placeholder." });
           }
-          if (str(args, "layout").trim() === "cards") {
+          const layoutArg = str(args, "layout").trim();
+          if (layoutArg === "cards" || layoutArg === "editorial" || layoutArg === "comparison" || layoutArg === "stats" || layoutArg === "quote") {
             const sections = Array.isArray(args["sections"]) ? args["sections"].filter((value): value is string => typeof value === "string" && value.trim().length > 0) : [];
             const background = str(args, "background").trim() || "#F7F3EA";
             if (!title || sections.length === 0) return failure({ retry: false, message: "The card layout needs a title and text sections." });
@@ -1086,7 +1087,7 @@ export function createCraftOfficeTool(options: CraftOfficeToolOptions = {}): Too
               return relayErrorResult(err, appName);
             }
             const after = await readCraftState(app, taskId, relay);
-            return jsonResult({ app, name: appName, action, layout: "cards", sections: sections.length, summary: after?.summary ?? before?.summary ?? null });
+            return jsonResult({ app, name: appName, action, layout: layoutArg, sections: sections.length, summary: after?.summary ?? before?.summary ?? null });
           }
           for (const id of ["slide.inspect", "text.set"]) {
             if (catalog.length > 0 && !catalog.includes(id)) {

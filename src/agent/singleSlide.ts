@@ -301,7 +301,7 @@ export async function runSingleSlideFastPath(opts: SingleSlideOptions): Promise<
     body: content.body,
     ...(content.background ? { background: content.background } : {}),
     ...(brief ? {
-      layout: "cards",
+      layout: brief.layout,
       sections: brief.sections,
       headings: brief.headings,
       subtitle: brief.subtitle,

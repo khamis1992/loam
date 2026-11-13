@@ -112,7 +112,7 @@ describe("single-slide fast path", () => {
     const edit = calls.find((call) => call.action === "edit");
     assert.equal(edit?.title, "دولة الكويت");
     assert.equal(calls.find((call) => call.action === "export")?.file, "دولة الكويت.pptx");
-    assert.equal(edit?.layout, "cards");
+    assert.equal(edit?.layout, "editorial");
     assert.equal((edit?.sections as string[]).length, 3);
     assert.match(String((edit?.image as { path: string }).path), /assets[\\/]presentation-hero\.jpg$/);
     assert.equal(result.verified, true);

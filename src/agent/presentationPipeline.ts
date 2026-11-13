@@ -48,7 +48,7 @@ export interface PresentationBrief {
   headings: string[];
   facts: PresentationFact[];
   palette: PresentationPalette;
-  layout: "editorial-cards";
+  layout: "editorial" | "comparison" | "stats" | "quote";
   density: "standard" | "compact";
   arabic: boolean;
   designSource?: "model" | "fallback";
@@ -131,6 +131,17 @@ export function planPresentationAssets(prompt: string, design?: DesignBrief): Pr
       },
     };
   }
+  const trimmed = prompt.trim().slice(0, 500);
+  if (trimmed) {
+    return {
+      generate: {
+        kind: "illustration",
+        prompt: `Editorial presentation illustration, no words or letters, clear focal point, sophisticated geometric art direction. Subject: ${trimmed}`,
+        alt: /[\u0590-\u08ff]/.test(prompt) ? "رسم توضيحي مولّد للعرض التقديمي" : "Generated presentation illustration",
+        requiresProvider: false,
+      },
+    };
+  }
   return {};
 }
 
@@ -142,7 +153,7 @@ export function createPresentationBrief(
   icons?: Record<PresentationIconId, PresentationImage>,
 ): PresentationBrief | null {
   const sections = slideBodyParts(content.body);
-  if (!image || sections.length < 3) return null;
+  if (sections.length < 2) return null;
   const arabic = /[\u0590-\u08ff]/.test(`${content.title}\n${content.body}`);
   const kuwait = /الكويت|kuwait/i.test(prompt);
   const basePalette: PresentationPalette = {
@@ -160,6 +171,13 @@ export function createPresentationBrief(
     palette.accent = basePalette.accent;
     palette.secondary = basePalette.secondary;
   }
+  const layout = /\bvs\b|\bمقابل\b|\bمقارنة\b|comparison|versus/i.test(prompt)
+    ? "comparison"
+    : /\bإحصاء\b|\bإحصائية\b|\bبيانات\b|statistics|data|metrics|kpi/i.test(prompt)
+      ? "stats"
+      : /\bاقتباس\b|\bقول\b|quote|say/i.test(prompt)
+        ? "quote"
+        : "editorial";
   return {
     title: content.title,
     body: content.body,
@@ -176,7 +194,7 @@ export function createPresentationBrief(
         : [{ label: "Official name", value: "State of Kuwait" }, { label: "Capital", value: "Kuwait City" }, { label: "Total area", value: "17,818 km²" }, { label: "National day", value: "25 February" }])
       : sections.slice(0, 3).map((section, index) => ({ label: arabic ? `محور ${index + 1}` : `Topic ${index + 1}`, value: section })),
     palette,
-    layout: "editorial-cards",
+    layout,
     density: "standard",
     arabic,
     ...(design ? { designSource: design.source, designSummary: design.brief.summary } : {}),

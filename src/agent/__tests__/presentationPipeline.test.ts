@@ -32,13 +32,13 @@ describe("PresentationPipeline", () => {
   it("builds an editorial brief and only repairs actionable crowding", () => {
     const image = planPresentationAssets("علم الكويت").licensed!;
     const brief = createPresentationBrief(content, "عرض عن الكويت بألوان علم الكويت", image)!;
-    assert.equal(brief.layout, "editorial-cards");
+    assert.equal(brief.layout, "editorial");
     assert.equal(brief.facts.length, 4);
     assert.deepEqual(brief.headings, ["بطاقة البيانات الأساسية", "أبرز المعالم الوطنية", "اللغة الرسمية والعملة", "الموقع الجغرافي والعاصمة"]);
     assert.equal(brief.arabic, true);
     assert.equal(repairPresentationBrief(brief, ["text is clipped"])?.density, "compact");
     assert.equal(repairPresentationBrief(brief, ["make it more colorful"]), null);
-    assert.equal(createPresentationBrief(content, "عرض عن الكويت"), null);
+    assert.ok(createPresentationBrief(content, "عرض عن الكويت"));
   });
 
   it("crops the real asset to the presentation frame inside the task", async () => {

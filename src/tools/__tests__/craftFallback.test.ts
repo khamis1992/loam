@@ -55,7 +55,7 @@ describe("native craft fallback", () => {
       assert.match(slide, /دولة الكويت/);
       assert.match(slide, /العاصمة مدينة الكويت والعملة الدينار الكويتي/);
       assert.match(slide, /sz="4000"/);
-      assert.match(slide, /sz="2400"/);
+      assert.match(slide, /sz="1800"/);
       assert.doesNotMatch(slide, /<a:t>عرض<\/a:t>/);
     } finally {
       fs.rmSync(workspace, { recursive: true, force: true });
